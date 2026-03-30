@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PUCRS · Secretaria · Prédio 15</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #f0ede8;
+  --bg2:       #e8e4de;
+  --panel:     #ffffff;
+  --panel2:    #f7f5f2;
+  --border:    #d8d3cb;
+  --border2:   #c4bdb3;
+  --navy:      #1c2b4a;
+  --navy-d:    #162038;
+  --navy-l:    #2a3f6a;
+  --green:     #1e6b40;
+  --green-b:   #d4eddf;
+  --amber:     #96520a;
+  --amber-b:   #fde8c4;
+  --red:       #a02828;
+  --red-b:     #fce8e8;
+  --blue:      #1a4e96;
+  --blue-b:    #dce8f8;
+  --purple:    #4e338a;
+  --purple-b:  #ece7f8;
+  --text:      #1a1714;
+  --text2:     #42403a;
+  --muted:     #7a756c;
+  --accent:    #c8973a;
+  --sans: 'IBM Plex Sans', sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+  --radius: 5px;
+}
+
+/* TEMA ESCURO (Agora é o Padrão via classe) */
+body.dark-mode {
+  --bg:#111418; --bg2:#181c22; --panel:#1e2330; --panel2:#242a38;
+  --border:#2c3448; --border2:#3c4460; --navy:#7a9fd0; --navy-d:#5a7fb0;
+  --navy-l:#9abff0; --green:#3aaa65; --green-b:#0a2818;
+  --amber:#d09030; --amber-b:#2a1a00; --red:#d05050; --red-b:#2a0c0c;
+  --blue:#4a88d8; --blue-b:#0c1e3a; --purple:#8060cc; --purple-b:#1a1238;
+  --text:#e8e4dc; --text2:#9a968e; --muted:#68635c; --accent:#d0a050;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;display:flex;flex-direction:column;transition:background .3s;}
+
+/* ── SPLASH ── */
+#splash{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:40px;background:var(--bg);}
+.sp-header{display:flex;flex-direction:column;align-items:center;margin-bottom:32px;gap:6px;}
+.sp-inst{font-family:var(--mono);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
+.sp-rule{width:40px;height:2px;background:var(--accent);margin:8px auto;}
+.sp-title{font-size:22px;font-weight:600;color:var(--text);text-align:center;letter-spacing:-.2px;}
+.sp-sub{font-size:13px;color:var(--muted);text-align:center;margin-top:4px;}
+.sp-card{
+  background:var(--panel);border:1px solid var(--border);
+  border-top:3px solid var(--navy);
+  border-radius:var(--radius);padding:32px 40px;text-align:center;max-width:460px;width:100%;
+  box-shadow:0 2px 16px rgba(0,0,0,.06);
+}
+.sp-path-lbl{font-size:11px;color:var(--muted);margin-bottom:6px;text-align:left;}
+.sp-path{
+  font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--panel2);
+  border:1px solid var(--border);border-radius:3px;padding:8px 12px;
+  margin-bottom:18px;word-break:break-all;text-align:left;
+}
+.sp-msg{font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.65;}
+.sp-error{color:var(--red);font-size:12px;font-family:var(--mono);margin-top:8px;text-align:left;background:var(--red-b);padding:8px 12px;border-radius:3px;border:1px solid rgba(160,40,40,.15);}
+.sp-spinner{width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn-primary{
+  background:var(--navy);border:none;border-radius:var(--radius);padding:9px 24px;
+  color:#fff;font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;
+  letter-spacing:.2px;transition:background .15s;
+}
+.btn-primary:hover{background:var(--navy-l);}
+.drop-zone{
+  width:100%;background:var(--panel2);border:1.5px dashed var(--border2);border-radius:var(--radius);
+  padding:24px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-top:12px;
+}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--navy);background:var(--blue-b);}
+.drop-zone strong{font-size:13px;font-weight:500;color:var(--text);}
+.drop-zone p{font-size:11px;color:var(--muted);margin-top:5px;}
+#spActions{display:none;flex-direction:column;gap:10px;margin-top:8px;}
+#fileInput{display:none;}
+
+/* ── APP ── */
+#app{display:none;flex-direction:column;height:100%;overflow:hidden;}
+
+/* ── TOPBAR ── */
+.topbar{
+  height:50px;background:var(--navy);display:flex;align-items:center;
+  padding:0 20px;gap:16px;flex-shrink:0;border-bottom:2px solid var(--accent);
+}
+.tb-logo{font-size:13px;font-weight:600;color:#fff;letter-spacing:.2px;}
+.tb-logo span{color:var(--accent);margin:0 6px;}
+.tb-sep{width:1px;height:18px;background:rgba(255,255,255,.15);}
+.tb-clock{font-family:var(--mono);font-size:16px;font-weight:500;color:#fff;min-width:76px;letter-spacing:.5px;}
+.tb-date{font-size:11px;color:rgba(255,255,255,.5);font-family:var(--mono);letter-spacing:.3px;}
+.tb-per{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:2px;letter-spacing:.8px;border:1px solid;text-transform:uppercase;}
+.tb-per.on{background:rgba(200,151,58,.18);color:var(--accent);border-color:rgba(200,151,58,.35);}
+.tb-per.off{background:rgba(255,255,255,.06);color:rgba(255,255,255,.28);border-color:rgba(255,255,255,.1);}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+
+/* Global Occupation Bar */
+.tb-occ-wrap { display: flex; align-items: center; gap: 8px; margin-right: 12px; padding-right: 16px; border-right: 1px solid rgba(255,255,255,.15); }
+.tb-occ-lbl { font-size: 9px; color: rgba(255,255,255,.5); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.tb-occ { width: 64px; height: 6px; background: rgba(0,0,0,.3); border-radius: 3px; overflow: hidden; }
+.tb-occ-bar { height: 100%; background: #3aaa65; width: 0%; transition: width 0.4s ease, background-color 0.4s ease; }
+.tb-occ-val { font-family: var(--mono); font-size: 11px; font-weight: 500; color: #fff; width: 28px; text-align: right; }
+
+.tb-file{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.3);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tb-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:4px 11px;color:rgba(255,255,255,.65);font-family:var(--sans);font-size:11px;cursor:pointer;transition:all .15s;}
+.tb-btn:hover{background:rgba(255,255,255,.16);color:#fff;}
+.live-badge{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.35);letter-spacing:.5px;}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#3aaa65;animation:lp 2.5s infinite;}
+@keyframes lp{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── SEARCH BAR ── */
+.search-bar{
+  background:var(--panel);border-bottom:1px solid var(--border);
+  padding:9px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;
+  position:relative;z-index:40;
+}
+.search-input-wrap{position:relative;width:360px;flex-shrink:0;}
+.search-input-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);}
+.search-input{
+  width:100%;background:var(--panel2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:7px 32px 7px 32px;font-family:var(--sans);font-size:13px;
+  color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;
+}
+.search-input:focus{border-color:var(--navy);box-shadow:0 0 0 2px rgba(28,43,74,.1);}
+.search-input::placeholder{color:var(--muted);}
+.search-clear{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;display:none;padding:0;}
+.search-clear.vis{display:block;}
+.search-hint{font-size:11px;color:var(--muted);}
+
+/* search dropdown */
+.search-dropdown{
+  position:absolute;top:calc(100% + 3px);left:20px;width:480px;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:0 6px 24px rgba(0,0,0,.1);z-index:200;max-height:320px;overflow-y:auto;display:none;
+}
+.search-dropdown.vis{display:block;}
+.sd-item{
+  display:flex;gap:12px;align-items:flex-start;padding:10px 15px;
+  border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;
+}
+.sd-item:last-child{border-bottom:none;}
+.sd-item:hover{background:var(--panel2);}
+.sd-room{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--blue);width:36px;flex-shrink:0;padding-top:1px;}
+.sd-info{flex:1;min-width:0;}
+.sd-class{font-size:12px;color:var(--text);line-height:1.45;}
+.sd-meta{font-size:11px;color:var(--muted);margin-top:2px;font-family:var(--mono);}
+.sd-empty{padding:16px;text-align:center;color:var(--muted);font-size:12px;}
+.sd-footer{padding:7px 15px;font-size:10px;color:var(--muted);background:var(--panel2);font-family:var(--mono);border-top:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);}
+
+/* ── NAV ── */
+.navtabs{
+  display:flex;background:var(--panel);border-bottom:2px solid var(--border);
+  padding:0 20px;flex-shrink:0;
+}
+.navtab{
+  padding:12px 18px;font-size:12px;font-weight:500;color:var(--muted);
+  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;
+  white-space:nowrap;letter-spacing:.2px;text-transform:uppercase;
+  transition:color .15s,border-color .15s;
+}
+.navtab:hover{color:var(--text);}
+.navtab.active{color:var(--navy);border-color:var(--navy);}
+
+/* ── VIEWS ── */
+.view{display:none;flex:1;overflow:hidden;}
+.view.active { display: flex; flex-direction: column; height: 100%; }
+
+/* ── TOOLBAR ── */
+.toolbar{
+  background:var(--panel2);border-bottom:1px solid var(--border);
+  padding:9px 18px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;
+}
+.toolbar label{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.3px;text-transform:uppercase;}
+select{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:5px 10px;color:var(--text);font-family:var(--sans);font-size:12px;outline:none;cursor:pointer;
+  transition:border-color .15s;
+}
+select:focus{border-color:var(--navy);}
+.sep{width:1px;height:18px;background:var(--border);flex-shrink:0;}
+
+/* ── VIEW: PLANTA ── */
+#vMap{flex-direction:row;}
+.map-side{
+  width:200px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
+  overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:16px;
+}
+.ms-hd{
+  font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;
+  text-transform:uppercase;padding-bottom:8px;border-bottom:1px solid var(--border);
+  margin-bottom:2px;
+}
+.ms-f{display:flex;flex-direction:column;gap:5px;}
+.ms-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:500;}
+.ms-sel{
+  background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:6px 9px;color:var(--text);font-size:12px;font-family:var(--sans);outline:none;width:100%;
+  transition:border-color .15s;
+}
+.ms-sel:focus{border-color:var(--navy);}
+.leg-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:4px;}
+.leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.cnt-box{background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 13px;margin-bottom:6px;}
+.cnt-val{font-family:var(--mono);font-size:26px;font-weight:500;line-height:1;}
+.cnt-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px;font-weight:500;}
+.cnt-box.g .cnt-val{color:var(--green);}
+.cnt-box.a .cnt-val{color:var(--amber);}
+.map-main{flex:1;overflow-y:auto;padding:16px 20px;}
+.fl-lbl{
+  font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;
+  text-transform:uppercase;padding-bottom:7px;border-bottom:1px solid var(--border);margin-bottom:9px;
+}
+.fl-sec{margin-bottom:20px;}
+.room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:7px;}
+.room-tile{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:11px 13px;cursor:pointer;transition:box-shadow .12s,border-color .12s;
+  position:relative;overflow:hidden;
+}
+.room-tile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;}
+.room-tile.free::before{background:var(--green);}
+.room-tile.busy::before{background:var(--amber);}
+.room-tile.free{border-color:rgba(30,107,64,.15);}
+.room-tile.busy{border-color:rgba(150,82,10,.2);}
+.room-tile:hover{box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.rt-n{font-family:var(--mono);font-size:16px;font-weight:500;line-height:1;}
+.rt-s{font-size:10px;letter-spacing:.6px;text-transform:uppercase;margin:3px 0 4px;font-weight:600;}
+.room-tile.free .rt-n{color:var(--green);}
+.room-tile.free .rt-s{color:var(--green);opacity:.7;}
+.room-tile.busy .rt-n{color:var(--amber);}
+.room-tile.busy .rt-s{color:var(--amber);opacity:.7;}
+.rt-c{font-size:10px;color:var(--muted);line-height:1.35;max-height:29px;overflow:hidden;}
+
+/* ── VIEW: TIMELINE ── */
+#vTl{overflow:hidden;}
+.tl-scroll{flex:1;overflow-y:auto;}
+.tl-hdr{
+  display:flex;align-items:center;height:38px;padding:0 16px;
+  background:var(--panel2);border-bottom:2px solid var(--border);position:sticky;top:0;z-index:10;
+}
+.tl-rl{width:52px;flex-shrink:0;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;}
+.tl-pers{flex:1;display:flex;}
+.tl-phd{flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--muted);line-height:1.5;min-width:0;}
+.tl-phd.now{color:var(--accent);font-weight:500;}
+.tl-row{display:flex;align-items:center;padding:3px 16px;border-bottom:1px solid var(--border);min-height:34px;}
+.tl-row:hover{background:var(--panel2);}
+.tl-rn{width:52px;flex-shrink:0;font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text2);}
+.tl-rn.on{color:var(--amber);}
+.tl-cells{flex:1;display:flex;gap:2px;}
+.tl-cell{
+  flex:1;height:26px;border-radius:3px;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-family:var(--mono);overflow:hidden;white-space:nowrap;padding:0 3px;
+  cursor:default;min-width:0;transition:filter .1s;
+}
+.tl-cell:hover{filter:brightness(.93);}
+.tl-cell.empty{background:var(--bg2);}
+.tl-cell.reg{background:var(--blue-b);color:var(--blue);border:1px solid rgba(26,78,150,.1);}
+.tl-cell.int{background:var(--purple-b);color:var(--purple);border:1px solid rgba(78,51,138,.1);}
+.tl-cell.now{outline:2px solid var(--accent)!important;outline-offset:-1px;}
+.tl-leg{font-size:11px;color:var(--muted);display:flex;gap:14px;align-items:center;}
+.tl-ldot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+
+/* ── VIEW: PRÓXIMAS ── */
+#vNext{overflow:hidden;}
+.nx-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:18px;}
+.nx-hd{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;padding-bottom:9px;border-bottom:1px solid var(--border);}
+.nx-hd em{color:var(--amber);font-style:normal;}
+.nx-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;}
+.nx-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:13px 15px;display:flex;flex-direction:column;gap:5px;
+  animation:fu .2s ease both;
+}
+@keyframes fu{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.nx-card.cur{border-color:rgba(150,82,10,.25);background:var(--amber-b);}
+.nx-card.nxt{border-color:rgba(26,78,150,.15);background:var(--blue-b);}
+.nct{display:flex;align-items:center;gap:8px;}
+.ncr{font-family:var(--mono);font-size:15px;font-weight:500;}
+.ncp{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:2px;letter-spacing:.5px;}
+.nx-card.cur .ncr{color:var(--amber);}
+.nx-card.cur .ncp{background:rgba(150,82,10,.12);color:var(--amber);}
+.nx-card.nxt .ncr{color:var(--blue);}
+.nx-card.nxt .ncp{background:rgba(26,78,150,.1);color:var(--blue);}
+.ncc{font-size:12px;color:var(--text);line-height:1.55;}
+.nct2{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.ncb{font-size:10px;font-weight:500;padding:2px 7px;border-radius:2px;align-self:flex-start;letter-spacing:.3px;}
+.ncb.int{background:var(--purple-b);color:var(--purple);}
+.ncb.reg{background:var(--green-b);color:var(--green);}
+
+/* ── VIEW: OCUPAÇÃO ── */
+#vHeat{overflow:hidden;}
+.heat-body{flex:1;overflow:auto;padding:16px 20px;display:flex;flex-direction:column;gap:20px;}
+
+.day-flt{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}
+.dcb{
+  display:flex;align-items:center;gap:5px;cursor:pointer;padding:4px 10px;
+  border-radius:3px;border:1px solid var(--border);background:var(--panel);
+  font-size:11px;font-weight:500;color:var(--muted);transition:all .12s;user-select:none;
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.dcb input{display:none;}
+.dcb.on{background:var(--navy);border-color:var(--navy);color:#fff;}
+.filter-quick-act { font-size: 9px; margin-top: 3px; font-family: var(--mono); text-transform: none; font-weight: 400; letter-spacing: 0; }
+.filter-quick-act span { color: var(--blue); cursor: pointer; }
+.filter-quick-act span:hover { text-decoration: underline; }
+
+.heat-tbl{border-collapse:collapse;width:100%;min-width:520px;font-size:12px;}
+.heat-tbl th{
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--muted);
+  padding:8px 5px;text-align:center;border-bottom:2px solid var(--border);
+  background:var(--panel2);position:sticky;top:0;text-transform:uppercase;
+}
+.heat-tbl th:first-child{text-align:left;padding-left:14px;}
+.heat-tbl td{padding:3px 3px;border-bottom:1px solid var(--border);}
+.heat-tbl tr:hover td{background:var(--panel2);}
+.ht-room{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text2);padding-left:14px!important;white-space:nowrap;}
+.ht-cell{
+  width:42px;height:28px;border-radius:3px;margin:auto;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:500;
+}
+.h0{background:var(--bg2);color:var(--muted);}
+.h1{background:#d4eade;color:#0e4228;}
+.h2{background:#a8d4b8;color:#0a3820;}
+.h3{background:#fce0b0;color:#6e3800;}
+.h4{background:#f8c070;color:#522600;}
+.h5{background:#f09060;color:#3a1000;}
+body.dark-mode .h1{background:#0a2c1a;color:#4ab870;}
+body.dark-mode .h2{background:#082418;color:#38a860;}
+body.dark-mode .h3{background:#271800;color:#c88018;}
+body.dark-mode .h4{background:#321c00;color:#d08828;}
+body.dark-mode .h5{background:#3c1000;color:#d85018;}
+.ht-tot{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text);text-align:center;}
+
+.bars{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.bar-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
+.bar-ttl{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:8px;}
+.bar-row{display:flex;align-items:center;gap:9px;margin-bottom:6px;}
+.bar-lbl{font-family:var(--mono);font-size:11px;color:var(--text2);width:38px;flex-shrink:0;}
+.bar-trk{flex:1;height:14px;background:var(--panel2);border-radius:2px;overflow:hidden;border:1px solid var(--border);}
+.bar-fil{height:100%;border-radius:2px;display:flex;align-items:center;justify-content:flex-end;padding-right:5px;font-family:var(--mono);font-size:9px;font-weight:600;color:#fff;transition:width .4s ease;min-width:18px;}
+
+.exp-btn{
+  display:flex;align-items:center;gap:5px;background:var(--navy);border:none;border-radius:3px;
+  padding:5px 13px;color:#fff;font-family:var(--sans);font-size:11px;font-weight:500;
+  cursor:pointer;transition:background .15s;letter-spacing:.2px;text-transform:uppercase;
+  white-space:nowrap;
+}
+.exp-btn:hover{background:var(--navy-l);}
+.exp-btn.green{background:var(--green);}
+.exp-btn.green:hover{background:#165830;}
+.exp-btn.purple{background:var(--purple);}
+.exp-btn.purple:hover{background:#3a2070;}
+
+.ht-leg{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);}
+.hls{width:18px;height:13px;border-radius:2px;}
+
+/* ── VIEW: SALAS LIVRES ── */
+.free-card { 
+  background: var(--panel); 
+  border: 1px solid var(--border); 
+  border-radius: var(--radius); 
+  border-left: 3px solid var(--green);
+}
+.free-body { 
+  flex: 1; 
+  min-height: 0;        
+  overflow-y: auto; 
+  padding: 16px 20px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 16px; 
+}
+.free-summary { 
+  padding: 12px 16px; display: flex; align-items: center; 
+  justify-content: space-between; background: var(--panel2); 
+  border-bottom: 1px solid var(--border); 
+}
+.free-room-title { 
+  display: flex; align-items: center; gap: 10px; 
+  font-family: var(--mono); font-size: 15px; font-weight: 600; 
+  color: var(--navy); 
+}
+.free-badge { 
+  background: var(--green-b); color: var(--green); 
+  padding: 4px 9px; border-radius: 3px; font-size: 11px; 
+  font-family: var(--mono); font-weight: 500; letter-spacing: .5px;
+  white-space: nowrap;
+}
+.free-content { 
+  padding: 12px 16px; 
+  display: flex; flex-wrap: wrap; gap: 8px; 
+}
+.free-slot { 
+  display: flex; align-items: center; gap: 8px; 
+  font-size: 12px; color: var(--text); 
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 3px; padding: 5px 10px;
+  min-height: 28px; 
+}
+.free-slot-code { 
+  font-family: var(--mono); font-weight: 600; 
+  color: var(--green); 
+  width: 18px; flex-shrink: 0;
+}
+
+/* ── VIEW: DISCIPLINAS (NOVA ABA) ── */
+.disc-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; }
+.disc-search-bar { display: flex; gap: 8px; margin-bottom: 1rem; }
+.disc-input { 
+  flex: 1; padding: 10px 14px; font-size: 14px; font-family: var(--sans);
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text); outline: none;
+  transition: border-color 0.15s;
+}
+.disc-input:focus { border-color: var(--navy); }
+.disc-input::placeholder { color: var(--muted); }
+.disc-stats { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.disc-grid { display: flex; flex-direction: column; gap: 8px; }
+.disc-card { 
+  background: var(--panel); border: 1px solid var(--border); 
+  border-radius: 8px; padding: 12px 16px; transition: border-color 0.15s; 
+}
+.disc-card:hover { border-color: var(--muted); }
+.disc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.disc-name { font-size: 14px; font-weight: 500; color: var(--text); flex: 1; }
+.disc-code { 
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  background: var(--blue-b); color: var(--blue); 
+  padding: 3px 8px; border-radius: 4px; white-space: nowrap; flex-shrink: 0;
+}
+.disc-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.disc-tag { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 500; border: 1px solid; }
+.tag-escola { background: var(--green-b); color: var(--green); border-color: rgba(30,107,64,0.15); }
+.tag-curso  { background: var(--panel2); color: var(--text2); border-color: var(--border); }
+.highlight { background: var(--amber-b); color: var(--amber); border-radius: 2px; }
+
+/* TOOLTIP E SCROLLBAR */
+.tt{
+  position:fixed;pointer-events:none;z-index:9999;display:none;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 14px;font-size:12px;box-shadow:0 4px 20px rgba(0,0,0,.12);max-width:270px;
+  border-top:2px solid var(--navy);
+}
+.tt-room{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--navy);margin-bottom:4px;}
+.tt-row{color:var(--text2);line-height:1.65;}
+.tt-row b{color:var(--text);font-weight:500;}
+
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+.empty-st{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <div class="sp-header">
+    <div class="sp-inst">PUCRS — Prédio 15</div>
+    <div class="sp-rule"></div>
+    <div class="sp-title">Painel da Secretaria</div>
+    <div class="sp-sub">Sistema de Gerenciamento de Salas</div>
+  </div>
+  <div class="sp-card" id="spStatus">
+    <div class="sp-spinner" id="spSpinner"></div>
+    <div class="sp-msg" id="spMsg">Carregando arquivos do sistema…</div>
+    <div class="sp-path-lbl">Origem do arquivo</div>
+    <div class="sp-path">Z:\Sistema Living 360\Sistema de Gestao de Salas de Aula\agenda.js</div>
+    <div class="sp-error" id="spErr" style="display:none"></div>
+    <div id="spActions">
+      <button class="btn-primary" id="btnRetry">↺ Tentar novamente</button>
+      <div class="drop-zone" id="dropZone">
+        <strong>Selecionar arquivo manualmente</strong>
+        <p>Clique aqui ou arraste o arquivo original (.csv)</p>
+      </div>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="tb-logo">PUCRS<span>·</span>Prédio 15<span>·</span>Secretaria</div>
+    <div class="tb-sep"></div>
+    <div class="tb-clock" id="tbClock">--:--:--</div>
+    <div class="tb-date" id="tbDate"></div>
+    <div class="tb-per off" id="tbPer">—</div>
+    <div class="tb-right">
+      <div class="tb-occ-wrap" title="Ocupação global neste momento">
+        <div class="tb-occ-lbl">Lotação</div>
+        <div class="tb-occ"><div class="tb-occ-bar" id="tbOccBar"></div></div>
+        <div class="tb-occ-val" id="tbOccVal">--%</div>
+      </div>
+      <div class="tb-file" id="tbFile"></div>
+      <button class="tb-btn" id="btnTheme">🌙 Escuro</button>
+      <button class="tb-btn" id="btnReload">↺ Recarregar</button>
+      <div class="live-badge"><div class="live-dot"></div>AO VIVO</div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <div class="search-input-wrap">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <input class="search-input" id="searchInput" placeholder="Buscar por código, disciplina ou sala…" autocomplete="off">
+      <button class="search-clear" id="searchClear">×</button>
+    </div>
+    <div class="search-dropdown" id="searchDrop"></div>
+    <span class="search-hint">Busca em todos os dias e períodos</span>
+  </div>
+
+  <div class="navtabs">
+    <div class="navtab active" data-v="map">Planta ao Vivo</div>
+    <div class="navtab" data-v="tl">Linha do Tempo</div>
+    <div class="navtab" data-v="next">Próximas Aulas</div>
+    <div class="navtab" data-v="heat">Ocupação Semanal</div>
+    <div class="navtab" data-v="free">Salas Livres</div>
+    <div class="navtab" data-v="disc">Disciplinas</div>
+  </div>
+
+  <div class="view active" id="vMap">
+    <div class="map-side">
+      <div>
+        <div class="ms-hd">Filtros</div>
+        <div class="ms-f"><div class="ms-lbl">Dia</div>
+          <select class="ms-sel" id="mapDay">
+            <option>Segunda</option><option>Terça</option><option>Quarta</option>
+            <option>Quinta</option><option>Sexta</option><option>Sábado</option><option>Domingo</option>
+          </select>
+        </div>
+        <div class="ms-f" style="margin-top:9px"><div class="ms-lbl">Período</div>
+          <select class="ms-sel" id="mapPer"><option value="auto">⟳ Automático</option></select>
+        </div>
+      </div>
+      <div>
+        <div class="ms-hd">Legenda</div>
+        <div class="leg-row"><div class="leg-dot" style="background:var(--green)"></div>Sala livre</div>
+        <div class="leg-row"><div class="leg-dot" style="background:var(--amber)"></div>Sala ocupada</div>
+      </div>
+      <div>
+        <div class="ms-hd">Contagem</div>
+        <div class="cnt-box g"><div class="cnt-val" id="cFree">—</div><div class="cnt-lbl">Livres</div></div>
+        <div class="cnt-box a"><div class="cnt-val" id="cBusy">—</div><div class="cnt-lbl">Ocupadas</div></div>
+      </div>
+    </div>
+    <div class="map-main"><div id="floorMap"></div></div>
+  </div>
+
+  <div class="view" id="vTl">
+    <div class="toolbar">
+      <label>Dia:</label>
+      <select id="tlDay">
+        <option>Segunda</option><option>Terça</option><option>Quarta</option>
+        <option>Quinta</option><option>Sexta</option><option>Sábado</option><option>Domingo</option>
+      </select>
+      <div class="sep"></div>
+      <div class="tl-leg">
+        <span><span class="tl-ldot" style="background:var(--blue-b);border:1px solid rgba(26,78,150,.15)"></span>Regular</span>
+        <span><span class="tl-ldot" style="background:var(--purple-b);border:1px solid rgba(78,51,138,.15)"></span>Interno</span>
+        <span style="color:var(--accent);font-weight:500;font-size:11px;font-family:var(--mono)">| = período atual</span>
+      </div>
+    </div>
+    <div class="tl-scroll"><div id="tlInner"></div></div>
+  </div>
+
+  <div class="view" id="vNext">
+    <div class="toolbar">
+      <label>Dia:</label>
+      <select id="nxDay">
+        <option>Segunda</option><option>Terça</option><option>Quarta</option>
+        <option>Quinta</option><option>Sexta</option><option>Sábado</option><option>Domingo</option>
+      </select>
+      <label style="margin-left:8px">Período ref.:</label>
+      <select id="nxPer"><option value="auto">⟳ Auto (horário real)</option></select>
+    </div>
+    <div class="nx-body" id="nxBody"></div>
+  </div>
+
+  <div class="view" id="vHeat">
+    <div class="toolbar" style="align-items: flex-start; padding: 14px 18px;">
+      <div style="display: flex; flex-direction: column; gap: 10px; flex: 1;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label style="min-width: 60px;">Dias:</label>
+          <div class="day-flt" id="dayFlt"></div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <label style="min-width: 60px; margin-top: 6px;">
+            Salas:
+            <div class="filter-quick-act">
+              <span onclick="toggleRooms(true)">Todos</span> <span style="color:var(--muted)">·</span> <span onclick="toggleRooms(false)">Limpar</span>
+            </div>
+          </label>
+          <div class="day-flt" id="roomFlt" style="max-height: 85px; overflow-y: auto; padding-right: 5px;"></div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <label style="min-width: 60px; margin-top: 6px;">
+            Períodos:
+            <div class="filter-quick-act">
+              <span onclick="togglePers(true)">Todos</span> <span style="color:var(--muted)">·</span> <span onclick="togglePers(false)">Limpar</span>
+            </div>
+          </label>
+          <div class="day-flt" id="perFlt" style="max-height: 60px; overflow-y: auto; padding-right: 5px;"></div>
+        </div>
+      </div>
+      <div class="sep" style="height: auto; align-self: stretch;"></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="exp-btn purple" id="btnPrintReport">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M4 4V2h8v2M4 12v2h8v-2M2 6h12v6H2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Relatório Visual (PDF)
+        </button>
+        <button class="exp-btn" id="btnExpOcup">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 1v9M4 7l4 4 4-4M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Exportar Tabela Ocupação
+        </button>
+        <button class="exp-btn green" id="btnExpFull">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M2 2h12v12H2zM2 6h12M6 2v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Exportar Grade Completa
+        </button>
+        <div class="ht-leg" style="margin-top: auto; padding-top: 8px;">
+          <div class="hls h0"></div>0
+          <div class="hls h2"></div>Baixo
+          <div class="hls h3"></div>Médio
+          <div class="hls h5"></div>Alto
+        </div>
+      </div>
+    </div>
+    <div class="heat-body">
+      <div><table class="heat-tbl" id="heatTbl"></table></div>
+      <div class="bars" id="barsEl"></div>
+    </div>
+  </div>
+
+  <div class="view" id="vFree">
+    <div class="toolbar">
+      <label>Dia:</label>
+      <select id="freeDay">
+        <option>Segunda</option><option>Terça</option><option>Quarta</option>
+        <option>Quinta</option><option>Sexta</option><option>Sábado</option><option>Domingo</option>
+      </select>
+    </div>
+    <div class="free-body" id="freeBody"></div>
+  </div>
+
+  <div class="view" id="vDisc">
+    <div class="toolbar">
+      <label>Escola:</label>
+      <select id="escolaFilter">
+        <option value="">Todas as escolas</option>
+      </select>
+    </div>
+    <div class="disc-body">
+      <div class="disc-search-bar">
+        <input type="text" id="discSearchInput" class="disc-input" placeholder="Ex: Anatomia, 96A01-02, Bioquímica..." autocomplete="off">
+      </div>
+      <div class="disc-stats" id="discStats">Carregando disciplinas...</div>
+      <div class="disc-grid" id="discGrid"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="tt" id="tt"></div>
+
+<script src="agenda.js"></script>
+<script src="dados.js"></script>
+
+<script>
+'use strict';
+
+const PERIODS = [
+  {code:'A', lb:'08:00',start:[8,0],  end:[8,45]},
+  {code:'B', lb:'08:45',start:[8,45], end:[9,30]},
+  {code:'C', lb:'09:45',start:[9,45], end:[10,30]},
+  {code:'D', lb:'10:30',start:[10,30],end:[11,15]},
+  {code:'E', lb:'11:30',start:[11,30],end:[12,15]},
+  {code:'E1',lb:'12:15',start:[12,15],end:[13,0]},
+  {code:'F', lb:'14:00',start:[14,0], end:[14,45]},
+  {code:'G', lb:'14:45',start:[14,45],end:[15,30]},
+  {code:'H', lb:'15:45',start:[15,45],end:[16,30]},
+  {code:'I', lb:'16:30',start:[16,30],end:[17,15]},
+  {code:'J', lb:'17:30',start:[17,30],end:[18,15]},
+  {code:'K', lb:'18:15',start:[18,15],end:[19,0]},
+  {code:'L', lb:'19:15',start:[19,15],end:[20,0]},
+  {code:'M', lb:'20:00',start:[20,0], end:[20,45]},
+  {code:'N', lb:'21:00',start:[21,0], end:[21,45]},
+  {code:'P', lb:'21:45',start:[21,45],end:[22,30]},
+];
+
+const DAYS_PT  = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const ALL_DAYS = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
+const FLOORS   = [
+  {lb:'1º Andar',t:r=>r[0]==='1'},
+  {lb:'2º Andar',t:r=>r[0]==='2'},
+  {lb:'3º Andar',t:r=>r[0]==='3'}
+];
+const BCOLS = ['#1c2b4a','#1e6b40','#4e338a','#a02828','#96520a','#1a6878','#3a6e1a','#823060'];
+
+let DATA=[], ROOMS=[], activeDays=new Set(ALL_DAYS), activeRoomsFlt=new Set(), activePersFlt=new Set(), clockTick=null;
+
+// Variáveis da Busca de Disciplinas
+let allDisciplinas = [];
+let debounceDisc = null;
+
+// ── TEMA ESCURO (PADRÃO) ──
+const btnTheme = document.getElementById('btnTheme');
+let isDark = localStorage.getItem('theme') !== 'light'; 
+
+if (isDark) { 
+  document.body.classList.add('dark-mode'); 
+  btnTheme.textContent = '☀️ Claro'; 
+} else {
+  btnTheme.textContent = '🌙 Escuro';
+}
+
+btnTheme.addEventListener('click', () => {
+  isDark = !isDark;
+  document.body.classList.toggle('dark-mode', isDark);
+  btnTheme.textContent = isDark ? '☀️ Claro' : '🌙 Escuro';
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+});
+
+
+// ── LÓGICA DE DISCIPLINAS ──
+function normalizeDisc(s) {
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+
+function escapeHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function highlightText(text, query) {
+  if (!query) return escapeHtml(text);
+  const norm = normalizeDisc(text);
+  const normQ = normalizeDisc(query);
+  const idx = norm.indexOf(normQ);
+  if (idx < 0) return escapeHtml(text);
+  return escapeHtml(text.slice(0, idx)) +
+    `<mark class="highlight">${escapeHtml(text.slice(idx, idx + query.length))}</mark>` +
+    escapeHtml(text.slice(idx + query.length));
+}
+
+function cleanCurso(c) {
+  const m = c.match(/^[A-Z0-9\s\-–]+\s+(.+)$/);
+  if (m) return m[1].replace(/\s*\*+\s*$/, '').trim();
+  return c.replace(/\s*\*+\s*$/, '').trim().slice(0, 80);
+}
+
+function cleanEscola(e) {
+  return e.replace(/,\s*$/, '').replace(/:\s*$/, '').trim();
+}
+
+function processarDisciplinas() {
+  // ATENÇÃO: Altere sua variável no arquivo dados.js para: const csvDisciplinas = `...`;
+  if (typeof csvDisciplinas === 'undefined') {
+    document.getElementById('discStats').innerHTML = "Arquivo de disciplinas (csvDisciplinas) não carregado.";
+    return;
+  }
+  
+  const linhas = csvDisciplinas.split(/\r?\n/);
+  allDisciplinas = [];
+  
+  for (let i = 1; i < linhas.length; i++) {
+    let linha = linhas[i].trim();
+    if (!linha) continue;
+
+    const colunas = linha.split(';');
+    if (colunas.length >= 4) {
+      allDisciplinas.push({
+        Escola: colunas[0].trim(),
+        Curso: colunas[1].trim(),
+        Codcred: colunas[2].trim(),
+        Disciplina: colunas[3].trim()
+      });
+    }
+  }
+  
+  const escolas = [...new Set(allDisciplinas.map(d => cleanEscola(d.Escola)))].sort();
+  const sel = document.getElementById('escolaFilter');
+  sel.innerHTML = '<option value="">Todas as escolas</option>';
+  
+  escolas.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e;
+    opt.textContent = e.replace('ESCOLA DE ','').replace('Escola de ','');
+    sel.appendChild(opt);
+  });
+  
+  renderDisciplinas('', '');
+}
+
+function renderDisciplinas(query, escola) {
+  const normQ = normalizeDisc(query.trim());
+  const filtered = allDisciplinas.filter(d => {
+    const matchQuery = !normQ || normalizeDisc(d.Disciplina).includes(normQ) || normalizeDisc(d.Codcred).includes(normQ);
+    const matchEscola = !escola || cleanEscola(d.Escola) === escola;
+    return matchQuery && matchEscola;
+  });
+
+  const stats = document.getElementById('discStats');
+  const grid = document.getElementById('discGrid');
+
+  if (!normQ && !escola) {
+    stats.innerHTML = `<strong>${allDisciplinas.length.toLocaleString('pt-BR')}</strong> disciplinas carregadas. Mostrando as primeiras 200.`;
+  } else {
+    stats.innerHTML = `<strong>${filtered.length.toLocaleString('pt-BR')}</strong> resultado(s) ` +
+      (filtered.length > 200 ? '(mostrando os primeiros 200)' : '');
+  }
+
+  const shown = filtered.slice(0, 200);
+
+  if (shown.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><p>Nenhuma disciplina encontrada para "<strong>${escapeHtml(query)}</strong>".</p></div>`;
+    return;
+  }
+
+  grid.innerHTML = shown.map(d => {
+    return `<div class="disc-card">
+      <div class="disc-top">
+        <span class="disc-name">${highlightText(d.Disciplina, query.trim())}</span>
+        <span class="disc-code">${highlightText(d.Codcred, query.trim())}</span>
+      </div>
+      <div class="disc-meta">
+        <span class="disc-tag tag-escola">${escapeHtml(cleanEscola(d.Escola))}</span>
+        <span class="disc-tag tag-curso">${escapeHtml(cleanCurso(d.Curso))}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function onDiscInput() {
+  clearTimeout(debounceDisc);
+  debounceDisc = setTimeout(() => {
+    renderDisciplinas(document.getElementById('discSearchInput').value, document.getElementById('escolaFilter').value);
+  }, 180);
+}
+
+document.getElementById('discSearchInput').addEventListener('input', onDiscInput);
+document.getElementById('escolaFilter').addEventListener('change', onDiscInput);
+
+
+// ── CSV PARSE AGENDA ──
+function parseCSV(txt){
+  const lines=txt.trim().split(/\r?\n/);
+  const hdr=lines[0].split(',').map(h=>h.trim().replace(/^\uFEFF/,''));
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const parts=[];let c='',q=false;
+    for(const ch of lines[i]){
+      if(ch==='"'){q=!q;}
+      else if(ch===','&&!q){parts.push(c);c='';}
+      else c+=ch;
+    }
+    parts.push(c);
+    if(parts.every(p=>!p.trim()))continue;
+    const o={};hdr.forEach((h,i)=>o[h]=(parts[i]||'').trim());
+    if(o['Sala'])rows.push(o);
+  }
+  return rows;
+}
+
+// ── LOAD MÓDULOS ──
+async function initLoad(){
+  setSplash('loading','Processando dados…');
+  
+  if (typeof csvData !== 'undefined') {
+    setTimeout(() => {
+        processData(csvData, 'agenda.js (Leitura local automática)');
+        processarDisciplinas(); // Inicia a aba de disciplinas
+    }, 300);
+  } else {
+    setSplash('error',
+      'Não foi possível encontrar o arquivo "agenda.js".\n\n'+
+      'Verifique se o arquivo está na pasta correta.');
+    document.getElementById('spActions').style.display='flex';
+  }
+}
+
+function setSplash(state,msg){
+  document.getElementById('spMsg').innerHTML=msg.replace(/\n/g,'<br>');
+  document.getElementById('spSpinner').style.display=state==='loading'?'block':'none';
+  document.getElementById('spErr').style.display='none';
+}
+
+function showSplashErr(msg){
+  const el=document.getElementById('spErr');
+  el.textContent=msg;el.style.display='block';
+}
+
+function processData(txt,src){
+  const parsed=parseCSV(txt);
+  if(!parsed.length){
+    setSplash('error','Arquivo vazio ou sem dados válidos.');
+    showSplashErr('Nenhuma linha de dados encontrada no CSV.');
+    document.getElementById('spActions').style.display='flex';
+    return;
+  }
+  const req=['Sala','Dia','Periodo','Nome_da_Aula'];
+  const miss=req.filter(c=>!Object.keys(parsed[0]).includes(c));
+  if(miss.length){
+    setSplash('error','Formato de arquivo inválido.');
+    showSplashErr('Colunas ausentes: '+miss.join(', '));
+    document.getElementById('spActions').style.display='flex';
+    return;
+  }
+  DATA=parsed;
+  ROOMS=[...new Set(DATA.map(r=>r.Sala))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  initApp(src);
+}
+
+function initApp(src){
+  document.getElementById('splash').style.display='none';
+  document.getElementById('app').style.display='flex';
+  document.getElementById('tbFile').textContent=src;
+
+  const codes=[...new Set(DATA.map(d=>pc(d.Periodo)))];
+  const ord=PERIODS.map(p=>p.code).filter(c=>codes.includes(c));
+  ['mapPer','nxPer'].forEach(id=>{
+    const s=document.getElementById(id);
+    s.innerHTML='<option value="auto">⟳ Automático</option>';
+    ord.forEach(c=>{
+      const p=PERIODS.find(x=>x.code===c);
+      const o=document.createElement('option');
+      o.value=c;o.textContent=`${c} · ${p.lb}`;s.appendChild(o);
+    });
+  });
+
+  activeRoomsFlt = new Set(ROOMS);
+  activePersFlt = new Set(PERIODS.map(p=>p.code));
+
+  buildFilters();
+  setupSearch();
+  renderMap();
+  renderHeat();
+  if(clockTick) clearInterval(clockTick);
+  tick();
+  clockTick=setInterval(tick,1000);
+}
+
+function pc(s){return(s||'').split(' ')[0];}
+function isInt(n){return/^interno/i.test((n||'').trim());}
+function clockPer(){
+  const now=new Date(),m=now.getHours()*60+now.getMinutes();
+  for(const p of PERIODS){const s=p.start[0]*60+p.start[1],e=p.end[0]*60+p.end[1];if(m>=s&&m<e)return p.code;}
+  return null;
+}
+function gsp(id){const v=document.getElementById(id)?.value;return(!v||v==='auto')?clockPer():v;}
+function today(){return DAYS_PT[new Date().getDay()];}
+function pad(n){return String(n).padStart(2,'0');}
+
+function updateGlobalOcc() {
+  const per = clockPer();
+  const td = today();
+  const occBar = document.getElementById('tbOccBar');
+  const occVal = document.getElementById('tbOccVal');
+  
+  if (!per || ROOMS.length === 0) {
+    occBar.style.width = '0%';
+    occBar.style.background = 'var(--muted)';
+    occVal.textContent = '0%';
+    return;
+  }
+  
+  const busyCount = DATA.filter(d => d.Dia === td && pc(d.Periodo) === per).map(d => d.Sala);
+  const uniqueBusy = new Set(busyCount).size;
+  const perc = Math.round((uniqueBusy / ROOMS.length) * 100);
+  
+  occBar.style.width = perc + '%';
+  occVal.textContent = perc + '%';
+  
+  if (perc < 50) occBar.style.background = '#3aaa65';
+  else if (perc < 85) occBar.style.background = '#d09030';
+  else occBar.style.background = '#d05050';
+}
+
+function tick(){
+  const n=new Date(),h=n.getHours(),m=n.getMinutes(),s=n.getSeconds();
+  document.getElementById('tbClock').textContent=`${pad(h)}:${pad(m)}:${pad(s)}`;
+  document.getElementById('tbDate').textContent=n.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'}).toUpperCase();
+  const per=clockPer();
+  const pb=document.getElementById('tbPer');
+  pb.textContent=per?`PERÍODO ${per}`:'FORA DE HORÁRIO';
+  pb.className='tb-per '+(per?'on':'off');
+  ['mapDay','tlDay','nxDay','freeDay'].forEach(id=>{
+    const sel=document.getElementById(id);
+    if(sel&&!sel._u){const td=today();if([...sel.options].some(o=>o.value===td))sel.value=td;}
+  });
+  ['mapPer','nxPer'].forEach(id=>{
+    const sel=document.getElementById(id);
+    if(sel&&sel.options[0]?.value==='auto')
+      sel.options[0].textContent=per?`⟳ Automático — Período ${per}`:'⟳ Automático — Fora de horário';
+  });
+  
+  updateGlobalOcc();
+  renderMap();
+}
+
+function renderMap(){
+  const day=document.getElementById('mapDay').value;
+  const per=gsp('mapPer');
+  const busy=new Set(per?DATA.filter(d=>d.Dia===day&&pc(d.Periodo)===per).map(d=>d.Sala):[]);
+  document.getElementById('cFree').textContent=per?ROOMS.length-busy.size:'—';
+  document.getElementById('cBusy').textContent=per?busy.size:'—';
+  let html='';
+  FLOORS.forEach(fl=>{
+    const rms=ROOMS.filter(fl.t);if(!rms.length)return;
+    html+=`<div class="fl-sec"><div class="fl-lbl">${fl.lb}</div><div class="room-grid">`;
+    rms.forEach(r=>{
+      const ib=busy.has(r);
+      const en=per?DATA.filter(d=>d.Sala===r&&d.Dia===day&&pc(d.Periodo)===per):[];
+      const nm=en.length?en[0].Nome_da_Aula:'';
+      const sh=nm.length>42?nm.substring(0,42)+'…':nm;
+      const esc=nm.replace(/'/g,"&#39;").replace(/"/g,'&quot;');
+      html+=`<div class="room-tile ${ib?'busy':'free'}"
+        onmouseenter="showTT(event,'${r}','${day}','${per||'—'}','${esc}')"
+        onmouseleave="hideTT()">
+        <div class="rt-n">${r}</div>
+        <div class="rt-s">${ib?'Ocupada':'Livre'}</div>
+        <div class="rt-c">${ib?sh:'—'}</div>
+      </div>`;
+    });
+    html+='</div></div>';
+  });
+  if(!html) html='<div class="empty-st">Nenhuma sala encontrada.</div>';
+  document.getElementById('floorMap').innerHTML=html;
+}
+
+function renderTl(){
+  const day=document.getElementById('tlDay').value;
+  const per=clockPer();
+  let html=`<div class="tl-hdr"><div class="tl-rl">Sala</div><div class="tl-pers">`;
+  PERIODS.forEach(p=>{
+    html+=`<div class="tl-phd${per===p.code?' now':''}">${p.code}<br>${p.lb}</div>`;
+  });
+  html+=`</div></div>`;
+  ROOMS.forEach(r=>{
+    const rm={};
+    DATA.filter(d=>d.Sala===r&&d.Dia===day).forEach(d=>{rm[pc(d.Periodo)]=d.Nome_da_Aula;});
+    const hasNow=per&&rm[per];
+    html+=`<div class="tl-row"><div class="tl-rn${hasNow?' on':''}">${r}</div><div class="tl-cells">`;
+    PERIODS.forEach(p=>{
+      const nm=rm[p.code]||'';
+      const isNow=per===p.code;
+      const cls=nm?(isInt(nm)?'int':'reg'):'empty';
+      const sh=nm.length>10?nm.substring(0,10)+'…':nm;
+      const esc=nm.replace(/'/g,"&#39;").replace(/"/g,'&quot;');
+      html+=`<div class="tl-cell ${cls}${isNow?' now':''}"
+        onmouseenter="showTT(event,'${r}','${day}','${p.code}','${esc}')"
+        onmouseleave="hideTT()">${nm?sh:''}</div>`;
+    });
+    html+=`</div></div>`;
+  });
+  document.getElementById('tlInner').innerHTML=html;
+}
+
+function renderNext() {
+  const day = document.getElementById('nxDay').value;
+  const per = gsp('nxPer');
+  const pi = PERIODS.findIndex(p => p.code === per);
+  let html = '';
+
+  const groupClasses = (classes) => {
+    if (!classes.length) return [];
+    classes.sort((a, b) => {
+      if (a.Sala !== b.Sala) return a.Sala.localeCompare(b.Sala, undefined, { numeric: true });
+      return PERIODS.findIndex(p => p.code === pc(a.Periodo)) - PERIODS.findIndex(p => p.code === pc(b.Periodo));
+    });
+
+    const grouped = [];
+    classes.forEach(item => {
+      const pCode = pc(item.Periodo);
+      const pIdx = PERIODS.findIndex(p => p.code === pCode);
+      const last = grouped.find(g => 
+        g.Sala === item.Sala && 
+        g.Nome_da_Aula === item.Nome_da_Aula && 
+        g.pIdxs[g.pIdxs.length - 1] === pIdx - 1
+      );
+
+      if (last) {
+        last.periodos.push(pCode);
+        last.pIdxs.push(pIdx);
+      } else {
+        grouped.push({ ...item, periodos: [pCode], pIdxs: [pIdx] });
+      }
+    });
+    return grouped;
+  };
+
+  if (per && pi >= 0) {
+    const curRaw = DATA.filter(d => d.Dia === day && pc(d.Periodo) === per);
+    html += `<div><div class="nx-hd">Em andamento — <em>Período ${per}</em> (${PERIODS[pi].lb})</div>`;
+    
+    if (!curRaw.length) {
+      html += `<div style="font-size:12px;color:var(--muted);padding:10px 0">Nenhuma aula neste período.</div>`;
+    } else {
+      html += `<div class="nx-cards">`;
+      curRaw.forEach((d, i) => {
+        const p = PERIODS[pi];
+        html += `<div class="nx-card cur" style="animation-delay:${i * 18}ms">
+          <div class="nct"><div class="ncr">${d.Sala}</div><div class="ncp">${per}</div></div>
+          <div class="ncc">${d.Nome_da_Aula}</div>
+          <div class="nct2">Término às ${pad(p.end[0])}:${pad(p.end[1])}</div>
+          <div class="ncb ${isInt(d.Nome_da_Aula) ? 'int' : 'reg'}">${isInt(d.Nome_da_Aula) ? 'Interno' : 'Regular'}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    const nextPeriods = PERIODS.slice(pi + 1, pi + 4).map(p => p.code);
+    const nxtRaw = DATA.filter(d => d.Dia === day && nextPeriods.includes(pc(d.Periodo)));
+    const nxtGrouped = groupClasses(nxtRaw);
+
+    if (nxtGrouped.length) {
+      const immediateNext = nxtGrouped.filter(g => g.pIdxs[0] === pi + 1);
+      if (immediateNext.length) {
+        html += `<div><div class="nx-hd">A seguir — <em>Iniciando no próximo período</em></div><div class="nx-cards">`;
+        immediateNext.forEach((d, i) => {
+          const firstP = PERIODS[d.pIdxs[0]];
+          const perStr = d.periodos.join('');
+          html += `<div class="nx-card nxt" style="animation-delay:${i * 18}ms">
+            <div class="nct"><div class="ncr">${d.Sala}</div><div class="ncp">${perStr}</div></div>
+            <div class="ncc">${d.Nome_da_Aula}</div>
+            <div class="nct2">Início às ${firstP.lb} (${d.periodos.length} períodos)</div>
+            <div class="ncb ${isInt(d.Nome_da_Aula) ? 'int' : 'reg'}">${isInt(d.Nome_da_Aula) ? 'Interno' : 'Regular'}</div>
+          </div>`;
+        });
+        html += `</div></div>`;
+      }
+    }
+  } else {
+    const allRaw = DATA.filter(d => d.Dia === day);
+    const allGrouped = groupClasses(allRaw);
+    
+    html = `<div><div class="nx-hd">Todas as aulas — ${day}</div><div class="nx-cards">`;
+    allGrouped.forEach((d, i) => {
+      const po = PERIODS[d.pIdxs[0]];
+      const perStr = d.periodos.join('');
+      html += `<div class="nx-card nxt" style="animation-delay:${i * 10}ms">
+        <div class="nct"><div class="ncr">${d.Sala}</div><div class="ncp">${perStr}</div></div>
+        <div class="ncc">${d.Nome_da_Aula}</div>
+        <div class="nct2">Início às ${po ? po.lb : '—'}</div>
+        <div class="ncb ${isInt(d.Nome_da_Aula) ? 'int' : 'reg'}">${isInt(d.Nome_da_Aula) ? 'Interno' : 'Regular'}</div>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+  document.getElementById('nxBody').innerHTML = html || '<div class="empty-st">Nenhuma aula encontrada.</div>';
+}
+
+function renderHeat(){
+  const days=[...activeDays].filter(d=>ALL_DAYS.includes(d)).sort((a,b)=>ALL_DAYS.indexOf(a)-ALL_DAYS.indexOf(b));
+  const activeRooms = ROOMS.filter(r => activeRoomsFlt.has(r));
+
+  if(!days.length || !activeRooms.length || !activePersFlt.size){
+    document.getElementById('heatTbl').innerHTML='<tbody><tr><td class="empty-st" colspan="10">Nenhum dado com os filtros aplicados.</td></tr></tbody>';
+    document.getElementById('barsEl').innerHTML='';
+    return;
+  }
+  
+  const cnt={};
+  DATA.filter(d=>{
+    if(!days.includes(d.Dia)) return false;
+    if(!activeRoomsFlt.has(d.Sala)) return false;
+    if(!activePersFlt.has(pc(d.Periodo))) return false;
+    return true;
+  }).forEach(d=>{
+    const k=`${d.Sala}|${d.Dia}`;cnt[k]=(cnt[k]||0)+1;
+  });
+
+  const mx=Math.max(1,...Object.values(cnt));
+  const hc=v=>{if(!v)return'h0';const r=v/mx;if(r<.12)return'h1';if(r<.28)return'h2';if(r<.50)return'h3';if(r<.75)return'h4';return'h5';};
+
+  let th=`<thead><tr><th>Sala</th>`;
+  days.forEach(d=>th+=`<th>${d.substring(0,3).toUpperCase()}</th>`);
+  th+=`<th>Total</th></tr></thead><tbody>`;
+  
+  activeRooms.forEach(r=>{
+    const tot=days.reduce((s,d)=>s+(cnt[`${r}|${d}`]||0),0);
+    th+=`<tr><td class="ht-room">${r}</td>`;
+    days.forEach(d=>{
+      const v=cnt[`${r}|${d}`]||0;
+      th+=`<td><div class="ht-cell ${hc(v)}" title="${r} · ${d}: ${v} aula(s)">${v||'·'}</div></td>`;
+    });
+    th+=`<td class="ht-tot">${tot}</td></tr>`;
+  });
+  th+=`</tbody>`;
+  document.getElementById('heatTbl').innerHTML=th;
+
+  const rT=activeRooms.map(r=>({r,v:days.reduce((s,d)=>s+(cnt[`${r}|${d}`]||0),0)})).sort((a,b)=>b.v-a.v).slice(0,8);
+  const dT=days.map(d=>({d,v:activeRooms.reduce((s,r)=>s+(cnt[`${r}|${d}`]||0),0)})).sort((a,b)=>b.v-a.v);
+  const mR=Math.max(1,...rT.map(x=>x.v)), mD=Math.max(1,...dT.map(x=>x.v));
+
+  let bh=`<div class="bar-card"><div class="bar-ttl">Salas com maior utilização</div>`;
+  rT.forEach(({r,v},i)=>{
+    const p=Math.round(v/mR*100)||0;
+    bh+=`<div class="bar-row"><div class="bar-lbl">${r}</div><div class="bar-trk"><div class="bar-fil" style="width:${p}%;background:${BCOLS[i%BCOLS.length]}">${v}</div></div></div>`;
+  });
+  bh+=`</div><div class="bar-card"><div class="bar-ttl">Distribuição por dia da semana</div>`;
+  dT.forEach(({d,v},i)=>{
+    const p=Math.round(v/mD*100)||0;
+    bh+=`<div class="bar-row"><div class="bar-lbl" style="width:44px">${d.substring(0,3).toUpperCase()}</div><div class="bar-trk"><div class="bar-fil" style="width:${p}%;background:${BCOLS[i%BCOLS.length]}">${v}</div></div></div>`;
+  });
+  bh+=`</div>`;
+  document.getElementById('barsEl').innerHTML=bh;
+}
+
+function renderFreeRooms() {
+  const day = document.getElementById('freeDay').value;
+  
+  const usedPeriodCodes = new Set(DATA.map(d => pc(d.Periodo)));
+  const activePeriods = PERIODS.filter(p => usedPeriodCodes.has(p.code));
+  
+  let html = '';
+
+  ROOMS.forEach(r => {
+    if (!r) return;
+    
+    const occupiedPeriods = DATA
+      .filter(d => d.Sala === r && d.Dia === day)
+      .map(d => pc(d.Periodo));
+    
+    const freePeriods = activePeriods.filter(p => !occupiedPeriods.includes(p.code));
+
+    if (!freePeriods.length) return;
+
+    let slotsHtml = '';
+    freePeriods.forEach(function(f) {
+      slotsHtml += '<div class="free-slot">';
+      slotsHtml += '<div class="free-slot-code">' + f.code + '</div>';
+      slotsHtml += '<div>' + f.lb + ' até ' + pad(f.end[0]) + ':' + pad(f.end[1]) + '</div>';
+      slotsHtml += '</div>';
+    });
+
+    html += '<div class="free-card">';
+    html += '<div class="free-summary">';
+    html += '<div class="free-room-title">Sala ' + r + '</div>';
+    html += '<div class="free-badge">' + freePeriods.length + ' períodos livres</div>';
+    html += '</div>';
+    html += '<div class="free-content">' + slotsHtml + '</div>';
+    html += '</div>';
+  });
+
+  document.getElementById('freeBody').innerHTML = html 
+    || '<div class="empty-st">Nenhuma sala livre encontrada para este dia.</div>';
+}
+
+function buildFilters(){
+  const dEl=document.getElementById('dayFlt');
+  dEl.innerHTML='';
+  ALL_DAYS.forEach(d=>{
+    const lb=document.createElement('label');
+    lb.className='dcb'+(activeDays.has(d)?' on':'');
+    lb.innerHTML=`<input type="checkbox" ${activeDays.has(d)?'checked':''}>${d.substring(0,3).toUpperCase()}`;
+    lb.querySelector('input').addEventListener('change',function(){
+      if(this.checked)activeDays.add(d);else activeDays.delete(d);
+      lb.classList.toggle('on',this.checked);
+      renderHeat();
+    });
+    dEl.appendChild(lb);
+  });
+
+  const rEl=document.getElementById('roomFlt');
+  rEl.innerHTML='';
+  ROOMS.forEach(r=>{
+    const lb=document.createElement('label');
+    lb.className='dcb'+(activeRoomsFlt.has(r)?' on':'');
+    lb.innerHTML=`<input type="checkbox" ${activeRoomsFlt.has(r)?'checked':''}>${r}`;
+    lb.querySelector('input').addEventListener('change',function(){
+      if(this.checked)activeRoomsFlt.add(r);else activeRoomsFlt.delete(r);
+      lb.classList.toggle('on',this.checked);
+      renderHeat();
+    });
+    rEl.appendChild(lb);
+  });
+
+  const pEl=document.getElementById('perFlt');
+  pEl.innerHTML='';
+  PERIODS.forEach(p=>{
+    const code = p.code;
+    const lb=document.createElement('label');
+    lb.className='dcb'+(activePersFlt.has(code)?' on':'');
+    lb.innerHTML=`<input type="checkbox" ${activePersFlt.has(code)?'checked':''}>${code}`;
+    lb.querySelector('input').addEventListener('change',function(){
+      if(this.checked)activePersFlt.add(code);else activePersFlt.delete(code);
+      lb.classList.toggle('on',this.checked);
+      renderHeat();
+    });
+    pEl.appendChild(lb);
+  });
+}
+
+window.toggleRooms = function(selectAll) {
+  activeRoomsFlt = selectAll ? new Set(ROOMS) : new Set();
+  document.querySelectorAll('#roomFlt input').forEach(inp => {
+    inp.checked = selectAll;
+    inp.parentElement.classList.toggle('on', selectAll);
+  });
+  renderHeat();
+};
+
+window.togglePers = function(selectAll) {
+  activePersFlt = selectAll ? new Set(PERIODS.map(p=>p.code)) : new Set();
+  document.querySelectorAll('#perFlt input').forEach(inp => {
+    inp.checked = selectAll;
+    inp.parentElement.classList.toggle('on', selectAll);
+  });
+  renderHeat();
+};
+
+function setupSearch(){
+  const inp=document.getElementById('searchInput');
+  const clr=document.getElementById('searchClear');
+  const drop=document.getElementById('searchDrop');
+
+  inp.addEventListener('input',()=>{
+    const q=inp.value.trim().toLowerCase();
+    clr.classList.toggle('vis',q.length>0);
+    if(!q){drop.classList.remove('vis');drop.innerHTML='';return;}
+    
+    let matches=DATA.filter(d=>
+      d.Nome_da_Aula.toLowerCase().includes(q)||
+      d.Sala.toLowerCase().includes(q)||
+      pc(d.Periodo).toLowerCase()===q||
+      (d.Codigo_Disciplina||'').toLowerCase().includes(q)
+    );
+    
+    if(!matches.length){
+      drop.innerHTML='<div class="sd-empty">Nenhum resultado encontrado.</div>';
+      drop.classList.add('vis');return;
+    }
+
+    matches.sort((a,b) => {
+      if(a.Sala !== b.Sala) return a.Sala.localeCompare(b.Sala,undefined,{numeric:true});
+      if(a.Nome_da_Aula !== b.Nome_da_Aula) return a.Nome_da_Aula.localeCompare(b.Nome_da_Aula);
+      if(a.Dia !== b.Dia) return ALL_DAYS.indexOf(a.Dia) - ALL_DAYS.indexOf(b.Dia);
+      return PERIODS.findIndex(p=>p.code===pc(a.Periodo)) - PERIODS.findIndex(p=>p.code===pc(b.Periodo));
+    });
+
+    const grouped = [];
+    let cur = null;
+
+    for (const m of matches) {
+      const pCode = pc(m.Periodo);
+      const pIdx = PERIODS.findIndex(p=>p.code===pCode);
+      
+      if (!cur) {
+        cur = { ...m, periodos: [pCode], pIdxs: [pIdx], startLb: PERIODS[pIdx]?.lb };
+      } else {
+        if (cur.Sala === m.Sala && cur.Nome_da_Aula === m.Nome_da_Aula && cur.Dia === m.Dia && pIdx === cur.pIdxs[cur.pIdxs.length - 1] + 1) {
+          cur.periodos.push(pCode);
+          cur.pIdxs.push(pIdx);
+        } else {
+          grouped.push(cur);
+          cur = { ...m, periodos: [pCode], pIdxs: [pIdx], startLb: PERIODS[pIdx]?.lb };
+        }
+      }
+    }
+    if (cur) grouped.push(cur);
+
+    const seen = new Set();
+    const dedup = grouped.filter(g => {
+      const k = `${g.Sala}|${g.Nome_da_Aula}|${g.Dia}|${g.periodos.join('')}`;
+      if(seen.has(k)) return false; seen.add(k); return true;
+    }).slice(0,20);
+
+    drop.innerHTML=dedup.map(g=>{
+      const perStr = g.periodos.join('');
+      return `
+      <div class="sd-item" onclick="goToRoom('${g.Sala}','${g.Dia}')">
+        <div class="sd-room">${g.Sala}</div>
+        <div class="sd-info">
+          <div class="sd-class">${g.Nome_da_Aula}</div>
+          <div class="sd-meta">${g.Dia} · Per. ${perStr} · ${g.startLb||''}</div>
+        </div>
+      </div>`
+    }).join('')+(grouped.length>20?`<div class="sd-footer">${grouped.length} resultados — exibindo os primeiros 20</div>`:'');
+    
+    drop.classList.add('vis');
+  });
+
+  clr.addEventListener('click',()=>{inp.value='';clr.classList.remove('vis');drop.classList.remove('vis');inp.focus();});
+  document.addEventListener('click',e=>{
+    if(!inp.closest('.search-bar').contains(e.target)) drop.classList.remove('vis');
+  });
+  inp.addEventListener('keydown',e=>{if(e.key==='Escape'){drop.classList.remove('vis');inp.blur();}});
+}
+
+function goToRoom(sala,dia){
+  document.getElementById('searchDrop').classList.remove('vis');
+  activateView('tl');
+  const sel=document.getElementById('tlDay');
+  sel.value=dia;sel._u=true;
+  renderTl();
+}
+
+function printReport() {
+  const days = [...activeDays].filter(d=>ALL_DAYS.includes(d)).sort((a,b)=>ALL_DAYS.indexOf(a)-ALL_DAYS.indexOf(b));
+  const activeRooms = ROOMS.filter(r => activeRoomsFlt.has(r));
+  const numPeriods = activePersFlt.size;
+  const totalSlotsPerRoom = days.length * numPeriods;
+
+  if (!days.length || !activeRooms.length || !numPeriods) {
+    alert('Selecione ao menos um dia, uma sala e um período para gerar o relatório.');
+    return;
+  }
+
+  const cnt={};
+  let totalOccupied = 0;
+
+  DATA.forEach(d=>{
+    const p = pc(d.Periodo);
+    if(!days.includes(d.Dia)) return;
+    if(!activeRoomsFlt.has(d.Sala)) return;
+    if(!activePersFlt.has(p)) return;
+
+    const k=`${d.Sala}|${d.Dia}`;
+    cnt[k]=(cnt[k]||0)+1;
+    totalOccupied++;
+  });
+
+  const totalPossibleAll = activeRooms.length * totalSlotsPerRoom;
+  const percGeral = totalPossibleAll > 0 ? ((totalOccupied / totalPossibleAll) * 100) : 0;
+
+  let html = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+    <meta charset="utf-8">
+    <title>Relatório de Ocupação Semanal</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+      body { font-family: 'IBM Plex Sans', sans-serif; color: #1a1714; padding: 40px; }
+      h1 { font-size: 24px; border-bottom: 2px solid #1c2b4a; padding-bottom: 10px; margin-bottom: 20px; color: #1c2b4a; }
+      .filters { font-size: 14px; margin-bottom: 30px; color: #42403a; background: #f7f5f2; padding: 15px; border-radius: 8px; border: 1px solid #d8d3cb; }
+      .filters b { color: #1c2b4a; }
+      .section-title { font-size: 18px; margin-top: 40px; margin-bottom: 20px; font-weight: 600; color: #1c2b4a; }
+      .overall-container { display: flex; align-items: center; gap: 40px; margin-bottom: 40px; }
+      .pie { width: 120px; height: 120px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1); }
+      .pie.large { width: 180px; height: 180px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+      .card { border: 1px solid #d8d3cb; padding: 20px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; page-break-inside: avoid; }
+      .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1c2b4a; }
+      .leg-item { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 14px; }
+      .dot { width: 14px; height: 14px; border-radius: 3px; }
+      .dot.occ { background: #1c2b4a; }
+      .dot.free { background: #e8e4de; border: 1px solid #c4bdb3; }
+    </style>
+    </head>
+    <body>
+    <h1>PUCRS · Relatório Visual de Ocupação</h1>
+    <div class="filters">
+        <div style="margin-bottom: 5px;"><b>Dias analisados:</b> ${days.join(', ')}</div>
+        <div style="margin-bottom: 5px;"><b>Períodos analisados:</b> ${[...activePersFlt].join(', ')}</div>
+        <div style="margin-bottom: 5px;"><b>Salas selecionadas:</b> ${activeRooms.length}</div>
+        <div style="margin-top: 15px; font-size: 12px; color: #7a756c;">Base de cálculo: Total de ${numPeriods} período(s) configurado(s) por dia, resultando em ${totalSlotsPerRoom} aulas possíveis por sala na semana.</div>
+    </div>
+    <div class="section-title">Ocupação Geral (Todas as Salas Filtradas)</div>
+    <div class="overall-container">
+        <div class="pie large" style="background: conic-gradient(#1c2b4a ${percGeral}%, #e8e4de 0);"></div>
+        <div>
+            <div class="leg-item"><div class="dot occ"></div> <b>Períodos Utilizados:</b> ${totalOccupied} aulas (${percGeral.toFixed(1)}%)</div>
+            <div class="leg-item"><div class="dot free"></div> <b>Períodos Livres:</b> ${totalPossibleAll - totalOccupied} aulas (${(100 - percGeral).toFixed(1)}%)</div>
+            <div style="margin-top: 15px; font-size: 15px; color: #7a756c;"><b>Total possível:</b> ${totalPossibleAll} períodos</div>
+        </div>
+    </div>
+    <div class="section-title">Ocupação Individual por Sala</div>
+    <div class="grid">
+  `;
+
+  activeRooms.forEach(r => {
+      const tot = days.reduce((s,d) => s + (cnt[`${r}|${d}`]||0), 0);
+      const perc = totalSlotsPerRoom > 0 ? (tot / totalSlotsPerRoom) * 100 : 0;
+      const free = totalSlotsPerRoom - tot;
+      html += `
+        <div class="card">
+            <h3>Sala ${r}</h3>
+            <div class="pie" style="background: conic-gradient(#1c2b4a ${perc}%, #e8e4de 0);"></div>
+            <div style="margin-top: 20px; width: 100%;">
+                <div class="leg-item"><div class="dot occ"></div> Utilizado: <b>${tot}</b></div>
+                <div class="leg-item"><div class="dot free"></div> Livre: <b>${free}</b></div>
+                <div style="text-align: center; margin-top: 12px; font-weight: 600; font-size: 16px; color: #1c2b4a;">${perc.toFixed(1)}% Ocupada</div>
+            </div>
+        </div>
+      `;
+  });
+
+  html += `</div></body></html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 600);
+}
+
+function exportOcup(){
+  const days=[...activeDays].filter(d=>ALL_DAYS.includes(d)).sort((a,b)=>ALL_DAYS.indexOf(a)-ALL_DAYS.indexOf(b));
+  const activeRooms = ROOMS.filter(r => activeRoomsFlt.has(r));
+  const numPeriods = activePersFlt.size; 
+  const totalSlotsPerRoom = days.length * numPeriods;
+
+  const cnt={};
+  let totalOccupied = 0;
+
+  DATA.forEach(d=>{
+    const p = pc(d.Periodo);
+    if(!days.includes(d.Dia)) return;
+    if(!activeRoomsFlt.has(d.Sala)) return;
+    if(!activePersFlt.has(p)) return;
+
+    const k=`${d.Sala}|${d.Dia}`;
+    cnt[k]=(cnt[k]||0)+1;
+    totalOccupied++;
+  });
+
+  let csv='Sala,'+days.join(',')+',Total Ocupado,Total Possível,% Ocupação\n';
+  activeRooms.forEach(r=>{
+    const tot=days.reduce((s,d)=>s+(cnt[`${r}|${d}`]||0),0);
+    const perc = totalSlotsPerRoom > 0 ? ((tot / totalSlotsPerRoom) * 100).toFixed(1) : 0;
+    csv+=r+','+days.map(d=>cnt[`${r}|${d}`]||0).join(',')+','+tot+','+totalSlotsPerRoom+','+perc+'%\n';
+  });
+
+  const totalPossibleAll = activeRooms.length * totalSlotsPerRoom;
+  const percGeral = totalPossibleAll > 0 ? ((totalOccupied / totalPossibleAll) * 100).toFixed(1) : 0;
+
+  csv += '\nRESUMO GERAL DOS FILTROS\n';
+  csv += `Salas Analisadas,${activeRooms.length}\n`;
+  csv += `Dias Analisados,${days.length}\n`;
+  csv += `Períodos Analisados,${numPeriods}\n`;
+  csv += `Aulas Ocupadas (Total),${totalOccupied}\n`;
+  csv += `Aulas Possíveis (Total),${totalPossibleAll}\n`;
+  csv += `% de Ocupação Geral,${percGeral}%\n`;
+
+  dl(csv,'ocupacao_semanal_detalhada.csv');
+}
+
+function exportGrade(){
+  const days=[...activeDays].filter(d=>ALL_DAYS.includes(d)).sort((a,b)=>ALL_DAYS.indexOf(a)-ALL_DAYS.indexOf(b));
+  const rows=DATA.filter(d=>days.includes(d.Dia));
+  let csv='Sala,Dia,Periodo,Horario,Disciplina,Tipo\n';
+  rows.sort((a,b)=>{
+    if(a.Sala!==b.Sala)return a.Sala.localeCompare(b.Sala,undefined,{numeric:true});
+    if(a.Dia!==b.Dia)return ALL_DAYS.indexOf(a.Dia)-ALL_DAYS.indexOf(b.Dia);
+    return PERIODS.findIndex(p=>p.code===pc(a.Periodo))-PERIODS.findIndex(p=>p.code===pc(b.Periodo));
+  }).forEach(d=>{
+    const po=PERIODS.find(p=>p.code===pc(d.Periodo));
+    const hr=po?`${po.lb}-${pad(po.end[0])}:${pad(po.end[1])}`:pc(d.Periodo);
+    csv+=`"${d.Sala}","${d.Dia}","${pc(d.Periodo)}","${hr}","${d.Nome_da_Aula}","${isInt(d.Nome_da_Aula)?'Interno':'Regular'}"\n`;
+  });
+  dl(csv,'grade_completa.csv');
+}
+
+function dl(content,name){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8'}));
+  a.download=name;a.click();
+}
+
+const ttEl=document.getElementById('tt');
+function showTT(e,sala,dia,per,nm){
+  ttEl.innerHTML=`<div class="tt-room">Sala ${sala}</div>
+    <div class="tt-row"><b>${dia}</b> · Período <b>${per}</b></div>
+    <div class="tt-row">${nm||'<span style="color:var(--green)">Livre</span>'}</div>`;
+  ttEl.style.display='block';mv(e);
+}
+function mv(e) {
+  const gapX = 14;
+  const gapY = 8;
+  const w = ttEl.offsetWidth;
+  const h = ttEl.offsetHeight;
+  const screenW = window.innerWidth;
+  const screenH = window.innerHeight;
+  let posX = e.clientX + gapX;
+  let posY = e.clientY - gapY;
+  
+  if (posX + w > screenW) { posX = e.clientX - w - gapX; }
+  if (posY + h > screenH) { posY = screenH - h - gapY; }
+  
+  posX = Math.max(posX, gapX);
+  posY = Math.max(posY, gapY);
+  
+  ttEl.style.left = posX + 'px';
+  ttEl.style.top = posY + 'px';
+}
+function hideTT(){ttEl.style.display='none';}
+document.addEventListener('mousemove',e=>{if(ttEl.style.display==='block')mv(e);});
+
+function activateView(name){
+  document.querySelectorAll('.navtab').forEach(t=>t.classList.toggle('active',t.dataset.v===name));
+  document.querySelectorAll('.view').forEach(v=>{
+    const id='v'+name.charAt(0).toUpperCase()+name.slice(1);
+    v.classList.toggle('active',v.id===id);
+  });
+  if(name==='tl') renderTl();
+  if(name==='next') renderNext();
+  if(name==='heat') renderHeat();
+  if(name==='map') renderMap();
+  if(name==='free') renderFreeRooms();
+  if(name==='disc') {
+      // Pequeno timeout para garantir renderização fluida se a aba for aberta logo
+      setTimeout(() => renderDisciplinas(document.getElementById('discSearchInput').value, document.getElementById('escolaFilter').value), 50);
+  }
+}
+
+document.querySelectorAll('.navtab').forEach(t=>t.addEventListener('click',()=>activateView(t.dataset.v)));
+
+['mapDay','mapPer'].forEach(id=>document.getElementById(id).addEventListener('change',function(){this._u=true;renderMap();}));
+document.getElementById('tlDay').addEventListener('change',function(){this._u=true;renderTl();});
+['nxDay','nxPer'].forEach(id=>document.getElementById(id).addEventListener('change',function(){this._u=true;renderNext();}));
+document.getElementById('freeDay').addEventListener('change',function(){this._u=true;renderFreeRooms();});
+
+document.getElementById('btnPrintReport').addEventListener('click', printReport);
+document.getElementById('btnExpOcup').addEventListener('click', exportOcup);
+document.getElementById('btnExpFull').addEventListener('click', exportGrade);
+
+document.getElementById('btnReload').addEventListener('click',()=>{
+  document.getElementById('spActions').style.display='none';
+  document.getElementById('spErr').style.display='none';
+  document.getElementById('splash').style.display='flex';
+  document.getElementById('app').style.display='none';
+  document.getElementById('spSpinner').style.display='block';
+  document.getElementById('spMsg').textContent='Recarregando…';
+  if(clockTick){clearInterval(clockTick);clockTick=null;}
+  setTimeout(initLoad,200);
+});
+
+document.getElementById('btnRetry').addEventListener('click',()=>{
+  document.getElementById('spActions').style.display='none';
+  initLoad();
+});
+
+const dz=document.getElementById('dropZone');
+const fi=document.getElementById('fileInput');
+dz.addEventListener('click',()=>fi.click());
+fi.addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>processData(ev.target.result,f.name);
+  r.readAsText(f,'UTF-8');
+});
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{
+  e.preventDefault();dz.classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(!f||!f.name.endsWith('.csv')){showSplashErr('Solte um arquivo .csv válido.');return;}
+  const r=new FileReader();
+  r.onload=ev=>processData(ev.target.result,f.name);
+  r.readAsText(f,'UTF-8');
+});
+
+initLoad();
+</script>
+</body>
+</html>

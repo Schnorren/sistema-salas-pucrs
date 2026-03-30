@@ -1,50 +1,50 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '../supabase'
-import UploadCSV from './UploadCSV'
+import { useState } from 'react';
+import Topbar from './Topbar';
+import UploadCSV from './UploadCSV';
 
 export default function Dashboard({ session }) {
-  const [grade, setGrade] = useState([])
-
-  const fetchGrade = () => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade`)
-      .then(res => res.json())
-      .then(data => setGrade(data))
-      .catch(err => console.error("Erro ao buscar grade:", err))
-  }
-
-  // Busca inicial
-  useEffect(() => {
-    fetchGrade()
-  }, [])
+  // Estado para controlar qual aba está aberta
+  const [activeTab, setActiveTab] = useState('map');
 
   return (
-    <div style={{ padding: '30px', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #c8973a', paddingBottom: '16px', marginBottom: '24px' }}>
-        <div>
-          <h2 style={{ color: '#1c2b4a', margin: 0 }}>PUCRS · Secretaria Prédio 15</h2>
-          <small style={{ color: '#7a756c' }}>Logado como: {session.user.email}</small>
-        </div>
-        <button onClick={() => supabase.auth.signOut()} style={{ background: '#a02828', color: '#fff', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-          Sair
-        </button>
-      </header>
+    <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       
-      {/* Componente que acabamos de criar */}
-      <UploadCSV onUploadSuccess={fetchGrade} />
+      {/* Cabeçalho */}
+      <Topbar session={session} />
 
-      <h3 style={{ marginTop: '30px', color: '#1c2b4a' }}>Prévia do Banco de Dados ({grade.length} registros)</h3>
-      
-      {grade.length === 0 ? <p style={{ color: '#7a756c' }}>O banco de dados está vazio. Faça o upload do CSV acima.</p> : (
-        <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #d8d3cb', borderRadius: '8px', padding: '16px' }}>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {grade.slice(0, 50).map((aula) => ( // Mostrando só os 50 primeiros para não travar a tela
-              <li key={aula.id} style={{ padding: '8px 0', borderBottom: '1px solid #e8e4de', fontSize: '14px' }}>
-                <strong style={{ color: '#1e6b40' }}>Sala {aula.salas?.numero}</strong> | {aula.dia_semana} ({aula.periodo}): {aula.nome_aula}
-              </li>
-            ))}
-          </ul>
+      {/* Barra de Busca (Estática por enquanto) */}
+      <div className="search-bar">
+        <div className="search-input-wrap">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <input className="search-input" placeholder="Buscar por código, disciplina ou sala…" autoComplete="off" />
         </div>
-      )}
+      </div>
+
+      {/* Navegação das Abas */}
+      <div className="navtabs">
+        <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
+        <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>Linha do Tempo</div>
+        <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
+        <div className={`navtab ${activeTab === 'free' ? 'active' : ''}`} onClick={() => setActiveTab('free')}>Salas Livres</div>
+        <div className={`navtab ${activeTab === 'upload' ? 'active' : ''}`} onClick={() => setActiveTab('upload')}>Atualizar Grade</div>
+      </div>
+
+      {/* Conteúdo Dinâmico das Abas */}
+      <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+        {activeTab === 'map' && <div style={{ padding: 20 }}>Visão da Planta (Em construção...)</div>}
+        {activeTab === 'tl' && <div style={{ padding: 20 }}>Visão da Linha do Tempo (Em construção...)</div>}
+        {activeTab === 'next' && <div style={{ padding: 20 }}>Próximas Aulas (Em construção...)</div>}
+        {activeTab === 'free' && <div style={{ padding: 20 }}>Salas Livres (Em construção...)</div>}
+        {activeTab === 'upload' && (
+          <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+            <UploadCSV onUploadSuccess={() => console.log('Upload feito!')} />
+          </div>
+        )}
+      </div>
+
     </div>
-  )
-}
+  );
+} 
