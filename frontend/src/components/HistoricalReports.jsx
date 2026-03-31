@@ -3,7 +3,7 @@ import { generateComparisonPDF } from '../utils/reportGenerator';
 
 const COLORS = ['#1c2b4a', '#c8973a', '#4e338a', '#1e6b40', '#a02828', '#1a6878', '#823060'];
 const DAYS_OPTIONS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const PERIOD_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P']; // <-- Constante que garante o E1
+const PERIOD_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
 
 // ============================================================================
 // ESCUDO DE ERROS (ERROR BOUNDARY)
@@ -36,7 +36,6 @@ export default function HistoricalReports() {
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
 
-    // Filtros agora usam as constantes para não haver divergência
     const [activeDays, setActiveDays] = useState(new Set(DAYS_OPTIONS));
     const [activePers, setActivePers] = useState(new Set(PERIOD_OPTIONS));
     const [activeRooms, setActiveRooms] = useState(new Set());
@@ -68,48 +67,7 @@ export default function HistoricalReports() {
     }, [allAvailableRooms]);
 
     /**
-     * Parser Sênior de CSV (Linear)
-     */
-    const parseCSV = (text) => {
-        const lines = text.trim().split(/\r?\n/);
-        if (lines.length < 2) return [];
-
-        const headerLine = lines[0];
-        const separator = headerLine.includes(';') ? ';' : ',';
-
-        const splitSafe = (line) => {
-            const result = [];
-            let current = '';
-            let inQuotes = false;
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                if (char === '"') inQuotes = !inQuotes;
-                else if (char === separator && !inQuotes) {
-                    result.push(current);
-                    current = '';
-                } else current += char;
-            }
-            result.push(current);
-            return result.map(v => v.trim().replace(/^["']|["']$/g, ''));
-        };
-
-        const header = splitSafe(headerLine).map(h => h.replace(/^\uFEFF/, ''));
-
-        return lines.slice(1).map(line => {
-            const values = splitSafe(line);
-            const obj = {};
-            header.forEach((key, i) => {
-                if (key) {
-                    const normalizedKey = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
-                    obj[normalizedKey] = values[i] || '';
-                }
-            });
-            return obj;
-        }).filter(item => (item.Sala || item.sala) && (item.Dia || item.dia));
-    };
-
-    /**
-     * Handler de Upload
+     * Handler de Upload Moderno (Envia PDF Multipart para API Node -> Microserviço Python)
      */
     const handleFiles = async (e) => {
         const target = e.target;
@@ -122,28 +80,24 @@ export default function HistoricalReports() {
         try {
             const processados = await Promise.all(files.map(async (file) => {
                 try {
-                    const text = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = (event) => resolve(event.target.result);
-                        reader.onerror = (error) => reject(error);
-                        reader.readAsText(file, 'UTF-8');
-                    });
+                    const formData = new FormData();
+                    formData.append('arquivo', file);
 
-                    const jsonParsed = parseCSV(text);
-                    if (jsonParsed.length === 0) throw new Error(`Sem dados estruturados em ${file.name}`);
-
-                    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/analisar-externo`, {
+                    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/analisar-externo-pdf`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(jsonParsed)
+                        body: formData // Envia o arquivo cru, sem client-side parsing
                     });
 
-                    if (!res.ok) throw new Error(`O servidor rejeitou ${file.name}`);
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.error || `O servidor rejeitou ${file.name}`);
+                    }
 
                     const stats = await res.json();
+                    
                     return {
                         id: Math.random().toString(36).substr(2, 9),
-                        nome: file.name.replace('.csv', ''),
+                        nome: file.name.replace('.pdf', ''),
                         data: stats
                     };
                 } catch (err) {
@@ -154,7 +108,7 @@ export default function HistoricalReports() {
 
             const validos = processados.filter(Boolean);
             if (validos.length > 0) setSemanas(prev => [...prev, ...validos]);
-            else setErrorMsg("Nenhum arquivo pôde ser processado. Verifique a formatação do CSV.");
+            else setErrorMsg("Nenhum arquivo pôde ser processado. Verifique a formatação do PDF da PUCRS.");
             
         } catch (err) {
             setErrorMsg("Falha crítica ao ler arquivos: " + err.message);
@@ -236,7 +190,6 @@ export default function HistoricalReports() {
                             <div>
                                 <label className="ms-lbl">Janela de Períodos</label>
                                 <div className="day-flt" style={{ maxWidth: '400px', overflowX: 'auto' }}>
-                                    {/* CORREÇÃO: Utilizando a constante que contém o E1 */}
                                     {PERIOD_OPTIONS.map(p => (
                                         <label key={p} className={`dcb ${activePers.has(p) ? 'on' : ''}`}>
                                             <input type="checkbox" checked={activePers.has(p)} onChange={() => toggleFilter(activePers, p, setActivePers)} />
@@ -269,9 +222,9 @@ export default function HistoricalReports() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <input type="file" multiple accept=".csv" id="histUpload" hidden onChange={handleFiles} />
+                        <input type="file" multiple accept=".pdf" id="histUpload" hidden onChange={handleFiles} />
                         <button className="btn-primary" onClick={() => document.getElementById('histUpload').click()}>
-                            {loading ? "Processando..." : "+ Adicionar Semanas (.csv)"}
+                            {loading ? "Processando..." : "+ Adicionar Semanas (.pdf)"}
                         </button>
                         <button
                             className="exp-btn purple"
@@ -298,7 +251,7 @@ export default function HistoricalReports() {
                         <div className="empty-st">
                             <div style={{ fontSize: '40px', marginBottom: '10px' }}>📈</div>
                             Nenhuma semana carregada.<br />
-                            Suba os arquivos da secretaria para montar o dashboard de BI.
+                            Suba os arquivos PDF da secretaria para montar o dashboard de BI.
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
