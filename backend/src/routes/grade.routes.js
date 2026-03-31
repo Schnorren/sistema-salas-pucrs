@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const multer = require('multer'); // <-- FALTAVA ESSA LINHA!
+const multer = require('multer');
 const gradeController = require('../controllers/grade.controller');
 
 const router = Router();
