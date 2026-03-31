@@ -1,14 +1,18 @@
 {
-  "name": "backend",
+  "name": "backend-salas-predio15",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-"scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
+  "description": "API para o Sistema de Salas do Prédio 15",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "api",
+    "salas",
+    "gestao"
+  ],
+  "author": "Lucas Ramon",
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.101.0",

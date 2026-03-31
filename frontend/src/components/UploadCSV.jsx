@@ -31,14 +31,14 @@ export default function UploadCSV({ onUploadSuccess }) {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const parsedData = parseCSV(ev.target.result);
-      
+
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/importar`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/importar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(parsedData)
         });
-        
+
         if (response.ok) {
           alert('✅ Grade atualizada com sucesso no banco de dados!');
           onUploadSuccess(); // Aciona a recarga do Dashboard
@@ -55,18 +55,18 @@ export default function UploadCSV({ onUploadSuccess }) {
   };
 
   return (
-    <div style={{ 
-      marginTop: '20px', padding: '24px', background: '#f7f5f2', 
-      border: '2px dashed #1c2b4a', borderRadius: '8px', textAlign: 'center' 
+    <div style={{
+      marginTop: '20px', padding: '24px', background: '#f7f5f2',
+      border: '2px dashed #1c2b4a', borderRadius: '8px', textAlign: 'center'
     }}>
       <h3 style={{ color: '#1c2b4a', marginBottom: '8px' }}>Atualizar Grade de Salas</h3>
       <p style={{ fontSize: '14px', color: '#7a756c', marginBottom: '16px' }}>
         Selecione o arquivo <b>.csv</b> exportado do sistema acadêmico.
       </p>
-      <input 
-        type="file" 
-        accept=".csv" 
-        onChange={handleFileUpload} 
+      <input
+        type="file"
+        accept=".csv"
+        onChange={handleFileUpload}
         disabled={loading}
         style={{ cursor: 'pointer' }}
       />

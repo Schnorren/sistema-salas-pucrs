@@ -1,0 +1,218 @@
+const gradeRepository = require('../repositories/grade.repository');
+const {
+    PERIODS,
+    getCurrentPeriod,
+    groupConsecutiveClasses,
+    extractPeriodCode,
+    isInternalClass
+} = require('../utils/timeHelpers');
+
+class GradeService {
+
+    async obterProximasAulas(diaSolicitado, periodoReferencia) {
+        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
+        const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
+
+        const response = {
+            dia: diaSolicitado,
+            periodoAtualReferencia: activePer,
+            labelPeriodoAtual: '',
+            emAndamento: [],
+            proximas: [],
+            todasAsAulas: []
+        };
+
+        if (activePer) {
+            const pi = PERIODS.findIndex(p => p.code === activePer);
+            if (pi >= 0) {
+                response.labelPeriodoAtual = PERIODS[pi].lb;
+                const aulasAgora = aulasDoDia.filter(d => extractPeriodCode(d.periodo) === activePer);
+                response.emAndamento = groupConsecutiveClasses(aulasAgora);
+
+                const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 4).map(p => p.code);
+                const aulasFuturas = aulasDoDia.filter(d => nextPeriodCodes.includes(extractPeriodCode(d.periodo)));
+                const aulasFuturasAgrupadas = groupConsecutiveClasses(aulasFuturas);
+
+                response.proximas = aulasFuturasAgrupadas.filter(g =>
+                    g.periodosFormatados.startsWith(PERIODS[pi + 1]?.code)
+                );
+            }
+        } else {
+            response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
+        }
+        return response;
+    }
+
+    async obterSalasLivres(diaSolicitado) {
+        const salasDb = await gradeRepository.buscarSalas();
+        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
+
+        const usedPeriodCodes = new Set(aulasDoDia.map(d => extractPeriodCode(d.periodo)));
+        const activePeriods = PERIODS.filter(p => usedPeriodCodes.has(p.code));
+
+        const salasLivres = salasDb.map(salaRef => {
+            const occupiedPeriods = aulasDoDia
+                .filter(d => d.salas?.numero === salaRef.numero)
+                .map(d => extractPeriodCode(d.periodo));
+
+            const freePeriods = activePeriods.filter(p => !occupiedPeriods.includes(p.code));
+
+            return {
+                sala: salaRef.numero,
+                quantidadeLivres: freePeriods.length,
+                periodos: freePeriods.map(f => ({
+                    code: f.code,
+                    label: f.lb,
+                    fim: `${String(f.end[0]).padStart(2, '0')}:${String(f.end[1]).padStart(2, '0')}`
+                }))
+            };
+        });
+
+        return salasLivres.filter(s => s.quantidadeLivres > 0);
+    }
+
+    async obterTimeline(diaSolicitado) {
+        const salasDb = await gradeRepository.buscarSalas();
+        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
+        const periodoAtual = getCurrentPeriod();
+
+        const timeline = salasDb.map(salaRef => {
+            const slots = PERIODS.map(p => {
+                const aulaNoSlot = aulasDoDia.find(d =>
+                    d.salas?.numero === salaRef.numero &&
+                    extractPeriodCode(d.periodo) === p.code
+                );
+
+                return {
+                    periodo: p.code,
+                    horario: p.lb,
+                    isAgora: p.code === periodoAtual,
+                    ocupado: !!aulaNoSlot,
+                    nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
+                    tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
+                };
+            });
+
+            return {
+                sala: salaRef.numero,
+                temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
+                slots
+            };
+        });
+
+        return {
+            dia: diaSolicitado,
+            periodosCabecalho: PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual })),
+            timeline
+        };
+    }
+
+    async obterStatusPlanta(diaSolicitado, periodoReferencia) {
+        const salasDb = await gradeRepository.buscarSalas();
+        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
+
+        const aulasNoMomento = gradeBruta.filter(d =>
+            d.dia_semana === diaSolicitado &&
+            extractPeriodCode(d.periodo) === activePer
+        );
+
+        const salasProcessadas = salasDb.map(s => {
+            const aula = aulasNoMomento.find(a => a.salas?.numero === s.numero);
+            return {
+                numero: s.numero,
+                andar: s.andar || s.numero[0],
+                ocupada: !!aula,
+                disciplina: aula ? (aula.nome_aula || aula.disciplinas?.nome) : null,
+                tipo: aula ? (aula.tipo || (isInternalClass(aula.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
+            };
+        });
+
+        const andares = ['1', '2', '3'].map(num => ({
+            label: `${num}º Andar`,
+            salas: salasProcessadas.filter(s => String(s.andar) === num)
+        }));
+
+        return {
+            periodoAtual: activePer,
+            contagem: {
+                total: salasProcessadas.length,
+                livres: salasProcessadas.filter(s => !s.ocupada).length,
+                ocupadas: salasProcessadas.filter(s => s.ocupada).length
+            },
+            andares: andares.filter(a => a.salas.length > 0)
+        };
+    }
+
+    async realizarBuscaGlobal(q) {
+        if (!q || q.length < 2) return [];
+        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const termo = q.toLowerCase();
+
+        const filtrados = gradeBruta.filter(d =>
+            d.nome_aula?.toLowerCase().includes(termo) ||
+            d.salas?.numero?.toLowerCase().includes(termo) ||
+            d.disciplinas?.codigo?.toLowerCase().includes(termo) ||
+            d.periodo?.toLowerCase().includes(termo)
+        );
+
+        const agrupados = groupConsecutiveClasses(filtrados);
+        const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+        return agrupados.sort((a, b) => {
+            if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
+            return a.sala.localeCompare(b.sala, undefined, { numeric: true });
+        }).slice(0, 15);
+    }
+
+    _processarOcupacaoSemanl(gradeBruta, salasLista) {
+        const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+        const ocupacaoBase = gradeBruta.map(g => ({
+            sala: g.salas?.numero || g.Sala || g.sala,
+            dia: g.dia_semana || g.Dia || g.dia,
+            periodo: extractPeriodCode(g.periodo || g.Periodo)
+        })).filter(item => item.sala && item.dia);
+
+        return {
+            diasDisponiveis: diasSemana,
+            salasDisponiveis: salasLista,
+            periodosDisponiveis: PERIODS.map(p => p.code),
+            ocupacaoBase
+        };
+    }
+
+    async obterOcupacaoSemanal() {
+        const salasDb = await gradeRepository.buscarSalas();
+        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const listaNumeros = salasDb.map(s => s.numero);
+        return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
+    }
+
+    async analisarGradeExterna(dadosCsv) {
+        const salasUnicas = [...new Set(dadosCsv.map(d => d.Sala || d.sala))].filter(s => s).sort();
+        return this._processarOcupacaoSemanl(dadosCsv, salasUnicas);
+    }
+
+    async processarUploadCsv(dadosCsv) {
+        const salasUnicas = [...new Set(dadosCsv.map(d => d.Sala))].filter(s => s).map(s => ({ numero: s }));
+        const salasDb = await gradeRepository.upsertSalas(salasUnicas);
+        const salaMap = {};
+        salasDb.forEach(s => { salaMap[s.numero] = s.id });
+
+        const gradeInsert = dadosCsv.map(d => ({
+            sala_id: salaMap[d.Sala] || null,
+            dia_semana: d.Dia,
+            periodo: extractPeriodCode(d.Periodo),
+            nome_aula: d.Nome_da_Aula,
+            tipo: isInternalClass(d.Nome_da_Aula) ? 'Interno' : 'Regular'
+        })).filter(d => d.sala_id !== null);
+
+        await gradeRepository.limparGrade();
+        await gradeRepository.inserirGradeLote(gradeInsert);
+        return { sucesso: true, registrosInseridos: gradeInsert.length };
+    }
+}
+
+module.exports = new GradeService();
