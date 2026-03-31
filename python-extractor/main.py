@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 import pdfplumber
 import re
 import io
+import gc  # Adicionado para forçar a limpeza de memória
 
 app = FastAPI(title="Extrator PDF PUCRS")
 
@@ -41,7 +42,14 @@ def clean_class_name(raw):
     return text
 
 def extract_page(page):
-    tables = page.extract_tables()
+    # OTIMIZAÇÃO: Filtra apenas linhas retas, gastando menos CPU
+    table_settings = {
+        "vertical_strategy": "lines", 
+        "horizontal_strategy": "lines",
+        "snap_tolerance": 3,
+    }
+    
+    tables = page.extract_tables(table_settings=table_settings)
     if not tables: return []
 
     main_table = max(tables, key=lambda t: len(t))
@@ -102,7 +110,7 @@ async def root():
     return {
         "status": "online", 
         "service": "Extrator PDF PUCRS",
-        "docs": "/docs" # FastAPI gera documentação automática aqui!
+        "docs": "/docs" 
     }
     
 @app.post("/extract-pdf")
@@ -111,7 +119,6 @@ async def extract_pdf_endpoint(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="O arquivo deve ser um PDF")
     
     try:
-        # Lê o PDF direto da memória (sem salvar no disco)
         file_bytes = await file.read()
         all_records = []
         
@@ -119,6 +126,12 @@ async def extract_pdf_endpoint(file: UploadFile = File(...)):
             for page in pdf.pages:
                 records = extract_page(page)
                 all_records.extend(records)
+                
+                # OTIMIZAÇÃO CRÍTICA: Descarrega a página processada da memória RAM
+                page.flush_cache()
+                
+        # OTIMIZAÇÃO CRÍTICA: Força a liberação da memória residual
+        gc.collect()
                 
         if not all_records:
             raise HTTPException(status_code=422, detail="Nenhum dado encontrado no PDF. Verifique o formato.")
