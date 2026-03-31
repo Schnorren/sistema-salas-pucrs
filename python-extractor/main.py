@@ -97,6 +97,14 @@ def extract_page(page):
                 })
     return records
 
+@app.get("/")
+async def root():
+    return {
+        "status": "online", 
+        "service": "Extrator PDF PUCRS",
+        "docs": "/docs" # FastAPI gera documentação automática aqui!
+    }
+    
 @app.post("/extract-pdf")
 async def extract_pdf_endpoint(file: UploadFile = File(...)):
     if not file.filename.endswith('.pdf'):
