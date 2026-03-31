@@ -1,7 +1,5 @@
 const gradeRepository = require('../repositories/grade.repository');
 
-const pdfParse = require('pdf-parse'); // Adicione no topo do arquivo
-
 
 const {
     PERIODS,
@@ -26,6 +24,7 @@ class GradeService {
             proximas: [],
             todasAsAulas: []
         };
+
 
         if (activePer) {
             const pi = PERIODS.findIndex(p => p.code === activePer);
@@ -75,6 +74,39 @@ class GradeService {
         });
 
         return salasLivres.filter(s => s.quantidadeLivres > 0);
+    }
+
+    async analisarGradeExternaPdf(buffer) {
+        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000/extract-pdf';
+        
+        const formData = new FormData();
+        const blob = new Blob([buffer], { type: 'application/pdf' });
+        formData.append('file', blob, 'historico.pdf');
+
+        try {
+            console.log(`📊 [Histórico] Enviando PDF para o Microserviço Python...`);
+            
+            const response = await fetch(PYTHON_API_URL, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Falha no microserviço de extração.');
+            }
+
+            const jsonResponse = await response.json();
+            const records = jsonResponse.records;
+
+            console.log(`✅ [Histórico] Python devolveu ${records.length} registros para análise.`);
+            
+            return await this.analisarGradeExterna(records);
+
+        } catch (error) {
+            console.error("Erro na análise histórica via Python:", error);
+            throw new Error("Erro na análise do PDF: " + error.message);
+        }
     }
 
     async obterTimeline(diaSolicitado) {
@@ -200,79 +232,41 @@ class GradeService {
     }
 
     async processarUploadPdf(buffer) {
-        // Extrai o texto cru do PDF
-        const data = await pdfParse(buffer);
-        const lines = data.text.split('\n');
+        // A URL do seu novo microserviço Python (usaremos a porta 8000 localmente)
+        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000/extract-pdf';
 
-        const records = [];
-        let currentRoom = '';
-        let dayHeaders = [];
+        // Constrói o formulário multipart para enviar o arquivo pela rede
+        const formData = new FormData();
+        const blob = new Blob([buffer], { type: 'application/pdf' });
+        formData.append('file', blob, 'agenda.pdf');
 
-        // Regexes equivalentes ao seu Python
-        const ROOM_RE = /C\.15\.A\.(\d{2})\.(\d{2})/;
-        const PERIOD_RE = /^(\d{2}:\d{2})([A-Z][0-9]?)/;
+        try {
+            console.log(`📡 Enviando PDF para o Microserviço Python em: ${PYTHON_API_URL}`);
 
-        const PERIOD_LABEL = {
-            'A': 'A (08:00-08:45)', 'B': 'B (08:45-09:30)', 'C': 'C (09:45-10:30)',
-            'D': 'D (10:30-11:15)', 'E': 'E (11:30-12:15)', 'E1': 'E1 (12:15-13:00)',
-            'F': 'F (14:00-14:45)', 'G': 'G (14:45-15:30)', 'H': 'H (15:45-16:30)',
-            'I': 'I (16:30-17:15)', 'J': 'J (17:30-18:15)', 'K': 'K (18:15-19:00)',
-            'L': 'L (19:15-20:00)', 'M': 'M (20:00-20:45)', 'N': 'N (21:00-21:45)',
-            'P': 'P (21:45-22:30)'
-        };
+            const response = await fetch(PYTHON_API_URL, {
+                method: 'POST',
+                body: formData
+            });
 
-        for (let line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            // Busca código da sala
-            const roomMatch = trimmed.match(ROOM_RE);
-            if (roomMatch) {
-                const andar = parseInt(roomMatch[1], 10) || 0;
-                currentRoom = `${andar}${roomMatch[2]}`;
-                continue;
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Falha no microserviço de extração.');
             }
 
-            // Busca cabeçalho de dias
-            if (trimmed.includes('Segunda') && trimmed.includes('Terça')) {
-                dayHeaders = trimmed.split(/\s+/).filter(d =>
-                    ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].includes(d)
-                );
-                continue;
-            }
+            const jsonResponse = await response.json();
+            const records = jsonResponse.records;
 
-            // Busca a linha de aulas (que inicia com horário)
-            const periodMatch = trimmed.match(PERIOD_RE);
-            if (periodMatch && currentRoom && dayHeaders.length > 0) {
-                const periodLetter = periodMatch[2];
-                const periodLabel = PERIOD_LABEL[periodLetter] || periodLetter;
+            console.log(`✅ Sucesso! O Python devolveu ${records.length} aulas formatadas.`);
 
-                // Remove o bloco de horário da linha e divide o resto usando 2 ou mais espaços
-                // Isso emula o comportamento de colunas de uma tabela
-                let classesStr = trimmed.replace(PERIOD_RE, '').trim();
-                const classes = classesStr.split(/\s{2,}/);
+            // Reutiliza a sua função original para salvar no Supabase
+            return await this.processarUploadCsv(records);
 
-                classes.forEach((className, idx) => {
-                    // Ignora traços, vazios, ou lixo do rodapé (ex: Data: 12/03/2026)
-                    if (className && className !== '-' && !className.includes('Data:') && idx < dayHeaders.length) {
-                        records.push({
-                            Sala: currentRoom,
-                            Dia: dayHeaders[idx],
-                            Periodo: periodLabel,
-                            Nome_da_Aula: className.trim()
-                        });
-                    }
-                });
-            }
+        } catch (error) {
+            console.error("Erro na comunicação com o Microserviço Python:", error);
+            throw new Error("Erro na extração do PDF: " + error.message);
         }
-
-        if (records.length === 0) {
-            throw new Error("Não foi possível extrair dados válidos deste PDF. Verifique o padrão do arquivo.");
-        }
-
-        // Reutiliza a lógica de inserção no banco de dados que já existe!
-        return await this.processarUploadCsv(records);
     }
+
 
     async processarUploadCsv(dadosCsv) {
         const salasUnicas = [...new Set(dadosCsv.map(d => d.Sala))].filter(s => s).map(s => ({ numero: s }));

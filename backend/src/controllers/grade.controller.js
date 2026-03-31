@@ -98,6 +98,22 @@ class GradeController {
         }
     }
 
+    async analisarPdfExterno(req, res) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ error: 'Nenhum arquivo PDF enviado para análise.' });
+            }
+
+            // Manda o buffer para o Service processar
+            const resultado = await gradeService.analisarGradeExternaPdf(req.file.buffer);
+            return res.status(200).json(resultado);
+
+        } catch (error) {
+            console.error('[Controller Error - analisarPdfExterno]:', error);
+            return res.status(500).json({ error: error.message || 'Erro interno ao analisar PDF histórico.' });
+        }
+    }
+
     async importarGrade(req, res) {
         try {
             const dadosCsv = req.body;

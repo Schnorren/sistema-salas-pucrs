@@ -22,5 +22,5 @@ router.get('/ocupacao', gradeController.getOcupacao.bind(gradeController));
 router.get('/planta', gradeController.getPlanta.bind(gradeController));
 router.get('/busca', gradeController.buscar.bind(gradeController));
 router.post('/analisar-externo', gradeController.postAnaliseExterna.bind(gradeController));
-
+router.post('/analisar-externo-pdf', upload.single('arquivo'), gradeController.analisarPdfExterno.bind(gradeController));
 module.exports = router;
