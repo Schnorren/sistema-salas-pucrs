@@ -72,7 +72,7 @@ export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
             </div>`;
         }).join('')}
       </div>
-      <div class="footer-note">PUCRS - Escola Politécnica - Prédio 15</div>
+      <div class="footer-note">Prédio 15</div>
     </body>
     </html>
   `;
