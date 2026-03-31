@@ -75,39 +75,74 @@ class GradeService {
     }
 
     /**
-     * Análise de relatórios históricos via PDF usando Microserviço Python
+     * Motor interno de Retry (Tentativas Automáticas)
+     * Esconde o tempo de "boot" do Python (Cold Start) do usuário final.
+     */
+    async _enviarParaPythonComRetry(buffer, filename) {
+        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
+        const MAX_RETRIES = 6;     // Tentará até 6 vezes
+        const RETRY_DELAY = 5000;  // Espera 5 segundos entre as tentativas (Total de 30s de tolerância)
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            // O FormData precisa ser recriado a cada tentativa porque o fetch consome o stream
+            const formData = new FormData();
+            const blob = new Blob([buffer], { type: 'application/pdf' });
+            formData.append('file', blob, filename);
+
+            try {
+                if (attempt > 1) console.log(`⏳ Aguardando Python acordar (Tentativa ${attempt}/${MAX_RETRIES})...`);
+                
+                const response = await fetch(PYTHON_API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const contentType = response.headers.get("content-type");
+
+                // Se a resposta for JSON, o Python acordou e processou com sucesso!
+                if (response.ok && contentType && contentType.includes("application/json")) {
+                    return await response.json();
+                }
+
+                // Se não for JSON (é o Render enviando HTML) e não for a última tentativa, joga para o Catch
+                if (attempt < MAX_RETRIES) {
+                    throw new Error("Serviço em cold start");
+                }
+
+                // Se esgotaram as tentativas
+                throw new Error("O servidor Python demorou muito para iniciar. Tente novamente mais tarde.");
+
+            } catch (error) {
+                // Se ainda temos tentativas e o erro foi de conexão/cold start
+                if (attempt < MAX_RETRIES) {
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                    continue; // Pula para a próxima tentativa do loop
+                }
+                
+                // Se falhou na última tentativa, aborta de vez
+                console.error("❌ Falha final na comunicação com o Python:", error.message);
+                throw error;
+            }
+        }
+    }
+
+    /**
+     * Análise de relatórios históricos via PDF
      */
     async analisarGradeExternaPdf(buffer) {
-        // Fallback atualizado para o seu novo link de produção do Render
-        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://api-salas-pucrs.onrender.com/extract-pdf';
-
-        const formData = new FormData();
-        const blob = new Blob([buffer], { type: 'application/pdf' });
-        formData.append('file', blob, 'historico.pdf');
-
         try {
-            console.log(`📊 [Histórico] Enviando para: ${PYTHON_API_URL}`);
-
-            const response = await fetch(PYTHON_API_URL, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Falha no microserviço de extração.');
-            }
-
-            const jsonResponse = await response.json();
+            console.log(`📊 [Histórico] Iniciando extração de PDF silenciosa...`);
+            
+            // Usa o novo motor de retry
+            const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
             const records = jsonResponse.records;
 
             console.log(`✅ [Histórico] Python processou ${records.length} registros.`);
-
             return await this.analisarGradeExterna(records);
 
         } catch (error) {
             console.error("Erro na análise histórica via Python:", error);
-            throw new Error("Erro na análise do PDF: " + error.message);
+            throw new Error("Erro na extração do arquivo: " + error.message);
         }
     }
 
@@ -234,34 +269,21 @@ class GradeService {
     }
 
     /**
-     * Upload principal de grade via PDF (Microserviço Python)
+     * Upload principal de grade via PDF
      */
     async processarUploadPdf(buffer) {
-        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
-
-        const formData = new FormData();
-        const blob = new Blob([buffer], { type: 'application/pdf' });
-        formData.append('file', blob, 'agenda.pdf');
-
         try {
-            const response = await fetch(PYTHON_API_URL, {
-                method: 'POST',
-                body: formData
-            });
+            console.log(`📡 [Grade] Iniciando extração de PDF silenciosa...`);
+            
+            // Usa o novo motor de retry
+            const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
 
-            // Se o Render devolver HTML (porque está acordando), a gente avisa o usuário
-            const contentType = response.headers.get("content-type");
-            if (!contentType || !contentType.includes("application/json")) {
-                console.error("⚠️ O Microserviço ainda está acordando ou retornou erro não-JSON.");
-                throw new Error("O extrator Python está iniciando. Por favor, aguarde 30 segundos e tente novamente.");
-            }
-
-            const jsonResponse = await response.json();
+            console.log(`✅ Sucesso! O Python devolveu as aulas formatadas.`);
             return await this.processarUploadCsv(jsonResponse.records);
 
         } catch (error) {
-            console.error("Erro na extração:", error.message);
-            throw error;
+            console.error("Erro no processamento da grade:", error.message);
+            throw new Error(error.message); // Mantém a mensagem limpa pro frontend
         }
     }
 
