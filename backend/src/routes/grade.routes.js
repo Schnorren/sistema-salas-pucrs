@@ -1,25 +1,26 @@
 const { Router } = require('express');
+const multer = require('multer');
 const gradeController = require('../controllers/grade.controller');
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
 
+// Configuração do multer para manter o arquivo na memória (RAM)
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Endpoint para buscar a grade processada para a tela de "Próximas Aulas"
 router.get('/proximas', gradeController.getProximasAulas.bind(gradeController));
 
-// Endpoint para importar o CSV processado pelo frontend
+// Endpoint genérico para importar CSV (se ainda for usar)
 router.post('/importar', gradeController.importarGrade.bind(gradeController));
 
+// NOVA ROTA: Upload direto de PDF
+router.post('/importar-pdf', upload.single('arquivo'), gradeController.importarPdf.bind(gradeController));
+
 router.get('/livres', gradeController.getSalasLivres.bind(gradeController));
-
 router.get('/timeline', gradeController.getTimeline.bind(gradeController));
-
 router.get('/ocupacao', gradeController.getOcupacao.bind(gradeController));
-
 router.get('/planta', gradeController.getPlanta.bind(gradeController));
 router.get('/busca', gradeController.buscar.bind(gradeController));
 router.post('/analisar-externo', gradeController.postAnaliseExterna.bind(gradeController));
 
-router.post('/importar-pdf', upload.single('arquivo'), gradeController.importarPdf.bind(gradeController));
 module.exports = router;
