@@ -82,6 +82,21 @@ class GradeController {
             return res.status(500).json({ error: error.message });
         }
     }
+    async importarPdf(req, res) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ error: 'Nenhum arquivo PDF enviado.' });
+            }
+
+            // Envia o buffer do arquivo (bytes em memória) para o service
+            const resultado = await gradeService.processarUploadPdf(req.file.buffer);
+            return res.status(201).json(resultado);
+
+        } catch (error) {
+            console.error('[Controller Error - importarPdf]:', error);
+            return res.status(500).json({ error: error.message || 'Erro interno ao processar PDF.' });
+        }
+    }
 
     async importarGrade(req, res) {
         try {
@@ -97,5 +112,6 @@ class GradeController {
         }
     }
 }
+
 
 module.exports = new GradeController();
