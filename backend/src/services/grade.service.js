@@ -1,6 +1,5 @@
 const gradeRepository = require('../repositories/grade.repository');
 
-
 const {
     PERIODS,
     getCurrentPeriod,
@@ -24,7 +23,6 @@ class GradeService {
             proximas: [],
             todasAsAulas: []
         };
-
 
         if (activePer) {
             const pi = PERIODS.findIndex(p => p.code === activePer);
@@ -76,16 +74,20 @@ class GradeService {
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
 
+    /**
+     * Análise de relatórios históricos via PDF usando Microserviço Python
+     */
     async analisarGradeExternaPdf(buffer) {
-        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000/extract-pdf';
-        
+        // Fallback atualizado para o seu novo link de produção do Render
+        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://api-salas-pucrs.onrender.com/extract-pdf';
+
         const formData = new FormData();
         const blob = new Blob([buffer], { type: 'application/pdf' });
         formData.append('file', blob, 'historico.pdf');
 
         try {
-            console.log(`📊 [Histórico] Enviando PDF para o Microserviço Python...`);
-            
+            console.log(`📊 [Histórico] Enviando para: ${PYTHON_API_URL}`);
+
             const response = await fetch(PYTHON_API_URL, {
                 method: 'POST',
                 body: formData
@@ -99,8 +101,8 @@ class GradeService {
             const jsonResponse = await response.json();
             const records = jsonResponse.records;
 
-            console.log(`✅ [Histórico] Python devolveu ${records.length} registros para análise.`);
-            
+            console.log(`✅ [Histórico] Python processou ${records.length} registros.`);
+
             return await this.analisarGradeExterna(records);
 
         } catch (error) {
@@ -231,42 +233,37 @@ class GradeService {
         return this._processarOcupacaoSemanl(dadosCsv, salasUnicas);
     }
 
+    /**
+     * Upload principal de grade via PDF (Microserviço Python)
+     */
     async processarUploadPdf(buffer) {
-        // A URL do seu novo microserviço Python (usaremos a porta 8000 localmente)
-        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000/extract-pdf';
+        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
 
-        // Constrói o formulário multipart para enviar o arquivo pela rede
         const formData = new FormData();
         const blob = new Blob([buffer], { type: 'application/pdf' });
         formData.append('file', blob, 'agenda.pdf');
 
         try {
-            console.log(`📡 Enviando PDF para o Microserviço Python em: ${PYTHON_API_URL}`);
-
             const response = await fetch(PYTHON_API_URL, {
                 method: 'POST',
                 body: formData
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Falha no microserviço de extração.');
+            // Se o Render devolver HTML (porque está acordando), a gente avisa o usuário
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                console.error("⚠️ O Microserviço ainda está acordando ou retornou erro não-JSON.");
+                throw new Error("O extrator Python está iniciando. Por favor, aguarde 30 segundos e tente novamente.");
             }
 
             const jsonResponse = await response.json();
-            const records = jsonResponse.records;
-
-            console.log(`✅ Sucesso! O Python devolveu ${records.length} aulas formatadas.`);
-
-            // Reutiliza a sua função original para salvar no Supabase
-            return await this.processarUploadCsv(records);
+            return await this.processarUploadCsv(jsonResponse.records);
 
         } catch (error) {
-            console.error("Erro na comunicação com o Microserviço Python:", error);
-            throw new Error("Erro na extração do PDF: " + error.message);
+            console.error("Erro na extração:", error.message);
+            throw error;
         }
     }
-
 
     async processarUploadCsv(dadosCsv) {
         const salasUnicas = [...new Set(dadosCsv.map(d => d.Sala))].filter(s => s).map(s => ({ numero: s }));
