@@ -1,76 +1,71 @@
 import { useState } from 'react';
 
-export default function UploadCSV({ onUploadSuccess }) {
-  const [loading, setLoading] = useState(false);
+export default function UploadAgenda({ onUploadSuccess }) {
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState('');
 
-  // A mesma função robusta que você já usava no HTML
-  const parseCSV = (txt) => {
-    const lines = txt.trim().split(/\r?\n/);
-    const hdr = lines[0].split(',').map(h => h.trim().replace(/^\uFEFF/, ''));
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = []; let c = '', q = false;
-      for (const ch of lines[i]) {
-        if (ch === '"') { q = !q; }
-        else if (ch === ',' && !q) { parts.push(c); c = ''; }
-        else c += ch;
-      }
-      parts.push(c);
-      if (parts.every(p => !p.trim())) continue;
-      const o = {}; hdr.forEach((h, j) => o[h] = (parts[j] || '').trim());
-      if (o['Sala']) rows.push(o);
-    }
-    return rows;
-  };
+    const handleUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setLoading(true);
+        setLoading(true);
+        setMessage('Lendo PDF e atualizando banco de dados...');
 
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const parsedData = parseCSV(ev.target.result);
+        const formData = new FormData();
+        formData.append('arquivo', file);
 
-      try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/importar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsedData)
-        });
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/importar-pdf`, {
+                method: 'POST',
+                body: formData // Note que não usamos JSON.stringify aqui
+            });
 
-        if (response.ok) {
-          alert('✅ Grade atualizada com sucesso no banco de dados!');
-          onUploadSuccess(); // Aciona a recarga do Dashboard
-        } else {
-          alert('❌ Erro ao importar os dados no servidor.');
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || 'Erro no servidor');
+            }
+
+            const data = await res.json();
+            setMessage(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
+            if (onUploadSuccess) onUploadSuccess();
+
+        } catch (error) {
+            setMessage(`Erro: ${error.message}`);
+        } finally {
+            setLoading(false);
+            e.target.value = null; // Reseta o input
         }
-      } catch (error) {
-        console.error('Erro:', error);
-      } finally {
-        setLoading(false);
-      }
     };
-    reader.readAsText(file, 'UTF-8');
-  };
 
-  return (
-    <div style={{
-      marginTop: '20px', padding: '24px', background: '#f7f5f2',
-      border: '2px dashed #1c2b4a', borderRadius: '8px', textAlign: 'center'
-    }}>
-      <h3 style={{ color: '#1c2b4a', marginBottom: '8px' }}>Atualizar Grade de Salas</h3>
-      <p style={{ fontSize: '14px', color: '#7a756c', marginBottom: '16px' }}>
-        Selecione o arquivo <b>.csv</b> exportado do sistema acadêmico.
-      </p>
-      <input
-        type="file"
-        accept=".csv"
-        onChange={handleFileUpload}
-        disabled={loading}
-        style={{ cursor: 'pointer' }}
-      />
-      {loading && <p style={{ marginTop: '12px', color: '#c8973a', fontWeight: 'bold' }}>Sincronizando com o banco de dados. Aguarde...</p>}
-    </div>
-  );
+    return (
+        <div className="bar-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <h2>Atualização de Grade</h2>
+            <p style={{ color: 'var(--text2)', marginBottom: '20px' }}>
+                Selecione o arquivo da agenda gerado pelo sistema central em formato <b>.pdf</b>
+            </p>
+            
+            <input 
+                type="file" 
+                accept=".pdf" 
+                id="pdfUpload" 
+                hidden 
+                onChange={handleUpload} 
+                disabled={loading} 
+            />
+            
+            <button 
+                className="btn-primary" 
+                onClick={() => document.getElementById('pdfUpload').click()}
+                disabled={loading}
+            >
+                {loading ? 'Processando PDF...' : 'Selecionar Arquivo PDF'}
+            </button>
+
+            {message && (
+                <div style={{ marginTop: '20px', fontWeight: 'bold', color: message.includes('Erro') ? 'var(--red)' : 'var(--accent)' }}>
+                    {message}
+                </div>
+            )}
+        </div>
+    );
 }
