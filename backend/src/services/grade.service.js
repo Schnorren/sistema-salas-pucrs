@@ -79,60 +79,64 @@ class GradeService {
      * Esconde o tempo de "boot" do Python (Cold Start) do usuário final.
      */
     async _enviarParaPythonComRetry(buffer, filename) {
+        // Usa a URL do DEV se estiver testando lá, ou a oficial
         const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
-        const MAX_RETRIES = 6;     // Tentará até 6 vezes
-        const RETRY_DELAY = 5000;  // Espera 5 segundos entre as tentativas (Total de 30s de tolerância)
+        const MAX_RETRIES = 3; // Reduzido para não perdermos tempo se for erro de sintaxe
+        const RETRY_DELAY = 5000;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            // O FormData precisa ser recriado a cada tentativa porque o fetch consome o stream
             const formData = new FormData();
             const blob = new Blob([buffer], { type: 'application/pdf' });
             formData.append('file', blob, filename);
 
             try {
-                if (attempt > 1) console.log(`⏳ Aguardando Python acordar (Tentativa ${attempt}/${MAX_RETRIES})...`);
-                
+                console.log(`[Node -> Python] Tentativa ${attempt}: Enviando POST para ${PYTHON_API_URL}...`);
+
                 const response = await fetch(PYTHON_API_URL, {
                     method: 'POST',
                     body: formData
                 });
 
-                const contentType = response.headers.get("content-type");
+                // Lemos o texto bruto imediatamente, não importa se é HTML ou JSON
+                const textResponse = await response.text();
 
-                // Se a resposta for JSON, o Python acordou e processou com sucesso!
-                if (response.ok && contentType && contentType.includes("application/json")) {
-                    return await response.json();
+                if (!response.ok) {
+                    console.log(`❌ [Node <- Python] Erro HTTP ${response.status}. Resposta: ${textResponse.substring(0, 200)}`);
+                    if (attempt < MAX_RETRIES) {
+                        await new Promise(res => setTimeout(res, RETRY_DELAY));
+                        continue;
+                    }
+                    throw new Error(`Serviço Python retornou erro ${response.status}`);
                 }
 
-                // Se não for JSON (é o Render enviando HTML) e não for a última tentativa, joga para o Catch
-                if (attempt < MAX_RETRIES) {
-                    throw new Error("Serviço em cold start");
+                try {
+                    const json = JSON.parse(textResponse);
+                    console.log(`✅ [Node <- Python] SUCESSO! JSON lido perfeitamente na tentativa ${attempt}.`);
+                    return json;
+                } catch (jsonErr) {
+                    // SE CAIR AQUI: O Python deu 200 OK, mas a resposta não é um JSON válido!
+                    console.error(`☢️ [ALERTA DE RAIO-X] Falha ao ler JSON! Resposta bruta recebida:`, textResponse.substring(0, 300));
+                    throw new Error("Python retornou um formato inválido. Verifique os logs do Node.");
                 }
-
-                // Se esgotaram as tentativas
-                throw new Error("O servidor Python demorou muito para iniciar. Tente novamente mais tarde.");
 
             } catch (error) {
-                // Se ainda temos tentativas e o erro foi de conexão/cold start
+                console.log(`⚠️ Erro de execução na tentativa ${attempt}: ${error.message}`);
                 if (attempt < MAX_RETRIES) {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                    continue; // Pula para a próxima tentativa do loop
+                    continue;
                 }
-                
-                // Se falhou na última tentativa, aborta de vez
-                console.error("❌ Falha final na comunicação com o Python:", error.message);
                 throw error;
             }
         }
     }
-
+    
     /**
      * Análise de relatórios históricos via PDF
      */
     async analisarGradeExternaPdf(buffer) {
         try {
             console.log(`📊 [Histórico] Iniciando extração de PDF silenciosa...`);
-            
+
             // Usa o novo motor de retry
             const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
             const records = jsonResponse.records;
@@ -274,7 +278,7 @@ class GradeService {
     async processarUploadPdf(buffer) {
         try {
             console.log(`📡 [Grade] Iniciando extração de PDF silenciosa...`);
-            
+
             // Usa o novo motor de retry
             const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
 
