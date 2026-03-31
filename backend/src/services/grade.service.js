@@ -75,14 +75,17 @@ class GradeService {
     }
 
     /**
-     * Motor interno de Retry (Tentativas Automáticas)
-     * Esconde o tempo de "boot" do Python (Cold Start) do usuário final.
-     */
+         * Motor interno de Retry (Tentativas Automáticas)
+         * Esconde o tempo de "boot" do Python (Cold Start) do usuário final.
+         */
     async _enviarParaPythonComRetry(buffer, filename) {
-        // Usa a URL do DEV se estiver testando lá, ou a oficial
         const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
-        const MAX_RETRIES = 3; // Reduzido para não perdermos tempo se for erro de sintaxe
-        const RETRY_DELAY = 5000;
+
+        // --- AUMENTO DRASTICO DE TOLERÂNCIA PARA RENDER FREE ---
+        const MAX_RETRIES = 10; // Tentará 10 vezes
+        const RETRY_DELAY = 6000; // Espera 6 segundos entre tentativas (Total: 60s de tolerância)
+
+        console.log(`🚀 Iniciando motor de envio para o Python... URL: ${PYTHON_API_URL}`);
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             const formData = new FormData();
@@ -90,23 +93,22 @@ class GradeService {
             formData.append('file', blob, filename);
 
             try {
-                console.log(`[Node -> Python] Tentativa ${attempt}: Enviando POST para ${PYTHON_API_URL}...`);
+                console.log(`[Node -> Python] Tentativa ${attempt}/${MAX_RETRIES}: Chamando a API...`);
 
                 const response = await fetch(PYTHON_API_URL, {
                     method: 'POST',
                     body: formData
                 });
 
-                // Lemos o texto bruto imediatamente, não importa se é HTML ou JSON
                 const textResponse = await response.text();
 
                 if (!response.ok) {
-                    console.log(`❌ [Node <- Python] Erro HTTP ${response.status}. Resposta: ${textResponse.substring(0, 200)}`);
+                    console.log(`⚠️ [Node <- Python] Erro HTTP ${response.status}. O servidor ainda pode estar acordando...`);
                     if (attempt < MAX_RETRIES) {
                         await new Promise(res => setTimeout(res, RETRY_DELAY));
                         continue;
                     }
-                    throw new Error(`Serviço Python retornou erro ${response.status}`);
+                    throw new Error(`Serviço Python demorou demais ou retornou erro ${response.status}`);
                 }
 
                 try {
@@ -114,22 +116,21 @@ class GradeService {
                     console.log(`✅ [Node <- Python] SUCESSO! JSON lido perfeitamente na tentativa ${attempt}.`);
                     return json;
                 } catch (jsonErr) {
-                    // SE CAIR AQUI: O Python deu 200 OK, mas a resposta não é um JSON válido!
-                    console.error(`☢️ [ALERTA DE RAIO-X] Falha ao ler JSON! Resposta bruta recebida:`, textResponse.substring(0, 300));
-                    throw new Error("Python retornou um formato inválido. Verifique os logs do Node.");
+                    console.error(`☢️ Falha ao decodificar JSON bruto:`, textResponse.substring(0, 200));
+                    throw new Error("Python retornou um formato inválido. Pode ser uma tela de erro do Render.");
                 }
 
             } catch (error) {
-                console.log(`⚠️ Erro de execução na tentativa ${attempt}: ${error.message}`);
+                console.log(`⚠️ Falha de rede na tentativa ${attempt}: ${error.message}`);
                 if (attempt < MAX_RETRIES) {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                     continue;
                 }
-                throw error;
+                throw error; // Se esgotaram as 10 tentativas, desiste.
             }
         }
     }
-    
+
     /**
      * Análise de relatórios históricos via PDF
      */
