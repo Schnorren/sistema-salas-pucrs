@@ -9,35 +9,35 @@ export default function ModalConcluirAviso({ aviso, onClose, onConfirm }) {
     };
 
     const tituloResumo = aviso.tipo === 'CHAVE' 
-        ? `Entrega de Chave: ${aviso.sala_id} para ${aviso.aluno_nome}` 
-        : `Fechamento de Aviso: ${aviso.titulo}`;
+        ? `Entrega da Chave ${aviso.sala_id} para ${aviso.aluno_nome}` 
+        : `Resolução do Aviso: ${aviso.titulo}`;
 
     return (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
-            <div style={{ background: 'var(--surface, #fff)', padding: '24px', borderRadius: '12px', width: '400px', maxWidth: '90%', border: '1px solid var(--border, #ccc)' }}>
-                <h3 style={{ margin: '0 0 10px 0', color: 'var(--text, #333)', fontSize: '16px' }}>Concluir Operação</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary, #666)', marginBottom: '20px' }}>{tituloResumo}</p>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+            <div style={{ background: '#1e293b', padding: '24px', borderRadius: '12px', width: '450px', maxWidth: '90%', border: '1px solid #334155', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#f8fafc', fontSize: '18px' }}>Confirmar Conclusão</h3>
+                <p style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '24px' }}>{tituloResumo}</p>
 
                 <form onSubmit={handleSubmit}>
                     <textarea 
                         placeholder="Adicione uma observação (Opcional). Ex: Aluno apresentou ID, Chamado técnico aberto..." 
-                        rows="3" 
+                        rows="4" 
                         value={obs}
                         onChange={(e) => setObs(e.target.value)}
                         style={{ 
-                            width: '100%', padding: '10px', marginBottom: '20px', boxSizing: 'border-box',
-                            border: '1px solid var(--border, #ccc)', borderRadius: '8px',
-                            background: 'var(--bg, #f4f4f4)', color: 'var(--text, #333)',
-                            fontFamily: 'inherit', resize: 'vertical'
+                            width: '100%', padding: '12px', marginBottom: '24px', boxSizing: 'border-box',
+                            border: '1px solid #334155', borderRadius: '8px',
+                            background: '#0f172a', color: '#f1f5f9',
+                            fontFamily: 'inherit', resize: 'vertical', outline: 'none', fontSize: '14px'
                         }} 
                     />
                     
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        <button type="button" onClick={onClose} style={{ padding: '9px 16px', border: '1px solid var(--border, #ccc)', borderRadius: '8px', background: 'transparent', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', color: 'var(--text, #333)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                        <button type="button" onClick={onClose} style={{ padding: '10px 18px', border: '1px solid #475569', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', color: '#cbd5e1' }}>
                             Cancelar
                         </button>
-                        <button type="submit" style={{ padding: '9px 16px', background: 'var(--primary, #004a99)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
-                            Confirmar Conclusão
+                        <button type="submit" style={{ padding: '10px 24px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
+                            Confirmar
                         </button>
                     </div>
                 </form>

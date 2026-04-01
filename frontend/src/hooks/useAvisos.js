@@ -53,7 +53,6 @@ export const useAvisos = () => {
                 .eq('id', id);
 
             if (error) throw error;
-            
             setAvisos(prev => prev.filter(aviso => aviso.id !== id));
             return true;
         } catch (err) {
@@ -62,5 +61,20 @@ export const useAvisos = () => {
         }
     };
 
-    return { avisos, loading, error, fetchAvisosAtivos, criarAviso, concluirAviso };
+    // NOVA FUNÇÃO: Exclui o registro fisicamente do banco de dados
+    const excluirAviso = async (id) => {
+        try {
+            const { error } = await supabase.from('avisos').delete().eq('id', id);
+            if (error) throw error;
+            
+            // Remove instantaneamente da tela sem precisar recarregar
+            setAvisos(prev => prev.filter(aviso => aviso.id !== id));
+            return true;
+        } catch (err) {
+            console.error('🚨 Erro ao excluir aviso:', err.message);
+            return false;
+        }
+    };
+
+    return { avisos, loading, error, fetchAvisosAtivos, criarAviso, concluirAviso, excluirAviso };
 };

@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 
 const inputStyle = {
-    width: '100%', padding: '9px 12px',
-    border: '1px solid var(--border, #ccc)', borderRadius: '8px',
+    width: '100%', padding: '10px 14px',
+    border: '1px solid #334155', borderRadius: '6px',
     fontSize: '14px', fontFamily: 'inherit', outline: 'none',
-    background: 'var(--surface, #fff)', color: 'var(--text, #333)', boxSizing: 'border-box'
+    background: '#0f172a', color: '#f1f5f9', boxSizing: 'border-box'
 };
 
 const labelStyle = {
-    display: 'block', fontSize: '11px', fontWeight: 'bold',
-    color: 'var(--text-secondary, #666)', marginBottom: '5px',
-    textTransform: 'uppercase', letterSpacing: '0.04em'
+    display: 'block', fontSize: '12px', fontWeight: 'bold',
+    color: '#94a3b8', marginBottom: '6px',
+    textTransform: 'uppercase', letterSpacing: '0.05em'
 };
 
 export default function ModalNovoAviso({ onClose, onSave }) {
@@ -38,45 +38,48 @@ export default function ModalNovoAviso({ onClose, onSave }) {
         onSave({ ...formData, tipo });
     };
 
+    // Estilo "À prova de falhas" para garantir que flutue na tela inteira
+    const overlayStyle = {
+        position: 'fixed', 
+        top: 0, left: 0, width: '100vw', height: '100vh',
+        backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(3px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', 
+        zIndex: 99999 // Z-index super alto para ficar por cima da topbar
+    };
+
     return (
-        <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
-        }}>
+        <div style={overlayStyle}>
             <div style={{
-                background: 'var(--surface, #fff)', borderRadius: '12px',
-                border: '1px solid var(--border, #ccc)', width: '520px', maxWidth: '92%',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+                background: '#1e293b', borderRadius: '12px',
+                border: '1px solid #334155', width: '550px', maxWidth: '95%',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
             }}>
-                
-                <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border, #ccc)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: 'var(--text, #333)' }}>Novo registro</h2>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--text-secondary, #666)', lineHeight: 1 }}>✕</button>
+                <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Novo Registro</h2>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#64748b', lineHeight: 1 }}>✕</button>
                 </div>
 
-                
-                <div style={{ padding: '16px 24px 0' }}>
-                    <div style={{ display: 'flex', gap: '6px', background: 'var(--bg, #f4f4f4)', borderRadius: '8px', padding: '4px' }}>
-                        {[['CHAVE', 'Autorizar chave'], ['GERAL', 'Aviso geral']].map(([val, label]) => (
-                            <button key={val} onClick={() => setTipo(val)} style={{
-                                flex: 1, padding: '8px', border: tipo === val ? '1px solid var(--border, #ccc)' : 'none',
+                <div style={{ padding: '20px 24px 0' }}>
+                    <div style={{ display: 'flex', gap: '8px', background: '#0f172a', borderRadius: '8px', padding: '4px', border: '1px solid #1e293b' }}>
+                        {[['CHAVE', 'Autorização de Chave'], ['GERAL', 'Aviso / Intercorrência']].map(([val, label]) => (
+                            <button key={val} type="button" onClick={() => setTipo(val)} style={{
+                                flex: 1, padding: '10px', border: 'none',
                                 borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold',
-                                background: tipo === val ? 'var(--surface, #fff)' : 'transparent',
-                                color: tipo === val ? 'var(--primary, #004a99)' : 'var(--text-secondary, #666)', 
+                                background: tipo === val ? '#3b82f6' : 'transparent',
+                                color: tipo === val ? '#ffffff' : '#94a3b8', 
                                 transition: 'all 0.2s'
                             }}>{label}</button>
                         ))}
                     </div>
                 </div>
 
-                
                 <form onSubmit={handleSubmit}>
-                    <div style={{ padding: '20px 24px' }}>
+                    <div style={{ padding: '24px' }}>
                         {tipo === 'CHAVE' && (
                             <>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                     <div>
-                                        <label style={labelStyle}>Nome do aluno</label>
+                                        <label style={labelStyle}>Nome do Aluno</label>
                                         <input name="aluno_nome" placeholder="Ex: João Silva" required onChange={handleChange} style={inputStyle} />
                                     </div>
                                     <div>
@@ -84,34 +87,34 @@ export default function ModalNovoAviso({ onClose, onSave }) {
                                         <input name="sala_id" placeholder="Ex: 302, Lab 4" required onChange={handleChange} style={inputStyle} />
                                     </div>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                                     <div>
                                         <label style={labelStyle}>Disciplina / Motivo</label>
                                         <input name="disciplina" placeholder="Ex: Cálculo I" required onChange={handleChange} style={inputStyle} />
                                     </div>
                                     <div>
-                                        <label style={labelStyle}>Data prevista</label>
-                                        <input type="date" name="data_prevista" required onChange={handleChange} style={inputStyle} />
+                                        <label style={labelStyle}>Data Prevista</label>
+                                        <input type="date" name="data_prevista" required onChange={handleChange} style={{...inputStyle, colorScheme: 'dark'}} />
                                     </div>
                                 </div>
                                 <div>
-                                    <label style={labelStyle}>Períodos autorizados</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                                    <label style={labelStyle}>Períodos Autorizados (Clique para selecionar)</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                                         {periodosDisponiveis.map(letra => {
                                             const sel = formData.periodo?.includes(letra);
                                             return (
                                                 <button key={letra} type="button" onClick={() => handlePeriodoToggle(letra)} style={{
-                                                    width: '34px', height: '34px', borderRadius: '6px', cursor: 'pointer',
-                                                    fontSize: '13px', fontWeight: 'bold', transition: 'all 0.15s',
-                                                    border: sel ? 'none' : '1px solid var(--border, #ccc)',
-                                                    background: sel ? 'var(--primary, #004a99)' : 'var(--bg, #f4f4f4)',
-                                                    color: sel ? '#fff' : 'var(--text, #333)'
+                                                    width: '38px', height: '38px', borderRadius: '6px', cursor: 'pointer',
+                                                    fontSize: '14px', fontWeight: 'bold', transition: 'all 0.1s',
+                                                    border: sel ? '1px solid #3b82f6' : '1px solid #334155',
+                                                    background: sel ? '#3b82f6' : '#0f172a',
+                                                    color: sel ? '#fff' : '#cbd5e1'
                                                 }}>{letra}</button>
                                             );
                                         })}
                                     </div>
-                                    <p style={{ fontSize: '12px', color: 'var(--text-secondary, #666)', marginTop: '8px' }}>
-                                        Selecionados: <span style={{ color: 'var(--primary, #004a99)', fontWeight: 'bold' }}>{formData.periodo || 'Nenhum'}</span>
+                                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '12px' }}>
+                                        Períodos Salvos: <span style={{ color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>{formData.periodo || 'Nenhum'}</span>
                                     </p>
                                 </div>
                             </>
@@ -119,33 +122,32 @@ export default function ModalNovoAviso({ onClose, onSave }) {
 
                         {tipo === 'GERAL' && (
                             <>
-                                <div style={{ marginBottom: '14px' }}>
-                                    <label style={labelStyle}>Título do aviso</label>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={labelStyle}>Título do Aviso</label>
                                     <input name="titulo" placeholder="Ex: Projetor da sala 302 com defeito" required onChange={handleChange} style={inputStyle} />
                                 </div>
-                                <div style={{ marginBottom: '14px' }}>
-                                    <label style={labelStyle}>Prioridade</label>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={labelStyle}>Nível de Prioridade</label>
                                     <select name="prioridade" required onChange={handleChange} style={inputStyle}>
                                         <option value="NORMAL">Normal</option>
-                                        <option value="ALTA">Alta</option>
+                                        <option value="ALTA">Alta (Urgente)</option>
                                         <option value="BAIXA">Baixa</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label style={labelStyle}>Descrição</label>
-                                    <textarea name="descricao" placeholder="Descreva o problema ou recado..." required rows="4" onChange={handleChange} style={{ ...inputStyle, resize: 'vertical' }} />
+                                    <label style={labelStyle}>Descrição Completa</label>
+                                    <textarea name="descricao" placeholder="Descreva o problema ou recado com detalhes..." required rows="4" onChange={handleChange} style={{ ...inputStyle, resize: 'vertical' }} />
                                 </div>
                             </>
                         )}
                     </div>
 
-                    
-                    <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border, #ccc)', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        <button type="button" onClick={onClose} style={{ padding: '9px 16px', border: '1px solid var(--border, #ccc)', borderRadius: '8px', background: 'transparent', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', color: 'var(--text, #333)' }}>
+                    <div style={{ padding: '16px 24px', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: 'rgba(0,0,0,0.1)', borderRadius: '0 0 12px 12px' }}>
+                        <button type="button" onClick={onClose} style={{ padding: '10px 18px', border: '1px solid #475569', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', color: '#cbd5e1' }}>
                             Cancelar
                         </button>
-                        <button type="submit" style={{ padding: '9px 18px', border: 'none', borderRadius: '8px', background: 'var(--primary, #004a99)', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
-                            Salvar registro
+                        <button type="submit" style={{ padding: '10px 24px', border: 'none', borderRadius: '6px', background: '#3b82f6', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
+                            Salvar Registro
                         </button>
                     </div>
                 </form>
