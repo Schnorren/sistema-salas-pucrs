@@ -7,7 +7,6 @@ const {
     isInternalClass
 } = require('../utils/timeHelpers');
 
-// === MEMÓRIA CACHE ===
 let gradeCache = null;
 
 class GradeService {

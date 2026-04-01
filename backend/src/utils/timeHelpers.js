@@ -67,12 +67,14 @@ const groupConsecutiveClasses = (classes) => {
     const sala = item.salas?.numero || '?';
     const nomeAula = item.nome_aula || (item.disciplinas ? item.disciplinas.nome : '');
 
-    const lastGroup = grouped.find(g =>
-      g.sala === sala &&
-      g.nome === nomeAula
-    );
+    const lastGroup = grouped.length > 0 ? grouped[grouped.length - 1] : null;
 
-    if (lastGroup && lastGroup.pIdxs[lastGroup.pIdxs.length - 1] === pIdx - 1) {
+    if (
+      lastGroup &&
+      lastGroup.sala === sala &&
+      lastGroup.nome === nomeAula &&
+      lastGroup.pIdxs[lastGroup.pIdxs.length - 1] === pIdx - 1
+    ) {
       lastGroup.periodos.push(pCode);
       lastGroup.pIdxs.push(pIdx);
       lastGroup.fim = PERIODS[pIdx].end;
