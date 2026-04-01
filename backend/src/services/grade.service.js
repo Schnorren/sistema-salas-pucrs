@@ -1,5 +1,4 @@
 const gradeRepository = require('../repositories/grade.repository');
-
 const {
     PERIODS,
     getCurrentPeriod,
@@ -8,10 +7,23 @@ const {
     isInternalClass
 } = require('../utils/timeHelpers');
 
+// === MEMÓRIA CACHE ===
+let gradeCache = null;
+
 class GradeService {
 
+    async _obterGradeOtimizada() {
+        if (gradeCache) {
+            return gradeCache;
+        }
+
+        console.log("🔄 Buscando grade completa no Supabase e salvando em cache...");
+        gradeCache = await gradeRepository.buscarGradeCompleta();
+        return gradeCache;
+    }
+
     async obterProximasAulas(diaSolicitado, periodoReferencia) {
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
@@ -46,7 +58,7 @@ class GradeService {
     }
 
     async obterSalasLivres(diaSolicitado) {
-        const salasDb = await gradeRepository.buscarSalas();
+        const salasDb = await this._obterGradeOtimizada();
         const gradeBruta = await gradeRepository.buscarGradeCompleta();
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
@@ -144,7 +156,7 @@ class GradeService {
 
     async obterTimeline(diaSolicitado) {
         const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
         const periodoAtual = getCurrentPeriod();
 
@@ -181,7 +193,7 @@ class GradeService {
 
     async obterStatusPlanta(diaSolicitado, periodoReferencia) {
         const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
         const aulasNoMomento = gradeBruta.filter(d =>
@@ -218,7 +230,7 @@ class GradeService {
 
     async realizarBuscaGlobal(q) {
         if (!q || q.length < 2) return [];
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const termo = q.toLowerCase();
 
         const filtrados = gradeBruta.filter(d =>
@@ -254,7 +266,7 @@ class GradeService {
 
     async obterOcupacaoSemanal() {
         const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const listaNumeros = salasDb.map(s => s.numero);
         return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
     }
@@ -295,6 +307,9 @@ class GradeService {
 
         await gradeRepository.limparGrade();
         await gradeRepository.inserirGradeLote(gradeInsert);
+
+        gradeCache = null;
+
         return { sucesso: true, registrosInseridos: gradeInsert.length };
     }
 }
