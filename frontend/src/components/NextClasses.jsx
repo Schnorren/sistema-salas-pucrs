@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -12,12 +12,23 @@ const PERIOD_OPTIONS = [
   { code: 'P', lb: '21:45' }
 ];
 
+// Helper puro para sanitização de strings
+const normalizeText = (text) => {
+  if (!text) return '';
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+};
+
 export default function NextClasses() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
+  
+  const [filtro, setFiltro] = useState('');
+  const [ordem, setOrdem] = useState('sala'); // NOVO: Estado para a ordenação (Padrão: sala)
+  const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
 
+  // Fetch data
   useEffect(() => {
     setLoading(true);
     fetch(`${import.meta.env.VITE_API_URL}/api/grade/proximas?dia=${day}&periodo=${per}`)
@@ -27,11 +38,54 @@ export default function NextClasses() {
         setLoading(false);
       })
       .catch(err => {
-        console.error("Erro ao carregar grade processada:", err);
+        console.error("Erro ao carregar grade:", err);
         setLoading(false);
       });
   }, [day, per]);
 
+  // BEST PRACTICE: useMemo centraliza o Filtro e a Ordenação de forma super otimizada
+  const filteredAndSortedData = useMemo(() => {
+    if (!data) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
+
+    const termo = normalizeText(filtro);
+    
+    const applyFilterAndSort = (aulasArray) => {
+      if (!aulasArray) return [];
+      
+      // 1. Aplica o filtro de texto (Busca)
+      let resultado = aulasArray;
+      if (termo) {
+        resultado = aulasArray.filter(aula => {
+          return normalizeText(aula.nome).includes(termo) || 
+                 normalizeText(aula.sala).includes(termo);
+        });
+      }
+
+      // 2. Aplica a Ordenação escolhida
+      return [...resultado].sort((a, b) => {
+        if (ordem === 'sala') {
+          // Ordenação alfanumérica inteligente (ex: 204 vem antes de 2011)
+          return a.sala.localeCompare(b.sala, undefined, { numeric: true });
+        }
+        if (ordem === 'nome') {
+          return a.nome.localeCompare(b.nome);
+        }
+        if (ordem === 'horario') {
+          return a.horarioInicio.localeCompare(b.horarioInicio);
+        }
+        return 0;
+      });
+    };
+
+    return {
+      emAndamento: applyFilterAndSort(data.emAndamento),
+      proximas: applyFilterAndSort(data.proximas),
+      restoDoDia: applyFilterAndSort(data.restoDoDia),
+      todasAsAulas: applyFilterAndSort(data.todasAsAulas)
+    };
+  }, [data, filtro, ordem]); // Recalcula apenas se os dados, a busca ou a ordem mudarem
+
+  // Renderizador de destaque (Para Agora e A Seguir)
   const renderCard = (aula, isCurrent) => (
     <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`}>
       <div className="nct">
@@ -51,65 +105,165 @@ export default function NextClasses() {
     </div>
   );
 
+  // Renderizador Compacto (Para o Resto do Dia)
+  const renderCompactRow = (aula) => (
+    <div key={aula.id} style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '12px 16px', borderBottom: '1px solid var(--border, #334155)', 
+        background: 'var(--surface, #1e293b)', borderRadius: '6px', marginBottom: '8px' 
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ fontWeight: 'bold', color: '#60a5fa', width: '45px' }}>{aula.horarioInicio}</div>
+        <div style={{ fontWeight: 'bold', background: 'rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>{aula.sala}</div>
+        <div style={{ color: 'var(--text, #f8fafc)', fontSize: '14px', fontWeight: '500' }}>{aula.nome} <span style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '12px', fontWeight: 'normal' }}>({aula.periodosFormatados})</span></div>
+      </div>
+      <div style={{ fontSize: '11px', textTransform: 'uppercase', color: aula.tipo === 'Interno' ? '#f59e0b' : '#9ca3af', border: `1px solid ${aula.tipo === 'Interno' ? '#f59e0b' : '#475569'}`, padding: '2px 6px', borderRadius: '4px' }}>
+        {aula.tipo}
+      </div>
+    </div>
+  );
+
   return (
     <div className="view active" id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       
-      <div className="toolbar">
-        <label>Dia:</label>
-        <select value={day} onChange={e => setDay(e.target.value)}>
-          {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+      {/* TOOLBAR */}
+      <div className="toolbar" style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: '1px solid var(--border, #334155)', paddingBottom: '16px', marginBottom: '16px' }}>
         
-        <label style={{ marginLeft: '8px' }}>Período ref.:</label>
-        <select value={per} onChange={e => setPer(e.target.value)}>
-          <option value="auto">
-            ⟳ Automático {data?.periodoAtualReferencia ? `— Período ${data.periodoAtualReferencia}` : '— Fora de horário'}
-          </option>
-          {PERIOD_OPTIONS.map(p => (
-            <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>
-          ))}
-        </select>
+        {/* Linha 1: Filtros de Tempo e Ordenação */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Dia:</label>
+                <select value={day} onChange={e => setDay(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Período ref.:</label>
+                <select value={per} onChange={e => setPer(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                <option value="auto">
+                    ⟳ Automático {data?.periodoAtualReferencia ? `— Per. ${data.periodoAtualReferencia}` : '— Fora de horário'}
+                </option>
+                {PERIOD_OPTIONS.map(p => (
+                    <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>
+                ))}
+                </select>
+            </div>
+
+            {/* CONTROLE DISCRETO DE ORDENAÇÃO */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>⇅</span>
+                <select 
+                  value={ordem} 
+                  onChange={e => setOrdem(e.target.value)} 
+                  style={{ 
+                    padding: '4px 8px', borderRadius: '4px', background: 'transparent', 
+                    color: 'var(--text-secondary)', border: '1px solid transparent', 
+                    fontSize: '13px', cursor: 'pointer', outline: 'none', appearance: 'none' 
+                  }}
+                  onMouseOver={e => e.currentTarget.style.border = '1px solid var(--border)'}
+                  onMouseOut={e => e.currentTarget.style.border = '1px solid transparent'}
+                  title="Ordenar resultados"
+                >
+                    <option value="sala">Ordenar por Sala</option>
+                    <option value="horario">Ordenar por Horário</option>
+                    <option value="nome">Ordenar por Nome</option>
+                </select>
+            </div>
+        </div>
+
+        {/* Linha 2: BARRA DE PESQUISA GIGANTE */}
+        <div style={{ position: 'relative', width: '100%' }}>
+            <span style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', color: '#3b82f6' }}>🔍</span>
+            <input 
+                type="text" 
+                placeholder="Qual sala o professor está procurando? Digite o nome da disciplina..." 
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                style={{
+                    width: '100%', padding: '14px 44px', borderRadius: '8px',
+                    border: '2px solid #3b82f6', background: 'rgba(59, 130, 246, 0.05)', 
+                    color: 'var(--text, #f8fafc)', fontSize: '15px', fontWeight: '500',
+                    outline: 'none', boxSizing: 'border-box', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                }}
+            />
+            {filtro && (
+                <button 
+                    onClick={() => setFiltro('')}
+                    style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: '#3b82f6', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '4px' }}
+                >
+                    LIMPAR
+                </button>
+            )}
+        </div>
       </div>
       
-      
-      <div className="nx-body" id="nxBody">
+      {/* BODY / CONTEÚDO */}
+      <div className="nx-body" id="nxBody" style={{ paddingBottom: '40px' }}>
         {loading ? (
            <div className="empty-st">Carregando dados do servidor...</div>
         ) : !data ? (
            <div className="empty-st">Erro ao carregar os dados.</div>
         ) : data.periodoAtualReferencia ? (
           <>
-            
+            {/* BLOCO 1: AGORA */}
             <div>
-              <div className="nx-hd">Em andamento — <em>Período {data.periodoAtualReferencia}</em> ({data.labelPeriodoAtual})</div>
-              {data.emAndamento.length === 0 ? (
-                <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '10px 0' }}>Nenhuma aula neste período.</div>
+              <div className="nx-hd">🔴 Em andamento — <em>Período {data.periodoAtualReferencia}</em> ({data.labelPeriodoAtual})</div>
+              {filteredAndSortedData.emAndamento.length === 0 ? (
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed var(--border)', textAlign: 'center' }}>
+                    Nenhuma aula encontrada {filtro && `para a busca "${filtro}"`}.
+                </div>
               ) : (
                 <div className="nx-cards">
-                  {data.emAndamento.map(aula => renderCard(aula, true))}
+                  {filteredAndSortedData.emAndamento.map(aula => renderCard(aula, true))}
                 </div>
               )}
             </div>
 
-            
-            {data.proximas.length > 0 && (
-              <div style={{ marginTop: '20px' }}>
-                <div className="nx-hd">A seguir — <em>Iniciando no próximo período</em></div>
+            {/* BLOCO 2: A SEGUIR */}
+            {filteredAndSortedData.proximas.length > 0 && (
+              <div style={{ marginTop: '32px' }}>
+                <div className="nx-hd">🟡 A seguir — <em>Iniciando no(s) próximo(s) período(s)</em></div>
                 <div className="nx-cards">
-                  {data.proximas.map(aula => renderCard(aula, false))}
+                  {filteredAndSortedData.proximas.map(aula => renderCard(aula, false))}
                 </div>
+              </div>
+            )}
+
+            {/* BLOCO 3: MAIS TARDE (Compacto & Expansível) */}
+            {filteredAndSortedData.restoDoDia.length > 0 && (
+              <div style={{ marginTop: '32px' }}>
+                <div 
+                    onClick={() => setMostrarMaisTarde(!mostrarMaisTarde)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px' }}
+                >
+                    <div className="nx-hd" style={{ margin: 0, border: 'none', padding: 0 }}>⚪ Mais tarde — <em>Restante do dia</em></div>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '12px', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '12px' }}>
+                        {filteredAndSortedData.restoDoDia.length} aulas
+                    </span>
+                    <span style={{ marginLeft: 'auto', color: '#60a5fa', fontSize: '14px', fontWeight: 'bold' }}>
+                        {mostrarMaisTarde ? 'Ocultar ▴' : 'Expandir ▾'}
+                    </span>
+                </div>
+                
+                {/* Mostra automaticamente se houver filtro digitado, senão obedece o clique */}
+                {(mostrarMaisTarde || filtro) && (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {filteredAndSortedData.restoDoDia.map(aula => renderCompactRow(aula))}
+                    </div>
+                )}
               </div>
             )}
           </>
         ) : (
-          
+          /* MODO: FORA DE EXPEDIENTE / TODAS AS AULAS */
           <div>
             <div className="nx-hd">Todas as aulas — {day}</div>
-            {data.todasAsAulas.length === 0 ? (
-              <div className="empty-st">Nenhuma aula encontrada para este dia.</div>
+            {filteredAndSortedData.todasAsAulas.length === 0 ? (
+              <div className="empty-st">Nenhuma aula encontrada {filtro && `para a busca "${filtro}"`}.</div>
             ) : (
               <div className="nx-cards">
-                {data.todasAsAulas.map(aula => renderCard(aula, false))}
+                {filteredAndSortedData.todasAsAulas.map(aula => renderCard(aula, false))}
               </div>
             )}
           </div>

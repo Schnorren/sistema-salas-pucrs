@@ -32,6 +32,7 @@ class GradeService {
             labelPeriodoAtual: '',
             emAndamento: [],
             proximas: [],
+            restoDoDia: [], // NOVO: Traz o resto do dia para a UI usar se quiser
             todasAsAulas: []
         };
 
@@ -39,20 +40,32 @@ class GradeService {
             const pi = PERIODS.findIndex(p => p.code === activePer);
             if (pi >= 0) {
                 response.labelPeriodoAtual = PERIODS[pi].lb;
-                const aulasAgora = aulasDoDia.filter(d => extractPeriodCode(d.periodo) === activePer);
-                response.emAndamento = groupConsecutiveClasses(aulasAgora);
 
-                const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 4).map(p => p.code);
-                const aulasFuturas = aulasDoDia.filter(d => nextPeriodCodes.includes(extractPeriodCode(d.periodo)));
-                const aulasFuturasAgrupadas = groupConsecutiveClasses(aulasFuturas);
+                // 1. A MÁGICA: Agrupa absolutamente tudo do dia ANTES de filtrar
+                const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
 
-                response.proximas = aulasFuturasAgrupadas.filter(g =>
-                    g.periodosFormatados.startsWith(PERIODS[pi + 1]?.code)
+                // 2. EM ANDAMENTO: Pega qualquer aula onde o período atual esteja DENTRO do bloco
+                // Exemplo: se activePer é 'M', a aula 'LMN' tem 'M' na string, então ela entra inteira!
+                response.emAndamento = todasAgrupadas.filter(g =>
+                    g.periodosFormatados.includes(activePer)
+                );
+
+                // 3. PRÓXIMAS: Pega aulas que COMEÇAM nos próximos 2 períodos
+                const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
+                response.proximas = todasAgrupadas.filter(g =>
+                    nextPeriodCodes.includes(g.periodosFormatados[0]) // Só checa o 1º período da aula
+                );
+
+                // 4. MAIS TARDE: Pega as aulas que começam DEPOIS das "próximas"
+                const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
+                response.restoDoDia = todasAgrupadas.filter(g =>
+                    futurePeriodCodes.includes(g.periodosFormatados[0])
                 );
             }
         } else {
             response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
         }
+
         return response;
     }
 
@@ -230,17 +243,28 @@ class GradeService {
     async realizarBuscaGlobal(q) {
         if (!q || q.length < 2) return [];
         const gradeBruta = await this._obterGradeOtimizada();
-        const termo = q.toLowerCase();
 
-        const filtrados = gradeBruta.filter(d =>
-            d.nome_aula?.toLowerCase().includes(termo) ||
-            d.salas?.numero?.toLowerCase().includes(termo) ||
-            d.disciplinas?.codigo?.toLowerCase().includes(termo) ||
-            d.periodo?.toLowerCase().includes(termo)
-        );
+        // Helper interno: Remove acentos e joga tudo para minúsculo
+        const normalizarTexto = (texto) => {
+            if (!texto) return '';
+            return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        };
+
+        const termoPesquisado = normalizarTexto(q);
+
+        const filtrados = gradeBruta.filter(d => {
+            const nomeNormalizado = normalizarTexto(d.nome_aula || d.disciplinas?.nome);
+            const salaNormalizada = normalizarTexto(d.salas?.numero);
+            const codigoNormalizado = normalizarTexto(d.disciplinas?.codigo);
+
+            return nomeNormalizado.includes(termoPesquisado) ||
+                salaNormalizada.includes(termoPesquisado) ||
+                codigoNormalizado.includes(termoPesquisado);
+        });
 
         const agrupados = groupConsecutiveClasses(filtrados);
         const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
         return agrupados.sort((a, b) => {
             if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
             return a.sala.localeCompare(b.sala, undefined, { numeric: true });
