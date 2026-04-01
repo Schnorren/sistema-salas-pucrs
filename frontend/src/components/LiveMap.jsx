@@ -9,7 +9,7 @@ export default function LiveMap() {
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null); // Novo estado de erro
+  const [error, setError] = useState(null);
   
   const [tt, setTt] = useState({ visible: false, x: 0, y: 0, sala: '', info: '' });
 
@@ -50,7 +50,6 @@ export default function LiveMap() {
     });
   };
 
-  // Tratamentos de Estados (Evita o Silent Crash do React)
   if (loading) return <div className="empty-st">Buscando dados da planta...</div>;
   if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro de Conexão: {error}</div>;
   if (!data || !data.andares) return <div className="empty-st">Nenhum dado retornado para este dia.</div>;

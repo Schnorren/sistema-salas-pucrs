@@ -1,9 +1,5 @@
-/**
- * Utilitário de Impressão Profissional - PUCRS Prédio 15
- * Centraliza a geração de documentos PDF via Print Stream do Browser.
- */
 
-// Estilos CSS compartilhados para garantir identidade visual
+
 const SHARED_STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap');
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
@@ -15,9 +11,7 @@ const SHARED_STYLES = `
   .footer-note { margin-top: 30px; font-size: 9px; color: #7a756c; border-top: 1px solid #d8d3cb; padding-top: 10px; }
 `;
 
-/**
- * RELATÓRIO 1: Ocupação Semanal (Heatmap de uma única semana)
- */
+
 export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
   const daysArray = [...activeDays];
   const totalPossibleSlots = daysArray.length * activePersCount;
@@ -79,9 +73,7 @@ export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
   executePrint(html);
 };
 
-/**
- * RELATÓRIO 2: Comparativo Histórico (Sandbox de múltiplas semanas)
- */
+
 export const generateComparisonPDF = (comparativoData) => {
   const html = `
     <!DOCTYPE html>
@@ -128,9 +120,7 @@ export const generateComparisonPDF = (comparativoData) => {
   executePrint(html);
 };
 
-/**
- * Helper interno para disparar a janela de impressão
- */
+
 const executePrint = (html) => {
   const win = window.open('', '_blank');
   win.document.write(html);

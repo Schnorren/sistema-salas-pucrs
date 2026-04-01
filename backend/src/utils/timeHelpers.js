@@ -21,61 +21,73 @@ const pad = (n) => String(n).padStart(2, '0');
 const extractPeriodCode = (s) => (s || '').split(' ')[0];
 const isInternalClass = (n) => /^interno/i.test((n || '').trim());
 
-// Retorna o período atual com base no fuso horário de Brasília
 const getCurrentPeriod = () => {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
   const totalMinutes = now.getHours() * 60 + now.getMinutes();
-  
-  for (const p of PERIODS) {
+
+  for (let i = 0; i < PERIODS.length; i++) {
+    const p = PERIODS[i];
     const startMinutes = p.start[0] * 60 + p.start[1];
-    const endMinutes = p.end[0] * 60 + p.end[1];
+    let endMinutes = p.end[0] * 60 + p.end[1];
+
+    if (i < PERIODS.length - 1) {
+      const nextStartMinutes = PERIODS[i + 1].start[0] * 60 + PERIODS[i + 1].start[1];
+      const gap = nextStartMinutes - endMinutes;
+      if (gap > 0 && gap <= 30) {
+        endMinutes = nextStartMinutes;
+      }
+    }
+
     if (totalMinutes >= startMinutes && totalMinutes < endMinutes) return p.code;
   }
   return null;
 };
 
-// Agrupa disciplinas que ocupam múltiplos períodos seguidos
 const groupConsecutiveClasses = (classes) => {
   if (!classes || !classes.length) return [];
-  
+
   const sorted = [...classes].sort((a, b) => {
     const aSala = a.salas?.numero || '?';
     const bSala = b.salas?.numero || '?';
     if (aSala !== bSala) return aSala.localeCompare(bSala, undefined, { numeric: true });
-    
+
     const aCode = extractPeriodCode(a.periodo);
     const bCode = extractPeriodCode(b.periodo);
     return PERIODS.findIndex(p => p.code === aCode) - PERIODS.findIndex(p => p.code === bCode);
   });
 
   const grouped = [];
-  
+
   sorted.forEach(item => {
     const pCode = extractPeriodCode(item.periodo);
     const pIdx = PERIODS.findIndex(p => p.code === pCode);
+
+    if (pIdx === -1) return;
+
     const sala = item.salas?.numero || '?';
     const nomeAula = item.nome_aula || (item.disciplinas ? item.disciplinas.nome : '');
 
-    const last = grouped.find(g => 
-      g.sala === sala && 
-      g.nome === nomeAula && 
-      g.pIdxs[g.pIdxs.length - 1] === pIdx - 1
-    );
+    const lastGroup = grouped.length > 0 ? grouped[grouped.length - 1] : null;
 
-    if (last) {
-      last.periodos.push(pCode);
-      last.pIdxs.push(pIdx);
-      last.fim = PERIODS[pIdx]?.end;
+    if (
+      lastGroup &&
+      lastGroup.sala === sala &&
+      lastGroup.nome === nomeAula &&
+      lastGroup.pIdxs[lastGroup.pIdxs.length - 1] === pIdx - 1
+    ) {
+      lastGroup.periodos.push(pCode);
+      lastGroup.pIdxs.push(pIdx);
+      lastGroup.fim = PERIODS[pIdx].end;
     } else {
-      grouped.push({ 
+      grouped.push({
         id: item.id,
-        sala, 
+        sala,
         nome: nomeAula,
         tipo: item.tipo || (isInternalClass(nomeAula) ? 'Interno' : 'Regular'),
-        periodos: [pCode], 
+        periodos: [pCode],
         pIdxs: [pIdx],
-        inicio: PERIODS[pIdx]?.lb,
-        fim: PERIODS[pIdx]?.end
+        inicio: PERIODS[pIdx].lb,
+        fim: PERIODS[pIdx].end
       });
     }
   });

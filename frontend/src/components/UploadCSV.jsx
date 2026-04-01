@@ -17,7 +17,7 @@ export default function UploadAgenda({ onUploadSuccess }) {
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/importar-pdf`, {
                 method: 'POST',
-                body: formData // Note que não usamos JSON.stringify aqui
+                body: formData
             });
 
             if (!res.ok) {
@@ -33,7 +33,7 @@ export default function UploadAgenda({ onUploadSuccess }) {
             setMessage(`Erro: ${error.message}`);
         } finally {
             setLoading(false);
-            e.target.value = null; // Reseta o input
+            e.target.value = null;
         }
     };
 

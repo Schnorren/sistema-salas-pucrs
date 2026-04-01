@@ -1,5 +1,4 @@
 const gradeRepository = require('../repositories/grade.repository');
-
 const {
     PERIODS,
     getCurrentPeriod,
@@ -8,10 +7,22 @@ const {
     isInternalClass
 } = require('../utils/timeHelpers');
 
+let gradeCache = null;
+
 class GradeService {
 
+    async _obterGradeOtimizada() {
+        if (gradeCache) {
+            return gradeCache;
+        }
+
+        console.log("🔄 Buscando grade completa no Supabase e salvando em cache...");
+        gradeCache = await gradeRepository.buscarGradeCompleta();
+        return gradeCache;
+    }
+
     async obterProximasAulas(diaSolicitado, periodoReferencia) {
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
@@ -21,6 +32,7 @@ class GradeService {
             labelPeriodoAtual: '',
             emAndamento: [],
             proximas: [],
+            restoDoDia: [], // NOVO: Traz o resto do dia para a UI usar se quiser
             todasAsAulas: []
         };
 
@@ -28,25 +40,37 @@ class GradeService {
             const pi = PERIODS.findIndex(p => p.code === activePer);
             if (pi >= 0) {
                 response.labelPeriodoAtual = PERIODS[pi].lb;
-                const aulasAgora = aulasDoDia.filter(d => extractPeriodCode(d.periodo) === activePer);
-                response.emAndamento = groupConsecutiveClasses(aulasAgora);
 
-                const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 4).map(p => p.code);
-                const aulasFuturas = aulasDoDia.filter(d => nextPeriodCodes.includes(extractPeriodCode(d.periodo)));
-                const aulasFuturasAgrupadas = groupConsecutiveClasses(aulasFuturas);
+                // 1. A MÁGICA: Agrupa absolutamente tudo do dia ANTES de filtrar
+                const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
 
-                response.proximas = aulasFuturasAgrupadas.filter(g =>
-                    g.periodosFormatados.startsWith(PERIODS[pi + 1]?.code)
+                // 2. EM ANDAMENTO: Pega qualquer aula onde o período atual esteja DENTRO do bloco
+                // Exemplo: se activePer é 'M', a aula 'LMN' tem 'M' na string, então ela entra inteira!
+                response.emAndamento = todasAgrupadas.filter(g =>
+                    g.periodosFormatados.includes(activePer)
+                );
+
+                // 3. PRÓXIMAS: Pega aulas que COMEÇAM nos próximos 2 períodos
+                const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
+                response.proximas = todasAgrupadas.filter(g =>
+                    nextPeriodCodes.includes(g.periodosFormatados[0]) // Só checa o 1º período da aula
+                );
+
+                // 4. MAIS TARDE: Pega as aulas que começam DEPOIS das "próximas"
+                const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
+                response.restoDoDia = todasAgrupadas.filter(g =>
+                    futurePeriodCodes.includes(g.periodosFormatados[0])
                 );
             }
         } else {
             response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
         }
+
         return response;
     }
 
     async obterSalasLivres(diaSolicitado) {
-        const salasDb = await gradeRepository.buscarSalas();
+        const salasDb = await this._obterGradeOtimizada();
         const gradeBruta = await gradeRepository.buscarGradeCompleta();
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
@@ -74,16 +98,11 @@ class GradeService {
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
 
-    /**
-         * Motor interno de Retry (Tentativas Automáticas)
-         * Esconde o tempo de "boot" do Python (Cold Start) do usuário final.
-         */
     async _enviarParaPythonComRetry(buffer, filename) {
         const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
 
-        // --- AUMENTO DRASTICO DE TOLERÂNCIA PARA RENDER FREE ---
-        const MAX_RETRIES = 10; // Tentará 10 vezes
-        const RETRY_DELAY = 6000; // Espera 6 segundos entre tentativas (Total: 60s de tolerância)
+        const MAX_RETRIES = 10;
+        const RETRY_DELAY = 6000;
 
         console.log(`🚀 Iniciando motor de envio para o Python... URL: ${PYTHON_API_URL}`);
 
@@ -126,19 +145,15 @@ class GradeService {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                     continue;
                 }
-                throw error; // Se esgotaram as 10 tentativas, desiste.
+                throw error;
             }
         }
     }
 
-    /**
-     * Análise de relatórios históricos via PDF
-     */
     async analisarGradeExternaPdf(buffer) {
         try {
             console.log(`📊 [Histórico] Iniciando extração de PDF silenciosa...`);
 
-            // Usa o novo motor de retry
             const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
             const records = jsonResponse.records;
 
@@ -153,7 +168,7 @@ class GradeService {
 
     async obterTimeline(diaSolicitado) {
         const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
         const periodoAtual = getCurrentPeriod();
 
@@ -190,7 +205,7 @@ class GradeService {
 
     async obterStatusPlanta(diaSolicitado, periodoReferencia) {
         const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
         const aulasNoMomento = gradeBruta.filter(d =>
@@ -227,18 +242,29 @@ class GradeService {
 
     async realizarBuscaGlobal(q) {
         if (!q || q.length < 2) return [];
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
-        const termo = q.toLowerCase();
+        const gradeBruta = await this._obterGradeOtimizada();
 
-        const filtrados = gradeBruta.filter(d =>
-            d.nome_aula?.toLowerCase().includes(termo) ||
-            d.salas?.numero?.toLowerCase().includes(termo) ||
-            d.disciplinas?.codigo?.toLowerCase().includes(termo) ||
-            d.periodo?.toLowerCase().includes(termo)
-        );
+        // Helper interno: Remove acentos e joga tudo para minúsculo
+        const normalizarTexto = (texto) => {
+            if (!texto) return '';
+            return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        };
+
+        const termoPesquisado = normalizarTexto(q);
+
+        const filtrados = gradeBruta.filter(d => {
+            const nomeNormalizado = normalizarTexto(d.nome_aula || d.disciplinas?.nome);
+            const salaNormalizada = normalizarTexto(d.salas?.numero);
+            const codigoNormalizado = normalizarTexto(d.disciplinas?.codigo);
+
+            return nomeNormalizado.includes(termoPesquisado) ||
+                salaNormalizada.includes(termoPesquisado) ||
+                codigoNormalizado.includes(termoPesquisado);
+        });
 
         const agrupados = groupConsecutiveClasses(filtrados);
         const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
         return agrupados.sort((a, b) => {
             if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
             return a.sala.localeCompare(b.sala, undefined, { numeric: true });
@@ -263,7 +289,7 @@ class GradeService {
 
     async obterOcupacaoSemanal() {
         const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+        const gradeBruta = await this._obterGradeOtimizada();
         const listaNumeros = salasDb.map(s => s.numero);
         return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
     }
@@ -273,14 +299,10 @@ class GradeService {
         return this._processarOcupacaoSemanl(dadosCsv, salasUnicas);
     }
 
-    /**
-     * Upload principal de grade via PDF
-     */
     async processarUploadPdf(buffer) {
         try {
             console.log(`📡 [Grade] Iniciando extração de PDF silenciosa...`);
 
-            // Usa o novo motor de retry
             const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
 
             console.log(`✅ Sucesso! O Python devolveu as aulas formatadas.`);
@@ -288,7 +310,7 @@ class GradeService {
 
         } catch (error) {
             console.error("Erro no processamento da grade:", error.message);
-            throw new Error(error.message); // Mantém a mensagem limpa pro frontend
+            throw new Error(error.message);
         }
     }
 
@@ -308,6 +330,9 @@ class GradeService {
 
         await gradeRepository.limparGrade();
         await gradeRepository.inserirGradeLote(gradeInsert);
+
+        gradeCache = null;
+
         return { sucesso: true, registrosInseridos: gradeInsert.length };
     }
 }

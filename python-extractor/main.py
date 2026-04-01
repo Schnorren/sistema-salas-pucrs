@@ -3,7 +3,9 @@ from fastapi.responses import JSONResponse
 import pdfplumber
 import re
 import io
-import gc  # Adicionado para forçar a limpeza de memória
+import gc
+import traceback
+import sys
 
 app = FastAPI(title="Extrator PDF PUCRS")
 
@@ -22,88 +24,98 @@ ROOM_RE   = re.compile(r'C\.15\.A\.(\d{2})\.(\d{2})')
 FOOTER_RE = re.compile(r'^Data:\s*\d{2}/\d{2}/\d{4}')
 
 def parse_room_code(text):
-    m = ROOM_RE.search(text)
+    m = ROOM_RE.search(str(text))
     if m:
         andar = m.group(1).lstrip('0') or '0'
         sala  = m.group(2)
         return f"{andar}{sala}"
-    return text.strip()
+    return str(text).strip()
 
 def parse_period(cell_text):
     if not cell_text: return None
-    m = PERIOD_RE.match(cell_text.strip())
+    m = PERIOD_RE.match(str(cell_text).strip())
     return m.group(2) if m else None
 
 def clean_class_name(raw):
     if not raw: return ""
-    text = raw.replace('\n', ' ').strip()
+    text = str(raw).replace('\n', ' ').strip()
     text = re.sub(r' {2,}', ' ', text)
     if FOOTER_RE.match(text): return ""
     return text
 
 def extract_page(page):
-    # OTIMIZAÇÃO: Filtra apenas linhas retas, gastando menos CPU
-    table_settings = {
-        "vertical_strategy": "lines", 
-        "horizontal_strategy": "lines",
-        "snap_tolerance": 3,
-    }
-    
-    tables = page.extract_tables(table_settings=table_settings)
-    if not tables: return []
+    try:
+        table_settings = {
+            "vertical_strategy": "lines", 
+            "horizontal_strategy": "lines",
+            "snap_tolerance": 3,
+        }
+        
+        tables = page.extract_tables(table_settings=table_settings)
+        if not tables: return []
 
-    main_table = max(tables, key=lambda t: len(t))
-    all_text = ' '.join(cell for t in tables for row in t for cell in row if cell)
-    m = ROOM_RE.search(all_text)
-    if not m: return []
-    
-    room_code = parse_room_code(m.group(0))
-    header_row_idx = None
-    day_col_map = {}
-    
-    for row_idx, row in enumerate(main_table):
-        day_cols = {}
-        for col_idx, cell in enumerate(row):
-            if cell and cell.strip() in DAYS:
-                day_cols[cell.strip()] = col_idx
-        if len(day_cols) >= 5:
-            header_row_idx = row_idx
-            day_col_map = day_cols
-            break
+        main_table = max(tables, key=lambda t: len(t))
+        if not main_table: return []
 
-    if header_row_idx is None or not day_col_map: return []
+        # BLINDAGEM: str(cell) garante que não teremos TypeError se a célula for um número
+        all_text = ' '.join(str(cell) for t in tables for row in t for cell in row if cell)
+        m = ROOM_RE.search(all_text)
+        if not m: return []
+        
+        room_code = parse_room_code(m.group(0))
+        header_row_idx = None
+        day_col_map = {}
+        
+        for row_idx, row in enumerate(main_table):
+            day_cols = {}
+            for col_idx, cell in enumerate(row):
+                if cell:
+                    cleaned_cell = str(cell).strip()
+                    if cleaned_cell in DAYS:
+                        day_cols[cleaned_cell] = col_idx
+            if len(day_cols) >= 5:
+                header_row_idx = row_idx
+                day_col_map = day_cols
+                break
 
-    period_col_idx = 0
-    for col_idx in range(len(main_table[0])):
-        for row in main_table[header_row_idx + 1: header_row_idx + 10]:
-            if col_idx < len(row) and row[col_idx]:
-                if PERIOD_RE.match(row[col_idx].strip()):
-                    period_col_idx = col_idx
-                    break
-        else: continue
-        break
+        if header_row_idx is None or not day_col_map: return []
 
-    records = []
-    for row in main_table[header_row_idx + 1:]:
-        if not row or all(c is None or str(c).strip() == '' for c in row): continue
+        period_col_idx = 0
+        if len(main_table) > header_row_idx + 1 and len(main_table[0]) > 0:
+            for col_idx in range(len(main_table[0])):
+                for row in main_table[header_row_idx + 1: header_row_idx + 10]:
+                    if col_idx < len(row) and row[col_idx]:
+                        if PERIOD_RE.match(str(row[col_idx]).strip()):
+                            period_col_idx = col_idx
+                            break
+                else: continue
+                break
 
-        period_cell = row[period_col_idx] if period_col_idx < len(row) else None
-        period_letter = parse_period(period_cell or "")
-        if not period_letter: continue
+        records = []
+        for row in main_table[header_row_idx + 1:]:
+            if not row or all(c is None or str(c).strip() == '' for c in row): continue
 
-        period_label = PERIOD_LABEL.get(period_letter, period_letter)
+            period_cell = row[period_col_idx] if period_col_idx < len(row) else None
+            period_letter = parse_period(period_cell or "")
+            if not period_letter: continue
 
-        for day_name, col_idx in day_col_map.items():
-            if col_idx >= len(row): continue
-            class_name = clean_class_name(row[col_idx] or "")
-            if class_name:
-                records.append({
-                    'Sala': room_code,
-                    'Dia': day_name,
-                    'Periodo': period_label,
-                    'Nome_da_Aula': class_name,
-                })
-    return records
+            period_label = PERIOD_LABEL.get(period_letter, period_letter)
+
+            for day_name, col_idx in day_col_map.items():
+                if col_idx >= len(row): continue
+                class_name = clean_class_name(row[col_idx] or "")
+                if class_name:
+                    records.append({
+                        'Sala': room_code,
+                        'Dia': day_name,
+                        'Periodo': period_label,
+                        'Nome_da_Aula': class_name,
+                    })
+        return records
+    except Exception as e:
+        print(f"⚠️ Erro ao processar página: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return []
 
 @app.get("/")
 async def root():
@@ -127,10 +139,12 @@ async def extract_pdf_endpoint(file: UploadFile = File(...)):
                 records = extract_page(page)
                 all_records.extend(records)
                 
-                # OTIMIZAÇÃO CRÍTICA: Descarrega a página processada da memória RAM
-                page.flush_cache()
+                # BLINDAGEM: Tenta limpar a memória (protegido caso a versão do pdfplumber seja antiga)
+                try:
+                    page.flush_cache()
+                except AttributeError:
+                    pass
                 
-        # OTIMIZAÇÃO CRÍTICA: Força a liberação da memória residual
         gc.collect()
                 
         if not all_records:
@@ -139,4 +153,7 @@ async def extract_pdf_endpoint(file: UploadFile = File(...)):
         return JSONResponse(content={"records": all_records})
     
     except Exception as e:
+        # ISSO VAI MOSTRAR A LINHA EXATA DO ERRO NO RENDER
+        print("🚨 ERRO FATAL NO ENDPOINT /extract-pdf:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=500, detail=str(e))
