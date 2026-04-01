@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-// Opções de períodos para o filtro manual
 const PERIOD_OPTIONS = [
   { code: 'A', lb: '08:00' }, { code: 'B', lb: '08:45' }, { code: 'C', lb: '09:45' },
   { code: 'D', lb: '10:30' }, { code: 'E', lb: '11:30' }, { code: 'E1', lb: '12:15' },
@@ -17,7 +16,7 @@ export default function NextClasses() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
-  const [per, setPer] = useState('auto'); // 'auto' ou o código do período (ex: 'K')
+  const [per, setPer] = useState('auto');
 
   useEffect(() => {
     setLoading(true);
@@ -33,7 +32,6 @@ export default function NextClasses() {
       });
   }, [day, per]);
 
-  // Função auxiliar para renderizar os cards de aula para não repetir HTML
   const renderCard = (aula, isCurrent) => (
     <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`}>
       <div className="nct">
@@ -55,7 +53,7 @@ export default function NextClasses() {
 
   return (
     <div className="view active" id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      {/* TOOLBAR */}
+      
       <div className="toolbar">
         <label>Dia:</label>
         <select value={day} onChange={e => setDay(e.target.value)}>
@@ -73,7 +71,7 @@ export default function NextClasses() {
         </select>
       </div>
       
-      {/* CONTEÚDO */}
+      
       <div className="nx-body" id="nxBody">
         {loading ? (
            <div className="empty-st">Carregando dados do servidor...</div>
@@ -81,7 +79,7 @@ export default function NextClasses() {
            <div className="empty-st">Erro ao carregar os dados.</div>
         ) : data.periodoAtualReferencia ? (
           <>
-            {/* SEÇÃO 1: Em Andamento */}
+            
             <div>
               <div className="nx-hd">Em andamento — <em>Período {data.periodoAtualReferencia}</em> ({data.labelPeriodoAtual})</div>
               {data.emAndamento.length === 0 ? (
@@ -93,7 +91,7 @@ export default function NextClasses() {
               )}
             </div>
 
-            {/* SEÇÃO 2: Próximas Aulas */}
+            
             {data.proximas.length > 0 && (
               <div style={{ marginTop: '20px' }}>
                 <div className="nx-hd">A seguir — <em>Iniciando no próximo período</em></div>
@@ -104,7 +102,7 @@ export default function NextClasses() {
             )}
           </>
         ) : (
-          /* SEÇÃO 3: Fora de Horário (ou todas as aulas do dia) */
+          
           <div>
             <div className="nx-hd">Todas as aulas — {day}</div>
             {data.todasAsAulas.length === 0 ? (

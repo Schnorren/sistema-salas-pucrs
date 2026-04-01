@@ -7,18 +7,15 @@ export default function WeeklyHeatmap() {
   const [rawData, setRawData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Estados dos Filtros (Sets para busca de performance O(1))
   const [activeDays, setActiveDays] = useState(new Set());
   const [activeRooms, setActiveRooms] = useState(new Set());
   const [activePers, setActivePers] = useState(new Set());
 
-  // Busca inicial
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL}/api/grade/ocupacao`)
       .then(res => res.json())
       .then(d => {
         setRawData(d);
-        // Inicializa com todos os filtros marcados por padrão
         setActiveDays(new Set(d.diasDisponiveis));
         setActiveRooms(new Set(d.salasDisponiveis));
         setActivePers(new Set(d.periodosDisponiveis));
@@ -27,11 +24,9 @@ export default function WeeklyHeatmap() {
       .catch(err => console.error("Erro ao buscar dados de ocupação:", err));
   }, []);
 
-  // Lógica de Processamento (Memoizada: reage em tempo real aos filtros)
   const stats = useMemo(() => {
     if (!rawData) return null;
 
-    // 1. Filtragem da base bruta baseada nos Sets ativos
     const filtered = rawData.ocupacaoBase.filter(item => 
       activeDays.has(item.dia) && 
       activeRooms.has(item.sala) && 
@@ -41,7 +36,6 @@ export default function WeeklyHeatmap() {
     let totalOccupied = 0;
     const possiblePerRoom = activeDays.size * activePers.size;
 
-    // 2. Montagem da tabela e cálculo individual por sala
     const heatmap = [...activeRooms]
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map(sala => {
@@ -60,11 +54,9 @@ export default function WeeklyHeatmap() {
         return { sala, contagemPorDia, totalSala, percSala };
       });
 
-    // 3. Cálculos de Ocupação Geral
     const totalPossible = possiblePerRoom * activeRooms.size;
     const percGeral = totalPossible > 0 ? ((totalOccupied / totalPossible) * 100).toFixed(1) : '0.0';
 
-    // 4. Estatísticas para Gráficos de Barras
     const mxCount = Math.max(1, ...heatmap.map(h => h.totalSala));
     const usageByDay = [...activeDays].map(dia => ({
       dia,
@@ -74,7 +66,6 @@ export default function WeeklyHeatmap() {
     return { heatmap, usageByDay, mxCount, totalOccupied, totalPossible, percGeral };
   }, [rawData, activeDays, activeRooms, activePers]);
 
-  // Handlers de Filtro
   const handleFilterChange = (set, value, setter) => {
     const newSet = new Set(set);
     if (newSet.has(value)) newSet.delete(value);
@@ -87,7 +78,6 @@ export default function WeeklyHeatmap() {
     if (type === 'pers') setActivePers(value ? new Set(rawData.periodosDisponiveis) : new Set());
   };
 
-  // Lógica de Cores da Tabela (Heatmap)
   const getHeatClass = (v) => {
     if (!v) return 'h0';
     const totalPersNoDia = activePers.size;
@@ -99,7 +89,6 @@ export default function WeeklyHeatmap() {
     return 'h5';
   };
 
-  // Exportação CSV
   const exportCSV = () => {
     const days = [...activeDays];
     let csv = `Sala,${days.join(',')},Total Ocupado,Total Possivel,% Ocupacao\n`;
@@ -124,7 +113,7 @@ export default function WeeklyHeatmap() {
   return (
     <div className="view active" id="vHeat" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       
-      {/* TOOLBAR DOS FILTROS DINÂMICOS */}
+      
       <div className="toolbar" style={{ alignItems: 'flex-start', padding: '14px 18px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
           
@@ -177,7 +166,7 @@ export default function WeeklyHeatmap() {
 
         <div className="sep" style={{ height: 'auto', alignSelf: 'stretch' }}></div>
 
-        {/* BOTÕES DE EXPORTAÇÃO */}
+        
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button className="exp-btn purple" onClick={() => generateHeatmapPDF(stats, activeDays, activePers.size)}>
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{marginRight:6}}><path d="M4 4V2h8v2M4 12v2h8v-2M2 6h12v6H2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -194,10 +183,10 @@ export default function WeeklyHeatmap() {
         </div>
       </div>
 
-      {/* ÁREA DE RESULTADOS */}
+      
       <div className="heat-body" style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
 
-        {/* NOVA SEÇÃO: GRÁFICO DONUT CONSOLIDADO */}
+        
         {stats.heatmap.length > 0 && (
           <div className="bar-card" style={{ marginBottom: 25, background: '#fff' }}>
             <div className="bar-ttl">Ocupação Consolidada (Filtros Ativos)</div>
@@ -232,7 +221,7 @@ export default function WeeklyHeatmap() {
           </div>
         )}
         
-        {/* TABELA DE OCUPAÇÃO (AGORA COM MINI-PIZZA) */}
+        
         <div style={{ marginBottom: 30 }}>
           <table className="heat-tbl">
             <thead>
@@ -260,7 +249,7 @@ export default function WeeklyHeatmap() {
                       );
                     })}
                     
-                    {/* Célula do Mini Gráfico de Pizza por Sala */}
+                    
                     <td style={{ textAlign: 'right', paddingRight: '20px', minWidth: '120px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -281,7 +270,7 @@ export default function WeeklyHeatmap() {
           </table>
         </div>
 
-        {/* GRÁFICOS DE BARRAS INFERIORES */}
+        
         <div className="bars">
           <div className="bar-card">
             <div className="bar-ttl">Salas com maior utilização no período</div>

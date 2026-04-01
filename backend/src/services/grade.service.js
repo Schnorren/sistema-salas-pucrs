@@ -74,16 +74,11 @@ class GradeService {
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
 
-    /**
-         * Motor interno de Retry (Tentativas Automáticas)
-         * Esconde o tempo de "boot" do Python (Cold Start) do usuário final.
-         */
     async _enviarParaPythonComRetry(buffer, filename) {
         const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
 
-        // --- AUMENTO DRASTICO DE TOLERÂNCIA PARA RENDER FREE ---
-        const MAX_RETRIES = 10; // Tentará 10 vezes
-        const RETRY_DELAY = 6000; // Espera 6 segundos entre tentativas (Total: 60s de tolerância)
+        const MAX_RETRIES = 10;
+        const RETRY_DELAY = 6000;
 
         console.log(`🚀 Iniciando motor de envio para o Python... URL: ${PYTHON_API_URL}`);
 
@@ -126,19 +121,15 @@ class GradeService {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                     continue;
                 }
-                throw error; // Se esgotaram as 10 tentativas, desiste.
+                throw error;
             }
         }
     }
 
-    /**
-     * Análise de relatórios históricos via PDF
-     */
     async analisarGradeExternaPdf(buffer) {
         try {
             console.log(`📊 [Histórico] Iniciando extração de PDF silenciosa...`);
 
-            // Usa o novo motor de retry
             const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
             const records = jsonResponse.records;
 
@@ -273,14 +264,10 @@ class GradeService {
         return this._processarOcupacaoSemanl(dadosCsv, salasUnicas);
     }
 
-    /**
-     * Upload principal de grade via PDF
-     */
     async processarUploadPdf(buffer) {
         try {
             console.log(`📡 [Grade] Iniciando extração de PDF silenciosa...`);
 
-            // Usa o novo motor de retry
             const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
 
             console.log(`✅ Sucesso! O Python devolveu as aulas formatadas.`);
@@ -288,7 +275,7 @@ class GradeService {
 
         } catch (error) {
             console.error("Erro no processamento da grade:", error.message);
-            throw new Error(error.message); // Mantém a mensagem limpa pro frontend
+            throw new Error(error.message);
         }
     }
 
