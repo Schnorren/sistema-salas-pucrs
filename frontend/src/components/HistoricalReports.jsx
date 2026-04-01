@@ -5,9 +5,6 @@ const COLORS = ['#1c2b4a', '#c8973a', '#4e338a', '#1e6b40', '#a02828', '#1a6878'
 const DAYS_OPTIONS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const PERIOD_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
 
-// ============================================================================
-// ESCUDO DE ERROS (ERROR BOUNDARY)
-// ============================================================================
 class LocalErrorBoundary extends Component {
     constructor(props) { super(props); this.state = { hasError: false, errorMsg: '' }; }
     static getDerivedStateFromError(error) { return { hasError: true, errorMsg: error.message }; }
@@ -28,9 +25,6 @@ class LocalErrorBoundary extends Component {
     }
 }
 
-// ============================================================================
-// COMPONENTE PRINCIPAL
-// ============================================================================
 export default function HistoricalReports() {
     const [semanas, setSemanas] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -40,7 +34,6 @@ export default function HistoricalReports() {
     const [activePers, setActivePers] = useState(new Set(PERIOD_OPTIONS));
     const [activeRooms, setActiveRooms] = useState(new Set());
 
-    // Extrai todas as salas únicas de todos os arquivos carregados
     const allAvailableRooms = useMemo(() => {
         const rooms = new Set();
         semanas.forEach(s => {
@@ -49,7 +42,6 @@ export default function HistoricalReports() {
         return Array.from(rooms).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     }, [semanas]);
 
-    // Quando novas salas aparecem (novo arquivo), seleciona elas automaticamente
     useEffect(() => {
         if (allAvailableRooms.length > 0 && activeRooms.size === 0) {
             setActiveRooms(new Set(allAvailableRooms));
@@ -66,9 +58,7 @@ export default function HistoricalReports() {
         }
     }, [allAvailableRooms]);
 
-    /**
-     * Handler de Upload Moderno (Envia PDF Multipart para API Node -> Microserviço Python)
-     */
+    
     const handleFiles = async (e) => {
         const target = e.target;
         const files = Array.from(target.files);
@@ -85,7 +75,7 @@ export default function HistoricalReports() {
 
                     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/analisar-externo-pdf`, {
                         method: 'POST',
-                        body: formData // Envia o arquivo cru, sem client-side parsing
+                        body: formData
                     });
 
                     if (!res.ok) {
@@ -118,25 +108,20 @@ export default function HistoricalReports() {
         }
     };
 
-    /**
-     * Lógica Matemática Completa (Geral e Por Sala)
-     */
+    
     const filteredComparison = useMemo(() => {
         if (!semanas || semanas.length === 0) return [];
         
         return semanas.map(s => {
             if (!s?.data?.ocupacaoBase) return { id: s.id, nome: s?.nome || 'Erro', total: 0, percentual: '0.0', roomStats: {} };
 
-            // Aplica os 3 Filtros (Dias, Periodos e Salas)
             const baseFiltrada = s.data.ocupacaoBase.filter(item =>
                 activeDays.has(item.dia) && activePers.has(item.periodo) && activeRooms.has(item.sala)
             );
 
-            // Ocupação Geral
             const totalPossivelGeral = activeDays.size * activePers.size * activeRooms.size;
             const percGeral = totalPossivelGeral > 0 ? ((baseFiltrada.length / totalPossivelGeral) * 100).toFixed(1) : '0.0';
 
-            // Ocupação Por Sala
             const roomStats = {};
             activeRooms.forEach(room => {
                 const aulasDaSala = baseFiltrada.filter(item => item.sala === room).length;
@@ -169,12 +154,12 @@ export default function HistoricalReports() {
         <LocalErrorBoundary>
             <div className="view active" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 
-                {/* TOOLBAR DA SANDBOX */}
+                
                 <div className="toolbar" style={{ borderBottom: '2px solid var(--accent)', background: 'var(--panel2)', alignItems: 'flex-start' }}>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
                         
-                        {/* Filtros de Dias e Períodos */}
+                        
                         <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                             <div>
                                 <label className="ms-lbl">Dias Analisados</label>
@@ -200,7 +185,7 @@ export default function HistoricalReports() {
                             </div>
                         </div>
 
-                        {/* Filtro de Salas Dinâmico */}
+                        
                         {allAvailableRooms.length > 0 && (
                             <div>
                                 <label className="ms-lbl" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: '800px' }}>
@@ -245,7 +230,7 @@ export default function HistoricalReports() {
                     </div>
                 )}
 
-                {/* PAINEL DE GRÁFICOS */}
+                
                 <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: 'var(--bg)' }}>
                     {semanas.length === 0 ? (
                         <div className="empty-st">
@@ -256,7 +241,7 @@ export default function HistoricalReports() {
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                             
-                            {/* SEÇÃO 1: VISÃO GERAL (DONUT CHARTS) */}
+                            
                             <div className="bar-card">
                                 <div className="bar-ttl">Ocupação Consolidada do Prédio</div>
                                 <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', marginTop: '15px' }}>
@@ -292,7 +277,7 @@ export default function HistoricalReports() {
                                 </div>
                             </div>
 
-                            {/* SEÇÃO 2: MATRIZ DE COMPARAÇÃO POR SALA */}
+                            
                             <div className="bar-card" style={{ padding: 0, overflow: 'hidden' }}>
                                 <div className="bar-ttl" style={{ padding: '20px', borderBottom: '1px solid var(--border)', background: '#fff' }}>Desempenho por Sala</div>
                                 <div style={{ overflowX: 'auto' }}>

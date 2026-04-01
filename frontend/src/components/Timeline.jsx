@@ -42,7 +42,7 @@ export default function Timeline() {
 
       <div className="tl-scroll" style={{ flex: 1, overflowY: 'auto' }}>
         <div id="tlInner">
-          {/* CABEÇALHO FIXO */}
+          
           <div className="tl-hdr">
             <div className="tl-rl">Sala</div>
             <div className="tl-pers">
@@ -54,7 +54,7 @@ export default function Timeline() {
             </div>
           </div>
 
-          {/* LINHAS DAS SALAS */}
+          
           {data.timeline.map(linha => (
             <div key={linha.sala} className="tl-row">
               <div className={`tl-rn ${linha.temAulaAgora ? 'on' : ''}`}>{linha.sala}</div>

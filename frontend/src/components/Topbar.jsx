@@ -5,13 +5,11 @@ export default function Topbar({ session }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
   const [time, setTime] = useState(new Date());
 
-  // Relógio
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Tema Escuro
   useEffect(() => {
     document.body.classList.toggle('dark-mode', isDark);
     localStorage.setItem('theme', isDark ? 'dark' : 'light');

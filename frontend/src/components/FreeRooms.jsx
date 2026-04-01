@@ -25,7 +25,7 @@ export default function FreeRooms() {
   return (
     <div className="view active" id="vFree" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       
-      {/* TOOLBAR */}
+      
       <div className="toolbar">
         <label>Dia:</label>
         <select value={day} onChange={e => setDay(e.target.value)}>
@@ -33,7 +33,7 @@ export default function FreeRooms() {
         </select>
       </div>
 
-      {/* CONTEÚDO (Cards de Salas Livres) */}
+      
       <div className="free-body" id="freeBody" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         
         {loading ? (

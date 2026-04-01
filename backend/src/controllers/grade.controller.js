@@ -64,8 +64,8 @@ class GradeController {
             const { q } = req.query;
             const resultados = await gradeService.realizarBuscaGlobal(q);
             return res.status(200).json(resultados);
-        } catch (e) { 
-            return res.status(500).json({ error: e.message }); 
+        } catch (e) {
+            return res.status(500).json({ error: e.message });
         }
     }
 
@@ -88,7 +88,6 @@ class GradeController {
                 return res.status(400).json({ error: 'Nenhum arquivo PDF enviado.' });
             }
 
-            // Envia o buffer do arquivo (bytes em memória) para o service
             const resultado = await gradeService.processarUploadPdf(req.file.buffer);
             return res.status(201).json(resultado);
 
@@ -104,7 +103,6 @@ class GradeController {
                 return res.status(400).json({ error: 'Nenhum arquivo PDF enviado para análise.' });
             }
 
-            // Manda o buffer para o Service processar
             const resultado = await gradeService.analisarGradeExternaPdf(req.file.buffer);
             return res.status(200).json(resultado);
 
