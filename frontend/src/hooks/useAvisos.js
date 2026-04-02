@@ -61,13 +61,10 @@ export const useAvisos = () => {
         }
     };
 
-    // NOVA FUNÇÃO: Exclui o registro fisicamente do banco de dados
     const excluirAviso = async (id) => {
         try {
             const { error } = await supabase.from('avisos').delete().eq('id', id);
             if (error) throw error;
-            
-            // Remove instantaneamente da tela sem precisar recarregar
             setAvisos(prev => prev.filter(aviso => aviso.id !== id));
             return true;
         } catch (err) {
@@ -76,5 +73,28 @@ export const useAvisos = () => {
         }
     };
 
-    return { avisos, loading, error, fetchAvisosAtivos, criarAviso, concluirAviso, excluirAviso };
+    const adicionarComentario = async (id, descricaoAtual, novoComentario, userEmail) => {
+        try {
+            const dataHora = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+            const nomeUsuario = userEmail.split('@')[0]; 
+            
+            const textoAdicional = `\n\n📌 [${dataHora} - ${nomeUsuario}]: ${novoComentario}`;
+            const novaDescricao = descricaoAtual + textoAdicional;
+
+            const { error } = await supabase
+                .from('avisos')
+                .update({ descricao: novaDescricao })
+                .eq('id', id);
+
+            if (error) throw error;
+            
+            setAvisos(prev => prev.map(a => a.id === id ? { ...a, descricao: novaDescricao } : a));
+            return true;
+        } catch (err) {
+            console.error('🚨 Erro ao adicionar nota:', err.message);
+            return false;
+        }
+    };
+
+    return { avisos, loading, error, fetchAvisosAtivos, criarAviso, concluirAviso, excluirAviso, adicionarComentario };
 };
