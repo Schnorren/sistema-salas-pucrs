@@ -129,12 +129,16 @@ export default function Dashboard({ session }) {
             ) : (
               <>
                 {searchResults.map((res) => (
-                  <div key={res.id} className="sd-item" onClick={() => handleSelectResult(res)}>
+                  <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
                     <div className="sd-room">{res.sala}</div>
                     <div className="sd-info">
                       <div className="sd-class">{res.nome}</div>
                       <div className="sd-meta">
-                        {res.dia_semana} · Per. {res.periodosFormatados} · {res.horarioInicio}
+                        <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
+                        <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                        Período {res.periodosFormatados}
+                        <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                        {res.horarioInicio} às {res.horarioFim}
                       </div>
                     </div>
                   </div>
