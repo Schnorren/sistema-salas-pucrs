@@ -244,7 +244,6 @@ class GradeService {
         if (!q || q.length < 2) return [];
         const gradeBruta = await this._obterGradeOtimizada();
 
-        // Helper interno: Remove acentos e joga tudo para minúsculo
         const normalizarTexto = (texto) => {
             if (!texto) return '';
             return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -254,7 +253,7 @@ class GradeService {
 
         const filtrados = gradeBruta.filter(d => {
             const nomeNormalizado = normalizarTexto(d.nome_aula || d.disciplinas?.nome);
-            const salaNormalizada = normalizarTexto(d.salas?.numero);
+            const salaNormalizada = normalizarTexto(d.salas?.numero || d.sala);
             const codigoNormalizado = normalizarTexto(d.disciplinas?.codigo);
 
             return nomeNormalizado.includes(termoPesquisado) ||
@@ -262,10 +261,22 @@ class GradeService {
                 codigoNormalizado.includes(termoPesquisado);
         });
 
-        const agrupados = groupConsecutiveClasses(filtrados);
         const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+        let resultados = [];
 
-        return agrupados.sort((a, b) => {
+        dias.forEach(dia => {
+            const aulasDoDia = filtrados.filter(f => f.dia_semana === dia || f.Dia === dia);
+
+            if (aulasDoDia.length > 0) {
+                const agrupadas = groupConsecutiveClasses(aulasDoDia);
+                agrupadas.forEach(aula => {
+                    aula.dia_semana = dia;
+                    resultados.push(aula);
+                });
+            }
+        });
+
+        return resultados.sort((a, b) => {
             if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
             return a.sala.localeCompare(b.sala, undefined, { numeric: true });
         }).slice(0, 15);

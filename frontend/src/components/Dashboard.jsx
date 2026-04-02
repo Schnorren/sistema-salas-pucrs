@@ -11,7 +11,7 @@ import MuralAvisos from './MuralAvisos';
 
 export default function Dashboard({ session }) {
   const [activeTab, setActiveTab] = useState('map');
-  
+
   const [showAdminMenu, setShowAdminMenu] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,7 +22,7 @@ export default function Dashboard({ session }) {
   const searchRef = useRef(null);
   const adminMenuRef = useRef(null);
 
-  
+
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
       setSearchResults([]);
@@ -49,7 +49,7 @@ export default function Dashboard({ session }) {
     return () => clearTimeout(delayDebounce);
   }, [searchQuery]);
 
-  
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
@@ -63,21 +63,21 @@ export default function Dashboard({ session }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  
+
   const handleSelectResult = (result) => {
     setShowDropdown(false);
     setSearchQuery('');
     setActiveTab('tl');
   };
 
-  
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'map': return <LiveMap />;
       case 'tl': return <Timeline />;
       case 'next': return <NextClasses />;
       case 'avisos': return <MuralAvisos session={session} />;
-      
+
       case 'free': return <div style={{ padding: 20 }}><FreeRooms /></div>;
       case 'heat': return <WeeklyHeatmap />;
       case 'reports': return <HistoricalReports />;
@@ -96,10 +96,10 @@ export default function Dashboard({ session }) {
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
 
-      
+
       <Topbar session={session} />
 
-      
+
       <div className="search-bar" ref={searchRef}>
         <div className="search-input-wrap">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -119,7 +119,7 @@ export default function Dashboard({ session }) {
           )}
         </div>
 
-        
+
         {showDropdown && (
           <div className="search-dropdown vis">
             {isSearching ? (
@@ -129,12 +129,16 @@ export default function Dashboard({ session }) {
             ) : (
               <>
                 {searchResults.map((res) => (
-                  <div key={res.id} className="sd-item" onClick={() => handleSelectResult(res)}>
+                  <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
                     <div className="sd-room">{res.sala}</div>
                     <div className="sd-info">
                       <div className="sd-class">{res.nome}</div>
                       <div className="sd-meta">
-                        {res.dia_semana} · Per. {res.periodosFormatados} · {res.horarioInicio}
+                        <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
+                        <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                        Período {res.periodosFormatados}
+                        <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                        {res.horarioInicio} às {res.horarioFim}
                       </div>
                     </div>
                   </div>
@@ -147,10 +151,9 @@ export default function Dashboard({ session }) {
         <span className="search-hint">Busca inteligente em tempo real</span>
       </div>
 
-      
-      <div className="navtabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: '100%' }}>
-        
-        
+
+      <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
           <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
           <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>Linha do Tempo</div>
@@ -158,89 +161,89 @@ export default function Dashboard({ session }) {
           <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>Mural de Avisos</div>
         </div>
 
-        
+
         <div style={{ position: 'relative', padding: '0 16px 8px 16px' }} ref={adminMenuRef}>
-          <button 
-              onClick={() => setShowAdminMenu(!showAdminMenu)}
-              style={{ 
-                  background: 'transparent', border: 'none', 
-                  color: isGestaoActive ? '#60a5fa' : '#9ca3af', 
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', 
-                  fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
-              }}
+          <button
+            onClick={() => setShowAdminMenu(!showAdminMenu)}
+            style={{
+              background: 'transparent', border: 'none',
+              color: isGestaoActive ? '#60a5fa' : '#9ca3af',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+              fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
+            }}
           >
-              ⚙️ Gestão ▾
+            ⚙️ Gestão ▾
           </button>
 
-          
+
           {showAdminMenu && (
-              <div style={{ 
-                  position: 'absolute', top: '100%', right: '16px', 
-                  background: '#1e293b', border: '1px solid #334155', 
-                  borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', 
-                  zIndex: 50, minWidth: '220px', overflow: 'hidden' 
-              }}>
-                  <div 
-                      onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
-                      style={{ 
-                          padding: '14px 16px', cursor: 'pointer', fontSize: '13px', 
-                          color: activeTab === 'free' ? '#fff' : '#cbd5e1', 
-                          background: activeTab === 'free' ? '#2563eb' : 'transparent', 
-                          borderBottom: '1px solid #334155',
-                          transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={(e) => { if(activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if(activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
-                  >
-                      🚪 Salas Livres
-                  </div>
-                  <div 
-                      onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
-                      style={{ 
-                          padding: '14px 16px', cursor: 'pointer', fontSize: '13px', 
-                          color: activeTab === 'heat' ? '#fff' : '#cbd5e1', 
-                          background: activeTab === 'heat' ? '#2563eb' : 'transparent', 
-                          borderBottom: '1px solid #334155',
-                          transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={(e) => { if(activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if(activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
-                  >
-                      🔥 Ocupação Semanal
-                  </div>
-                  <div 
-                      onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
-                      style={{ 
-                          padding: '14px 16px', cursor: 'pointer', fontSize: '13px', 
-                          color: activeTab === 'reports' ? '#fff' : '#cbd5e1', 
-                          background: activeTab === 'reports' ? '#2563eb' : 'transparent', 
-                          borderBottom: '1px solid #334155',
-                          transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={(e) => { if(activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if(activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
-                  >
-                      📊 Relatórios Históricos
-                  </div>
-                  <div 
-                      onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
-                      style={{ 
-                          padding: '14px 16px', cursor: 'pointer', fontSize: '13px', 
-                          color: activeTab === 'upload' ? '#fff' : '#cbd5e1', 
-                          background: activeTab === 'upload' ? '#2563eb' : 'transparent',
-                          transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={(e) => { if(activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if(activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
-                  >
-                      🔄 Atualizar Grade CSV
-                  </div>
+            <div style={{
+              position: 'absolute', top: '100%', right: '16px',
+              background: '#1e293b', border: '1px solid #334155',
+              borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+              zIndex: 50, minWidth: '220px', overflow: 'hidden'
+            }}>
+              <div
+                onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
+                style={{
+                  padding: '14px 16px', cursor: 'pointer', fontSize: '13px',
+                  color: activeTab === 'free' ? '#fff' : '#cbd5e1',
+                  background: activeTab === 'free' ? '#2563eb' : 'transparent',
+                  borderBottom: '1px solid #334155',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
+                onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
+              >
+                🚪 Salas Livres
               </div>
+              <div
+                onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
+                style={{
+                  padding: '14px 16px', cursor: 'pointer', fontSize: '13px',
+                  color: activeTab === 'heat' ? '#fff' : '#cbd5e1',
+                  background: activeTab === 'heat' ? '#2563eb' : 'transparent',
+                  borderBottom: '1px solid #334155',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
+                onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
+              >
+                🔥 Ocupação Semanal
+              </div>
+              <div
+                onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
+                style={{
+                  padding: '14px 16px', cursor: 'pointer', fontSize: '13px',
+                  color: activeTab === 'reports' ? '#fff' : '#cbd5e1',
+                  background: activeTab === 'reports' ? '#2563eb' : 'transparent',
+                  borderBottom: '1px solid #334155',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
+                onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
+              >
+                📊 Relatórios Históricos
+              </div>
+              <div
+                onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
+                style={{
+                  padding: '14px 16px', cursor: 'pointer', fontSize: '13px',
+                  color: activeTab === 'upload' ? '#fff' : '#cbd5e1',
+                  background: activeTab === 'upload' ? '#2563eb' : 'transparent',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
+                onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
+              >
+                🔄 Atualizar Grade CSV
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      
+
       <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
         {renderTabContent()}
       </div>
