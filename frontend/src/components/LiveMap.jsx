@@ -1,24 +1,33 @@
 import { useState, useEffect } from 'react';
+import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const PERIOD_OPTIONS = ['A','B','C','D','E','E1','F','G','H','I','J','K','L','M','N','P'];
 
-export default function LiveMap() {
+export default function LiveMap({ session, acesso }) {
   const [data, setData] = useState(null);
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { predioAtivo } = usePredio(); // 📍 2. Hook
   
   const [tt, setTt] = useState({ visible: false, x: 0, y: 0, sala: '', info: '' });
 
   useEffect(() => {
+    if (!predioAtivo && !acesso?.predioId) return;
+
     let isMounted = true;
     setLoading(true);
     setError(null);
     
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/planta?dia=${day}&periodo=${per}`)
+    const headers = {
+        'Authorization': `Bearer ${session?.access_token}`,
+        'x-predio-id': predioAtivo || acesso?.predioId || ''
+    };
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/grade/planta?dia=${day}&periodo=${per}`, { headers })
       .then(res => {
         if (!res.ok) throw new Error(`Falha na API: ${res.status}`);
         return res.json();
@@ -38,7 +47,7 @@ export default function LiveMap() {
       });
       
     return () => { isMounted = false; };
-  }, [day, per]);
+  }, [day, per, session, acesso, predioAtivo]); // 📍 4. Dependência
 
   const handleMouseEnter = (e, sala) => {
     setTt({

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -12,27 +13,36 @@ const PERIOD_OPTIONS = [
   { code: 'P', lb: '21:45' }
 ];
 
-// Helper puro para sanitização de strings
 const normalizeText = (text) => {
   if (!text) return '';
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 };
 
-export default function NextClasses() {
+export default function NextClasses({ session, acesso }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
+  const { predioAtivo } = usePredio(); // 📍 2. Hook
   
   const [filtro, setFiltro] = useState('');
-  const [ordem, setOrdem] = useState('sala'); // NOVO: Estado para a ordenação (Padrão: sala)
+  const [ordem, setOrdem] = useState('sala');
   const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
 
-  // Fetch data
   useEffect(() => {
+    if (!predioAtivo && !acesso?.predioId) return;
     setLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/proximas?dia=${day}&periodo=${per}`)
-      .then(res => res.json())
+
+    const headers = {
+        'Authorization': `Bearer ${session?.access_token}`,
+        'x-predio-id': predioAtivo || acesso?.predioId || ''
+    };
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/grade/proximas?dia=${day}&periodo=${per}`, { headers })
+      .then(res => {
+          if (!res.ok) throw new Error("Erro ao carregar grade");
+          return res.json()
+      })
       .then(resData => {
         setData(resData);
         setLoading(false);
@@ -41,9 +51,8 @@ export default function NextClasses() {
         console.error("Erro ao carregar grade:", err);
         setLoading(false);
       });
-  }, [day, per]);
+  }, [day, per, session, acesso, predioAtivo]); // 📍 4. Dependência
 
-  // BEST PRACTICE: useMemo centraliza o Filtro e a Ordenação de forma super otimizada
   const filteredAndSortedData = useMemo(() => {
     if (!data) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
 
@@ -52,7 +61,6 @@ export default function NextClasses() {
     const applyFilterAndSort = (aulasArray) => {
       if (!aulasArray) return [];
       
-      // 1. Aplica o filtro de texto (Busca)
       let resultado = aulasArray;
       if (termo) {
         resultado = aulasArray.filter(aula => {
@@ -61,10 +69,8 @@ export default function NextClasses() {
         });
       }
 
-      // 2. Aplica a Ordenação escolhida
       return [...resultado].sort((a, b) => {
         if (ordem === 'sala') {
-          // Ordenação alfanumérica inteligente (ex: 204 vem antes de 2011)
           return a.sala.localeCompare(b.sala, undefined, { numeric: true });
         }
         if (ordem === 'nome') {
@@ -83,9 +89,8 @@ export default function NextClasses() {
       restoDoDia: applyFilterAndSort(data.restoDoDia),
       todasAsAulas: applyFilterAndSort(data.todasAsAulas)
     };
-  }, [data, filtro, ordem]); // Recalcula apenas se os dados, a busca ou a ordem mudarem
+  }, [data, filtro, ordem]);
 
-  // Renderizador de destaque (Para Agora e A Seguir)
   const renderCard = (aula, isCurrent) => (
     <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`}>
       <div className="nct">
@@ -105,7 +110,6 @@ export default function NextClasses() {
     </div>
   );
 
-  // Renderizador Compacto (Para o Resto do Dia)
   const renderCompactRow = (aula) => (
     <div key={aula.id} style={{ 
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
@@ -126,10 +130,8 @@ export default function NextClasses() {
   return (
     <div className="view active" id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       
-      {/* TOOLBAR */}
       <div className="toolbar" style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: '1px solid var(--border, #334155)', paddingBottom: '16px', marginBottom: '16px' }}>
         
-        {/* Linha 1: Filtros de Tempo e Ordenação */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Dia:</label>
@@ -150,7 +152,6 @@ export default function NextClasses() {
                 </select>
             </div>
 
-            {/* CONTROLE DISCRETO DE ORDENAÇÃO */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
                 <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>⇅</span>
                 <select 
@@ -172,7 +173,6 @@ export default function NextClasses() {
             </div>
         </div>
 
-        {/* Linha 2: BARRA DE PESQUISA GIGANTE */}
         <div style={{ position: 'relative', width: '100%' }}>
             <span style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', color: '#3b82f6' }}>🔍</span>
             <input 
@@ -198,7 +198,6 @@ export default function NextClasses() {
         </div>
       </div>
       
-      {/* BODY / CONTEÚDO */}
       <div className="nx-body" id="nxBody" style={{ paddingBottom: '40px' }}>
         {loading ? (
            <div className="empty-st">Carregando dados do servidor...</div>
@@ -206,7 +205,6 @@ export default function NextClasses() {
            <div className="empty-st">Erro ao carregar os dados.</div>
         ) : data.periodoAtualReferencia ? (
           <>
-            {/* BLOCO 1: AGORA */}
             <div>
               <div className="nx-hd">🔴 Em andamento — <em>Período {data.periodoAtualReferencia}</em> ({data.labelPeriodoAtual})</div>
               {filteredAndSortedData.emAndamento.length === 0 ? (
@@ -220,7 +218,6 @@ export default function NextClasses() {
               )}
             </div>
 
-            {/* BLOCO 2: A SEGUIR */}
             {filteredAndSortedData.proximas.length > 0 && (
               <div style={{ marginTop: '32px' }}>
                 <div className="nx-hd">🟡 A seguir — <em>Iniciando no(s) próximo(s) período(s)</em></div>
@@ -230,7 +227,6 @@ export default function NextClasses() {
               </div>
             )}
 
-            {/* BLOCO 3: MAIS TARDE (Compacto & Expansível) */}
             {filteredAndSortedData.restoDoDia.length > 0 && (
               <div style={{ marginTop: '32px' }}>
                 <div 
@@ -246,7 +242,6 @@ export default function NextClasses() {
                     </span>
                 </div>
                 
-                {/* Mostra automaticamente se houver filtro digitado, senão obedece o clique */}
                 {(mostrarMaisTarde || filtro) && (
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                         {filteredAndSortedData.restoDoDia.map(aula => renderCompactRow(aula))}
@@ -256,7 +251,6 @@ export default function NextClasses() {
             )}
           </>
         ) : (
-          /* MODO: FORA DE EXPEDIENTE / TODAS AS AULAS */
           <div>
             <div className="nx-hd">Todas as aulas — {day}</div>
             {filteredAndSortedData.todasAsAulas.length === 0 ? (

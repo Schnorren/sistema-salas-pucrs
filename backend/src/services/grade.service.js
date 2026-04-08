@@ -1,81 +1,63 @@
 const gradeRepository = require('../repositories/grade.repository');
 const {
-    PERIODS,
-    getCurrentPeriod,
-    groupConsecutiveClasses,
-    extractPeriodCode,
-    isInternalClass
+    PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
 } = require('../utils/timeHelpers');
 
-let gradeCache = null;
+const gradeCacheMap = {};
 
 class GradeService {
 
-    async _obterGradeOtimizada() {
-        if (gradeCache) {
-            return gradeCache;
+    
+    async _obterGradeOtimizada(predio_id) {
+        const cacheKey = predio_id || 'GLOBAL';
+
+        if (gradeCacheMap[cacheKey]) {
+            return gradeCacheMap[cacheKey];
         }
 
-        console.log("🔄 Buscando grade completa no Supabase e salvando em cache...");
-        gradeCache = await gradeRepository.buscarGradeCompleta();
-        return gradeCache;
+        console.log(`🔄 Buscando grade no Supabase para ${cacheKey}...`);
+        gradeCacheMap[cacheKey] = await gradeRepository.buscarGradeCompleta(predio_id);
+
+        return gradeCacheMap[cacheKey];
     }
 
-    async obterProximasAulas(diaSolicitado, periodoReferencia) {
-        const gradeBruta = await this._obterGradeOtimizada();
+    
+    async obterProximasAulas(diaSolicitado, periodoReferencia, predio_id) {
+        const gradeBruta = await this._obterGradeOtimizada(predio_id); 
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
         const response = {
-            dia: diaSolicitado,
-            periodoAtualReferencia: activePer,
-            labelPeriodoAtual: '',
-            emAndamento: [],
-            proximas: [],
-            restoDoDia: [], // NOVO: Traz o resto do dia para a UI usar se quiser
-            todasAsAulas: []
+            dia: diaSolicitado, periodoAtualReferencia: activePer, labelPeriodoAtual: '',
+            emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: []
         };
 
         if (activePer) {
             const pi = PERIODS.findIndex(p => p.code === activePer);
             if (pi >= 0) {
                 response.labelPeriodoAtual = PERIODS[pi].lb;
-
-                // 1. A MÁGICA: Agrupa absolutamente tudo do dia ANTES de filtrar
                 const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
 
-                // 2. EM ANDAMENTO: Pega qualquer aula onde o período atual esteja DENTRO do bloco
-                // Exemplo: se activePer é 'M', a aula 'LMN' tem 'M' na string, então ela entra inteira!
-                response.emAndamento = todasAgrupadas.filter(g =>
-                    g.periodosFormatados.includes(activePer)
-                );
-
-                // 3. PRÓXIMAS: Pega aulas que COMEÇAM nos próximos 2 períodos
+                response.emAndamento = todasAgrupadas.filter(g => g.periodosFormatados.includes(activePer));
                 const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
-                response.proximas = todasAgrupadas.filter(g =>
-                    nextPeriodCodes.includes(g.periodosFormatados[0]) // Só checa o 1º período da aula
-                );
-
-                // 4. MAIS TARDE: Pega as aulas que começam DEPOIS das "próximas"
+                response.proximas = todasAgrupadas.filter(g => nextPeriodCodes.includes(g.periodosFormatados[0]));
                 const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
-                response.restoDoDia = todasAgrupadas.filter(g =>
-                    futurePeriodCodes.includes(g.periodosFormatados[0])
-                );
+                response.restoDoDia = todasAgrupadas.filter(g => futurePeriodCodes.includes(g.periodosFormatados[0]));
             }
         } else {
             response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
         }
-
         return response;
     }
 
-    async obterSalasLivres(diaSolicitado) {
-        const salasDb = await this._obterGradeOtimizada();
-        const gradeBruta = await gradeRepository.buscarGradeCompleta();
+    async obterSalasLivres(diaSolicitado, predio_id) {
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
         const usedPeriodCodes = new Set(aulasDoDia.map(d => extractPeriodCode(d.periodo)));
         const activePeriods = PERIODS.filter(p => usedPeriodCodes.has(p.code));
+
+        const salasDb = await gradeRepository.buscarSalas(predio_id);
 
         const salasLivres = salasDb.map(salaRef => {
             const occupiedPeriods = aulasDoDia
@@ -88,9 +70,7 @@ class GradeService {
                 sala: salaRef.numero,
                 quantidadeLivres: freePeriods.length,
                 periodos: freePeriods.map(f => ({
-                    code: f.code,
-                    label: f.lb,
-                    fim: `${String(f.end[0]).padStart(2, '0')}:${String(f.end[1]).padStart(2, '0')}`
+                    code: f.code, label: f.lb, fim: `${String(f.end[0]).padStart(2, '0')}:${String(f.end[1]).padStart(2, '0')}`
                 }))
             };
         });
@@ -98,134 +78,67 @@ class GradeService {
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
 
-    async _enviarParaPythonComRetry(buffer, filename) {
-        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
+    async obterTimeline(diaSolicitado, predio_id) {
+        const salasDb = await gradeRepository.buscarSalas(predio_id);
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
 
-        const MAX_RETRIES = 10;
-        const RETRY_DELAY = 6000;
-
-        console.log(`🚀 Iniciando motor de envio para o Python... URL: ${PYTHON_API_URL}`);
-
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            const formData = new FormData();
-            const blob = new Blob([buffer], { type: 'application/pdf' });
-            formData.append('file', blob, filename);
-
-            try {
-                console.log(`[Node -> Python] Tentativa ${attempt}/${MAX_RETRIES}: Chamando a API...`);
-
-                const response = await fetch(PYTHON_API_URL, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const textResponse = await response.text();
-
-                if (!response.ok) {
-                    console.log(`⚠️ [Node <- Python] Erro HTTP ${response.status}. O servidor ainda pode estar acordando...`);
-                    if (attempt < MAX_RETRIES) {
-                        await new Promise(res => setTimeout(res, RETRY_DELAY));
-                        continue;
-                    }
-                    throw new Error(`Serviço Python demorou demais ou retornou erro ${response.status}`);
-                }
-
-                try {
-                    const json = JSON.parse(textResponse);
-                    console.log(`✅ [Node <- Python] SUCESSO! JSON lido perfeitamente na tentativa ${attempt}.`);
-                    return json;
-                } catch (jsonErr) {
-                    console.error(`☢️ Falha ao decodificar JSON bruto:`, textResponse.substring(0, 200));
-                    throw new Error("Python retornou um formato inválido. Pode ser uma tela de erro do Render.");
-                }
-
-            } catch (error) {
-                console.log(`⚠️ Falha de rede na tentativa ${attempt}: ${error.message}`);
-                if (attempt < MAX_RETRIES) {
-                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                    continue;
-                }
-                throw error;
-            }
-        }
-    }
-
-    async analisarGradeExternaPdf(buffer) {
-        try {
-            console.log(`📊 [Histórico] Iniciando extração de PDF silenciosa...`);
-
-            const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
-            const records = jsonResponse.records;
-
-            console.log(`✅ [Histórico] Python processou ${records.length} registros.`);
-            return await this.analisarGradeExterna(records);
-
-        } catch (error) {
-            console.error("Erro na análise histórica via Python:", error);
-            throw new Error("Erro na extração do arquivo: " + error.message);
-        }
-    }
-
-    async obterTimeline(diaSolicitado) {
-        const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await this._obterGradeOtimizada();
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
         const periodoAtual = getCurrentPeriod();
 
         const timeline = salasDb.map(salaRef => {
             const slots = PERIODS.map(p => {
-                const aulaNoSlot = aulasDoDia.find(d =>
-                    d.salas?.numero === salaRef.numero &&
-                    extractPeriodCode(d.periodo) === p.code
-                );
-
+                const aulaNoSlot = aulasDoDia.find(d => d.salas?.numero === salaRef.numero && extractPeriodCode(d.periodo) === p.code);
                 return {
-                    periodo: p.code,
-                    horario: p.lb,
-                    isAgora: p.code === periodoAtual,
-                    ocupado: !!aulaNoSlot,
+                    periodo: p.code, horario: p.lb, isAgora: p.code === periodoAtual, ocupado: !!aulaNoSlot,
                     nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
                     tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
                 };
             });
-
-            return {
-                sala: salaRef.numero,
-                temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
-                slots
-            };
+            return { sala: salaRef.numero, temAulaAgora: slots.some(s => s.isAgora && s.ocupado), slots };
         });
 
-        return {
-            dia: diaSolicitado,
-            periodosCabecalho: PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual })),
-            timeline
-        };
+        return { dia: diaSolicitado, periodosCabecalho: PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual })), timeline };
     }
 
-    async obterStatusPlanta(diaSolicitado, periodoReferencia) {
-        const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await this._obterGradeOtimizada();
+    async obterStatusPlanta(diaSolicitado, periodoReferencia, predio_id) {
+        const salasDb = await gradeRepository.buscarSalas(predio_id);
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
-        const aulasNoMomento = gradeBruta.filter(d =>
-            d.dia_semana === diaSolicitado &&
-            extractPeriodCode(d.periodo) === activePer
-        );
+        const aulasNoMomento = gradeBruta.filter(d => d.dia_semana === diaSolicitado && extractPeriodCode(d.periodo) === activePer);
 
         const salasProcessadas = salasDb.map(s => {
             const aula = aulasNoMomento.find(a => a.salas?.numero === s.numero);
+
+            
+            let andarDaSala = s.andar;
+            if (!andarDaSala) {
+                const partes = s.numero.split('.');
+                
+                if (partes.length >= 4 && partes[0] === 'C') {
+                    
+                    andarDaSala = parseInt(partes[3], 10).toString();
+                } else {
+                    
+                    const match = s.numero.match(/\d/);
+                    andarDaSala = match ? match[0] : '0';
+                }
+            }
+
             return {
                 numero: s.numero,
-                andar: s.andar || s.numero[0],
+                andar: andarDaSala,
                 ocupada: !!aula,
                 disciplina: aula ? (aula.nome_aula || aula.disciplinas?.nome) : null,
                 tipo: aula ? (aula.tipo || (isInternalClass(aula.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
             };
         });
 
-        const andares = ['1', '2', '3'].map(num => ({
-            label: `${num}º Andar`,
+        
+        const andaresUnicos = [...new Set(salasProcessadas.map(s => String(s.andar)))].sort();
+
+        const andares = andaresUnicos.map(num => ({
+            label: num === '0' ? 'Térreo / Outros' : `${num}º Andar`,
             salas: salasProcessadas.filter(s => String(s.andar) === num)
         }));
 
@@ -240,15 +153,11 @@ class GradeService {
         };
     }
 
-    async realizarBuscaGlobal(q) {
+    async realizarBuscaGlobal(q, predio_id) {
         if (!q || q.length < 2) return [];
-        const gradeBruta = await this._obterGradeOtimizada();
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
 
-        const normalizarTexto = (texto) => {
-            if (!texto) return '';
-            return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        };
-
+        const normalizarTexto = (texto) => texto ? texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
         const termoPesquisado = normalizarTexto(q);
 
         const filtrados = gradeBruta.filter(d => {
@@ -256,9 +165,7 @@ class GradeService {
             const salaNormalizada = normalizarTexto(d.salas?.numero || d.sala);
             const codigoNormalizado = normalizarTexto(d.disciplinas?.codigo);
 
-            return nomeNormalizado.includes(termoPesquisado) ||
-                salaNormalizada.includes(termoPesquisado) ||
-                codigoNormalizado.includes(termoPesquisado);
+            return nomeNormalizado.includes(termoPesquisado) || salaNormalizada.includes(termoPesquisado) || codigoNormalizado.includes(termoPesquisado);
         });
 
         const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -266,13 +173,9 @@ class GradeService {
 
         dias.forEach(dia => {
             const aulasDoDia = filtrados.filter(f => f.dia_semana === dia || f.Dia === dia);
-
             if (aulasDoDia.length > 0) {
                 const agrupadas = groupConsecutiveClasses(aulasDoDia);
-                agrupadas.forEach(aula => {
-                    aula.dia_semana = dia;
-                    resultados.push(aula);
-                });
+                agrupadas.forEach(aula => { aula.dia_semana = dia; resultados.push(aula); });
             }
         });
 
@@ -290,19 +193,28 @@ class GradeService {
             periodo: extractPeriodCode(g.periodo || g.Periodo)
         })).filter(item => item.sala && item.dia);
 
-        return {
-            diasDisponiveis: diasSemana,
-            salasDisponiveis: salasLista,
-            periodosDisponiveis: PERIODS.map(p => p.code),
-            ocupacaoBase
-        };
+        return { diasDisponiveis: diasSemana, salasDisponiveis: salasLista, periodosDisponiveis: PERIODS.map(p => p.code), ocupacaoBase };
     }
 
-    async obterOcupacaoSemanal() {
-        const salasDb = await gradeRepository.buscarSalas();
-        const gradeBruta = await this._obterGradeOtimizada();
+    async obterOcupacaoSemanal(predio_id) {
+        const salasDb = await gradeRepository.buscarSalas(predio_id);
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
         const listaNumeros = salasDb.map(s => s.numero);
         return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
+    }
+
+    async _enviarParaPythonComRetry(buffer, filename) {
+        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
+        const formData = new FormData();
+        formData.append('file', new Blob([buffer], { type: 'application/pdf' }), filename);
+        const response = await fetch(PYTHON_API_URL, { method: 'POST', body: formData });
+        if (!response.ok) throw new Error("Erro Python");
+        return await response.json();
+    }
+
+    async analisarGradeExternaPdf(buffer) {
+        const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
+        return await this.analisarGradeExterna(jsonResponse.records);
     }
 
     async analisarGradeExterna(dadosCsv) {
@@ -310,39 +222,63 @@ class GradeService {
         return this._processarOcupacaoSemanl(dadosCsv, salasUnicas);
     }
 
-    async processarUploadPdf(buffer) {
-        try {
-            console.log(`📡 [Grade] Iniciando extração de PDF silenciosa...`);
-
-            const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
-
-            console.log(`✅ Sucesso! O Python devolveu as aulas formatadas.`);
-            return await this.processarUploadCsv(jsonResponse.records);
-
-        } catch (error) {
-            console.error("Erro no processamento da grade:", error.message);
-            throw new Error(error.message);
-        }
+    async processarUploadPdf(buffer, predio_id) {
+        const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
+        return await this.processarUploadCsv(jsonResponse.records, predio_id);
     }
 
-    async processarUploadCsv(dadosCsv) {
-        const salasUnicas = [...new Set(dadosCsv.map(d => d.Sala))].filter(s => s).map(s => ({ numero: s }));
+    async processarUploadCsv(dadosCsv, predio_id) {
+        if (!predio_id) {
+            throw new Error("Falha de Segurança: É obrigatório definir um prédio para importar a grade.");
+        }
+
+        
+        const simplificarSala = (codigo) => {
+            if (!codigo) return codigo;
+            const partes = codigo.split('.');
+
+            
+            if (partes.length >= 5 && partes[0] === 'C') {
+                const andar = parseInt(partes[3], 10).toString(); 
+                const sala = partes[4]; 
+
+                
+                if (sala.startsWith(andar) && sala.length >= 3) {
+                    return sala;
+                }
+
+                return `${andar}${sala}`; 
+            }
+            return codigo; 
+        };
+
+        
+        const dadosFormatados = dadosCsv.map(d => ({
+            ...d,
+            Sala: simplificarSala(d.Sala || d.sala)
+        }));
+
+        
+        const salasUnicas = [...new Set(dadosFormatados.map(d => d.Sala))].filter(s => s).map(s => ({ numero: s, predio_id }));
         const salasDb = await gradeRepository.upsertSalas(salasUnicas);
+
         const salaMap = {};
         salasDb.forEach(s => { salaMap[s.numero] = s.id });
 
-        const gradeInsert = dadosCsv.map(d => ({
+        const gradeInsert = dadosFormatados.map(d => ({
             sala_id: salaMap[d.Sala] || null,
             dia_semana: d.Dia,
             periodo: extractPeriodCode(d.Periodo),
             nome_aula: d.Nome_da_Aula,
-            tipo: isInternalClass(d.Nome_da_Aula) ? 'Interno' : 'Regular'
+            tipo: isInternalClass(d.Nome_da_Aula) ? 'Interno' : 'Regular',
+            predio_id: predio_id
         })).filter(d => d.sala_id !== null);
 
-        await gradeRepository.limparGrade();
+        await gradeRepository.limparGrade(predio_id);
         await gradeRepository.inserirGradeLote(gradeInsert);
 
-        gradeCache = null;
+        gradeCacheMap[predio_id] = null;
+        gradeCacheMap['GLOBAL'] = null;
 
         return { sucesso: true, registrosInseridos: gradeInsert.length };
     }

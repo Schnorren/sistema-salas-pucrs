@@ -1,12 +1,22 @@
 import { useState } from 'react';
+import { usePredio } from '../contexts/PredioContext'; // 1. Importe o contexto
 
-export default function UploadAgenda({ onUploadSuccess }) {
+export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
+    
+    const { predioAtivo } = usePredio(); 
 
     const handleUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
+        const idParaUpload = predioAtivo || acesso?.predioId;
+        if (!idParaUpload) {
+            setMessage('Erro: Selecione um prédio no menu superior antes de fazer o upload.');
+            e.target.value = null; // Reseta o input file
+            return;
+        }
 
         setLoading(true);
         setMessage('Lendo PDF e atualizando banco de dados...');
@@ -14,15 +24,21 @@ export default function UploadAgenda({ onUploadSuccess }) {
         const formData = new FormData();
         formData.append('arquivo', file);
 
+        const headers = {
+            'Authorization': `Bearer ${session?.access_token}`,
+            'x-predio-id': idParaUpload // Manda o ID selecionado ou o ID fixo do Magril
+        };
+
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/importar-pdf`, {
                 method: 'POST',
+                headers: headers,
                 body: formData
             });
 
             if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.error || 'Erro no servidor');
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || 'Erro no servidor ou permissão negada');
             }
 
             const data = await res.json();

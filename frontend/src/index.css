@@ -456,11 +456,9 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
 .empty-st{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
 
 
-/* =======================================================
-   📱 RESPONSIVIDADE MOBILE (Smartphones e Tablets)
-   ======================================================= */
+
 @media screen and (max-width: 768px) {
-  /* 1. Topbar (Empilha os itens e esconde informações menos vitais) */
+  
   .topbar { 
     height: auto; 
     padding: 12px 16px; 
@@ -474,22 +472,22 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
     justify-content: space-between; 
   }
 
-  /* 2. Busca Global (Ocupa 100% da largura da tela) */
+  
   .search-bar { padding: 12px 16px; }
   .search-input-wrap { width: 100%; }
   .search-dropdown { width: calc(100vw - 32px); left: 16px; }
 
-  /* 3. Navegação / Tabs (Transforma em um Scroll Horizontal tátil) */
+  
   .navtabs { 
     padding: 0; 
     overflow-x: auto; 
     white-space: nowrap; 
     -webkit-overflow-scrolling: touch; 
   }
-  .navtabs::-webkit-scrollbar { display: none; /* Esconde a barra feia no mobile */ }
+  .navtabs::-webkit-scrollbar { display: none;  }
   .navtab { padding: 14px 16px; }
 
-  /* 4. Toolbars e Filtros Internos (Crescem para facilitar o toque) */
+  
   .toolbar { 
     padding: 12px 16px; 
     flex-direction: column; 
@@ -500,7 +498,7 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
   select, .toolbar input { width: 100%; flex: 1; font-size: 14px; padding: 10px; }
   .sep { display: none; }
 
-  /* 5. Planta ao Vivo (Move os filtros pra cima do mapa) */
+  
   #vMap { flex-direction: column; }
   .map-side { 
     width: 100%; border-right: none; border-bottom: 1px solid var(--border); 
@@ -511,15 +509,15 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
   .cnt-box { flex: 1; min-width: 100px; margin-bottom: 0; }
   .room-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
 
-  /* 6. Linha do Tempo (Força a rolagem horizontal da tabela) */
+  
   .tl-hdr, .tl-row { min-width: 800px; }
 
-  /* 7. Grids de Cards (Cálculo, Mural, Histórico viram 1 coluna) */
+  
   .nx-cards, .bars, .disc-grid { grid-template-columns: 1fr !important; }
   .bar-card { padding: 12px; }
   .ht-leg { flex-wrap: wrap; }
   
-  /* 8. Ajustes no Mural de Operações e Modais */
+  
   div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
   div[style*="width: 550px"], div[style*="width: 900px"], div[style*="width: 450px"] {
     width: 95% !important;
