@@ -5,7 +5,13 @@ class GradeController {
         try {
             const { dia, periodo } = req.query;
             if (!dia) return res.status(400).json({ error: 'O parâmetro "dia" é obrigatório.' });
-            const dadosProcessados = await gradeService.obterProximasAulas(dia, periodo || 'auto');
+            
+            
+            const dadosProcessados = await gradeService.obterProximasAulas(
+                dia, 
+                periodo || 'auto', 
+                req.user.predio_id
+            );
             return res.status(200).json(dadosProcessados);
         } catch (error) {
             console.error('[Controller Error - getProximasAulas]:', error);
@@ -17,7 +23,11 @@ class GradeController {
         try {
             const { dia } = req.query;
             if (!dia) return res.status(400).json({ error: 'O parâmetro "dia" é obrigatório.' });
-            const dadosProcessados = await gradeService.obterSalasLivres(dia);
+            
+            const dadosProcessados = await gradeService.obterSalasLivres(
+                dia, 
+                req.user.predio_id
+            );
             return res.status(200).json(dadosProcessados);
         } catch (error) {
             console.error('[Controller Error - getSalasLivres]:', error);
@@ -29,7 +39,12 @@ class GradeController {
         try {
             const { dia, periodo } = req.query;
             if (!dia) return res.status(400).json({ error: 'Dia é obrigatório.' });
-            const planta = await gradeService.obterStatusPlanta(dia, periodo || 'auto');
+            
+            const planta = await gradeService.obterStatusPlanta(
+                dia, 
+                periodo || 'auto', 
+                req.user.predio_id
+            );
             return res.status(200).json(planta);
         } catch (error) {
             console.error('[Controller Error - getPlanta]:', error);
@@ -41,7 +56,11 @@ class GradeController {
         try {
             const { dia } = req.query;
             if (!dia) return res.status(400).json({ error: 'Dia é obrigatório.' });
-            const dados = await gradeService.obterTimeline(dia);
+            
+            const dados = await gradeService.obterTimeline(
+                dia, 
+                req.user.predio_id
+            );
             return res.status(200).json(dados);
         } catch (error) {
             console.error('[Controller Error - getTimeline]:', error);
@@ -51,7 +70,9 @@ class GradeController {
 
     async getOcupacao(req, res) {
         try {
-            const dados = await gradeService.obterOcupacaoSemanal();
+            const dados = await gradeService.obterOcupacaoSemanal(
+                req.user.predio_id
+            );
             return res.status(200).json(dados);
         } catch (error) {
             console.error('[Controller Error - getOcupacao]:', error);
@@ -62,13 +83,18 @@ class GradeController {
     async buscar(req, res) {
         try {
             const { q } = req.query;
-            const resultados = await gradeService.realizarBuscaGlobal(q);
+            const resultados = await gradeService.realizarBuscaGlobal(
+                q, 
+                req.user.predio_id
+            );
             return res.status(200).json(resultados);
         } catch (e) {
             return res.status(500).json({ error: e.message });
         }
     }
 
+    
+    
     async postAnaliseExterna(req, res) {
         try {
             const dadosCsv = req.body;
@@ -82,33 +108,34 @@ class GradeController {
             return res.status(500).json({ error: error.message });
         }
     }
-    async importarPdf(req, res) {
-        try {
-            if (!req.file) {
-                return res.status(400).json({ error: 'Nenhum arquivo PDF enviado.' });
-            }
-
-            const resultado = await gradeService.processarUploadPdf(req.file.buffer);
-            return res.status(201).json(resultado);
-
-        } catch (error) {
-            console.error('[Controller Error - importarPdf]:', error);
-            return res.status(500).json({ error: error.message || 'Erro interno ao processar PDF.' });
-        }
-    }
 
     async analisarPdfExterno(req, res) {
         try {
             if (!req.file) {
                 return res.status(400).json({ error: 'Nenhum arquivo PDF enviado para análise.' });
             }
-
             const resultado = await gradeService.analisarGradeExternaPdf(req.file.buffer);
             return res.status(200).json(resultado);
-
         } catch (error) {
             console.error('[Controller Error - analisarPdfExterno]:', error);
             return res.status(500).json({ error: error.message || 'Erro interno ao analisar PDF histórico.' });
+        }
+    }
+
+    
+
+    async importarPdf(req, res) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ error: 'Nenhum arquivo PDF enviado.' });
+            }
+            
+            
+            const resultado = await gradeService.processarUploadPdf(req.file.buffer, req.user.predio_id);
+            return res.status(201).json(resultado);
+        } catch (error) {
+            console.error('[Controller Error - importarPdf]:', error);
+            return res.status(500).json({ error: error.message || 'Erro interno ao processar PDF.' });
         }
     }
 
@@ -118,7 +145,9 @@ class GradeController {
             if (!dadosCsv) {
                 return res.status(400).json({ error: 'Nenhum dado enviado.' });
             }
-            const resultado = await gradeService.processarUploadCsv(dadosCsv);
+            
+            
+            const resultado = await gradeService.processarUploadCsv(dadosCsv, req.user.predio_id);
             return res.status(201).json(resultado);
         } catch (error) {
             console.error('[Controller Error - importarGrade]:', error);
@@ -126,6 +155,5 @@ class GradeController {
         }
     }
 }
-
 
 module.exports = new GradeController();

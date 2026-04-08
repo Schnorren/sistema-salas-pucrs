@@ -1,23 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../supabase';
+import { usePredio } from '../contexts/PredioContext'; // 1. Importe o contexto
 
-export default function ModalHistoricoAvisos({ onClose }) {
-    const [historico, setHistorico] = useState([]);
+export default function ModalHistoricoAvisos({ onClose, session, acesso }) {    // 📍 O Backend já envia os dados divididos!
+    const { predioAtivo } = usePredio(); // 2. Pegue o prédio ativo atual
+    const [historico, setHistorico] = useState({ chaves: [], gerais: [] });
     const [loading, setLoading] = useState(true);
     const [abaAtiva, setAbaAtiva] = useState('CHAVE');
 
     useEffect(() => {
         async function fetchHistorico() {
+            setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('avisos')
-                    .select('*')
-                    .eq('status', 'CONCLUIDO')
-                    .order('concluido_em', { ascending: false })
-                    .limit(200);
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'x-predio-id': predioAtivo || acesso?.predioId || '' // <-- A mágica acontece aqui!
+                };
 
-                if (error) throw error;
-                setHistorico(data || []);
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/historico`, { headers });
+
+                if (!res.ok) throw new Error("Falha ao buscar histórico");
+
+                const data = await res.json();
+                setHistorico(data);
+
             } catch (error) {
                 console.error("Erro ao buscar histórico:", error);
             } finally {
@@ -25,7 +31,7 @@ export default function ModalHistoricoAvisos({ onClose }) {
             }
         }
         fetchHistorico();
-    }, []);
+    }, [session, acesso]);
 
     const formatarDataHora = (isoString) => {
         if (!isoString) return '--';
@@ -33,13 +39,12 @@ export default function ModalHistoricoAvisos({ onClose }) {
         return data.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
-    const dadosFiltrados = historico.filter(h => h.tipo === abaAtiva);
+    const dadosFiltrados = abaAtiva === 'CHAVE' ? historico.chaves : historico.gerais;
 
     return (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
             <div style={{ background: '#0f172a', padding: '0', borderRadius: '12px', width: '900px', maxWidth: '95%', maxHeight: '85vh', border: '1px solid #334155', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)' }}>
-                
-                {/* Cabeçalho */}
+
                 <div style={{ padding: '20px 24px 0', borderBottom: '1px solid #1e293b', background: '#1e293b', borderRadius: '12px 12px 0 0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                         <div>
@@ -50,9 +55,9 @@ export default function ModalHistoricoAvisos({ onClose }) {
                     </div>
 
                     <div style={{ display: 'flex', gap: '24px' }}>
-                        <button 
+                        <button
                             onClick={() => setAbaAtiva('CHAVE')}
-                            style={{ 
+                            style={{
                                 background: 'transparent', border: 'none', padding: '10px 0', cursor: 'pointer',
                                 color: abaAtiva === 'CHAVE' ? '#60a5fa' : '#64748b',
                                 borderBottom: abaAtiva === 'CHAVE' ? '2px solid #3b82f6' : '2px solid transparent',
@@ -61,9 +66,9 @@ export default function ModalHistoricoAvisos({ onClose }) {
                         >
                             🔑 Autorizações de Chaves
                         </button>
-                        <button 
+                        <button
                             onClick={() => setAbaAtiva('GERAL')}
-                            style={{ 
+                            style={{
                                 background: 'transparent', border: 'none', padding: '10px 0', cursor: 'pointer',
                                 color: abaAtiva === 'GERAL' ? '#fbbf24' : '#64748b',
                                 borderBottom: abaAtiva === 'GERAL' ? '2px solid #f59e0b' : '2px solid transparent',
@@ -75,7 +80,6 @@ export default function ModalHistoricoAvisos({ onClose }) {
                     </div>
                 </div>
 
-                {/* Corpo da Tabela */}
                 <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
                     {loading ? (
                         <p style={{ color: '#94a3b8', textAlign: 'center' }}>Carregando registros...</p>

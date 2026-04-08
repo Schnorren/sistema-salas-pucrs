@@ -20,15 +20,13 @@ PERIOD_LABEL = {
 }
 
 PERIOD_RE = re.compile(r'^(\d{2}:\d{2})([A-Z][0-9]?)')
-ROOM_RE   = re.compile(r'C\.15\.A\.(\d{2})\.(\d{2})')
+ROOM_RE = re.compile(r'C\.(\d+)\.A\.(\d{2})\.(\d{2,3}(?:\.\d{2})?)')
 FOOTER_RE = re.compile(r'^Data:\s*\d{2}/\d{2}/\d{4}')
 
 def parse_room_code(text):
-    m = ROOM_RE.search(str(text))
+    m = re.search(r'C\.\d+\.A\.\d{2}\.\d{2,3}(?:\.\d{2})?(?:\/[A-Z])?', str(text))
     if m:
-        andar = m.group(1).lstrip('0') or '0'
-        sala  = m.group(2)
-        return f"{andar}{sala}"
+        return m.group(0)
     return str(text).strip()
 
 def parse_period(cell_text):
@@ -57,7 +55,6 @@ def extract_page(page):
         main_table = max(tables, key=lambda t: len(t))
         if not main_table: return []
 
-        # BLINDAGEM: str(cell) garante que não teremos TypeError se a célula for um número
         all_text = ' '.join(str(cell) for t in tables for row in t for cell in row if cell)
         m = ROOM_RE.search(all_text)
         if not m: return []
@@ -139,7 +136,6 @@ async def extract_pdf_endpoint(file: UploadFile = File(...)):
                 records = extract_page(page)
                 all_records.extend(records)
                 
-                # BLINDAGEM: Tenta limpar a memória (protegido caso a versão do pdfplumber seja antiga)
                 try:
                     page.flush_cache()
                 except AttributeError:
@@ -153,7 +149,6 @@ async def extract_pdf_endpoint(file: UploadFile = File(...)):
         return JSONResponse(content={"records": all_records})
     
     except Exception as e:
-        # ISSO VAI MOSTRAR A LINHA EXATA DO ERRO NO RENDER
         print("🚨 ERRO FATAL NO ENDPOINT /extract-pdf:", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=500, detail=str(e))
