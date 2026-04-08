@@ -1,100 +1,114 @@
-import { useState, useCallback } from 'react';
-import { supabase } from '../supabase';
+import { useState, useCallback, useEffect } from 'react';
+import { usePredio } from '../contexts/PredioContext'; // 📍 Importamos o contexto!
 
-export const useAvisos = () => {
-    const [avisos, setAvisos] = useState([]);
-    const [loading, setLoading] = useState(false);
+export const useAvisos = (session, acesso) => {
+    const [avisos, setAvisos] = useState({ chaves: [], gerais: [] });
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    const fetchAvisosAtivos = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const { data, error } = await supabase
-                .from('avisos')
-                .select('*')
-                .eq('status', 'ATIVO')
-                .order('created_at', { ascending: false });
+    const { predioAtivo } = usePredio();
 
-            if (error) throw error;
-            setAvisos(data || []);
+    const getHeaders = useCallback(() => ({
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+        'x-predio-id': predioAtivo || acesso?.predioId || ''
+    }), [session, acesso, predioAtivo]);
+
+    const fetchAvisosAtivos = useCallback(async () => {
+        if (!predioAtivo && !acesso?.predioId) return;
+
+        setLoading(true);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, { headers: getHeaders() });
+            if (!res.ok) throw new Error("Erro ao buscar avisos");
+            const data = await res.json();
+            setAvisos(data);
         } catch (err) {
-            console.error('🚨 Erro ao buscar avisos:', err.message);
-            setError('Não foi possível carregar o mural.');
+            setError(err.message);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [getHeaders, predioAtivo, acesso]);
 
-    const criarAviso = async (dados, userId) => {
+    useEffect(() => {
+        fetchAvisosAtivos();
+    }, [fetchAvisosAtivos, predioAtivo]);
+
+    const criarAviso = async (dadosAviso) => {
         try {
-            const { error } = await supabase.from('avisos').insert([
-                { ...dados, criado_por: userId }
-            ]);
-            if (error) throw error;
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(dadosAviso)
+            });
+            if (!res.ok) throw new Error("Erro ao criar aviso");
             await fetchAvisosAtivos();
             return true;
         } catch (err) {
-            console.error('🚨 Erro ao criar aviso:', err.message);
+            console.error("Erro criarAviso:", err);
+            alert("Não foi possível salvar o registro.");
             return false;
         }
     };
 
-    const concluirAviso = async (id, obs, userId) => {
+    const concluirAviso = async (id, observacao) => {
         try {
-            const { error } = await supabase
-                .from('avisos')
-                .update({ 
-                    status: 'CONCLUIDO', 
-                    concluido_por: userId,
-                    concluido_em: new Date().toISOString(),
-                    obs_conclusao: obs 
-                })
-                .eq('id', id);
-
-            if (error) throw error;
-            setAvisos(prev => prev.filter(aviso => aviso.id !== id));
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/concluir`, {
+                method: 'PATCH',
+                headers: getHeaders(),
+                body: JSON.stringify({ obs: observacao })
+            });
+            if (!res.ok) throw new Error("Erro ao concluir aviso");
+            await fetchAvisosAtivos();
             return true;
         } catch (err) {
-            console.error('🚨 Erro ao concluir aviso:', err.message);
+            console.error("Erro concluirAviso:", err);
+            alert("Não foi possível concluir o registro.");
+            return false;
+        }
+    };
+
+    const adicionarComentario = async (id, descricao_atual, nota, userEmail) => {
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/comentar`, {
+                method: 'PATCH',
+                headers: getHeaders(),
+                body: JSON.stringify({ descricao_atual, nota, user_email: userEmail })
+            });
+            if (!res.ok) throw new Error("Erro ao comentar aviso");
+            await fetchAvisosAtivos();
+            return true;
+        } catch (err) {
+            console.error("Erro adicionarComentario:", err);
+            alert("Não foi possível salvar o comentário.");
             return false;
         }
     };
 
     const excluirAviso = async (id) => {
         try {
-            const { error } = await supabase.from('avisos').delete().eq('id', id);
-            if (error) throw error;
-            setAvisos(prev => prev.filter(aviso => aviso.id !== id));
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}`, {
+                method: 'DELETE',
+                headers: getHeaders()
+            });
+            if (!res.ok) throw new Error("Erro ao deletar aviso");
+            await fetchAvisosAtivos();
             return true;
         } catch (err) {
-            console.error('🚨 Erro ao excluir aviso:', err.message);
+            console.error("Erro excluirAviso:", err);
+            alert("Não foi possível deletar o registro.");
             return false;
         }
     };
 
-    const adicionarComentario = async (id, descricaoAtual, novoComentario, userEmail) => {
-        try {
-            const dataHora = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-            const nomeUsuario = userEmail.split('@')[0]; 
-            
-            const textoAdicional = `\n\n📌 [${dataHora} - ${nomeUsuario}]: ${novoComentario}`;
-            const novaDescricao = descricaoAtual + textoAdicional;
-
-            const { error } = await supabase
-                .from('avisos')
-                .update({ descricao: novaDescricao })
-                .eq('id', id);
-
-            if (error) throw error;
-            
-            setAvisos(prev => prev.map(a => a.id === id ? { ...a, descricao: novaDescricao } : a));
-            return true;
-        } catch (err) {
-            console.error('🚨 Erro ao adicionar nota:', err.message);
-            return false;
-        }
+    return {
+        avisos,
+        loading,
+        error,
+        fetchAvisosAtivos,
+        criarAviso,
+        concluirAviso,
+        excluirAviso,
+        adicionarComentario
     };
-
-    return { avisos, loading, error, fetchAvisosAtivos, criarAviso, concluirAviso, excluirAviso, adicionarComentario };
 };

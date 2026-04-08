@@ -38,7 +38,6 @@ export default function ModalNovoAviso({ onClose, onSave }) {
         onSave({ ...formData, tipo });
     };
 
-    // Estilo "À prova de falhas" para garantir que flutue na tela inteira
     const overlayStyle = {
         position: 'fixed', 
         top: 0, left: 0, width: '100vw', height: '100vh',

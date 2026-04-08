@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import SeletorPredio from './SeletorPredio'; // <-- Importe o componente
 
-export default function Topbar({ session }) {
+export default function Topbar({ session, acesso }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
   const [time, setTime] = useState(new Date());
 
@@ -19,9 +20,13 @@ export default function Topbar({ session }) {
 
   return (
     <div className="topbar">
-      <div className="tb-logo">PUCRS<span>·</span>Prédio 15<span>·</span>Secretaria</div>
+      <div className="tb-logo">
+        PUCRS 
+        <SeletorPredio acesso={acesso} /> 
+        <span style={{ marginLeft: '8px' }}>·</span> Secretaria
+      </div>
       <div className="tb-sep"></div>
-      
+            
       <div className="tb-clock">
         {`${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}`}
       </div>
@@ -30,7 +35,7 @@ export default function Topbar({ session }) {
       </div>
       
       <div className="tb-right">
-        <div className="tb-file" title={session.user.email}>
+        <div className="tb-file" title={`${session.user.email} (${acesso?.perfilNome || 'Sem Perfil'})`}>
           👤 {session.user.email.split('@')[0]}
         </div>
         <button className="tb-btn" onClick={() => setIsDark(!isDark)}>

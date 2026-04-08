@@ -1,17 +1,30 @@
 import { useState, useEffect } from 'react';
+import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import do Contexto
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-export default function Timeline() {
+export default function Timeline({ session, acesso }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
+    const { predioAtivo } = usePredio(); // 📍 2. Pegando o prédio ativo
 
     useEffect(() => {
+        if (!predioAtivo && !acesso?.predioId) return;
+
         setLoading(true);
-        fetch(`${import.meta.env.VITE_API_URL}/api/grade/timeline?dia=${day}`)
-            .then(res => res.json())
+
+        const headers = {
+            'Authorization': `Bearer ${session?.access_token}`,
+            'x-predio-id': predioAtivo || acesso?.predioId || '' 
+        };
+
+        fetch(`${import.meta.env.VITE_API_URL}/api/grade/timeline?dia=${day}`, { headers })
+            .then(res => {
+                if (!res.ok) throw new Error("Erro de autorização ou servidor");
+                return res.json();
+            })
             .then(resData => {
                 setData(resData);
                 setLoading(false);
@@ -20,9 +33,10 @@ export default function Timeline() {
                 console.error("Erro ao carregar timeline:", err);
                 setLoading(false);
             });
-    }, [day]);
+    }, [day, session, acesso, predioAtivo]); // 📍 4. Reativo ao predioAtivo
 
     if (loading) return <div className="empty-st">Gerando matriz de horários...</div>;
+    if (!data) return <div className="empty-st" style={{color: 'var(--red)'}}>Falha ao carregar a matriz.</div>;
 
     return (
     <div className="view active" id="vTl" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -54,7 +68,6 @@ export default function Timeline() {
             </div>
           </div>
 
-          
           {data.timeline.map(linha => (
             <div key={linha.sala} className="tl-row">
               <div className={`tl-rn ${linha.temAulaAgora ? 'on' : ''}`}>{linha.sala}</div>

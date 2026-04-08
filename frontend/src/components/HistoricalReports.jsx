@@ -25,7 +25,7 @@ class LocalErrorBoundary extends Component {
     }
 }
 
-export default function HistoricalReports() {
+export default function HistoricalReports({ session, acesso }) {
     const [semanas, setSemanas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
@@ -75,6 +75,10 @@ export default function HistoricalReports() {
 
                     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/analisar-externo-pdf`, {
                         method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${session?.access_token}`,
+                            'x-predio-id': acesso?.predioId || ''
+                        },
                         body: formData
                     });
 
@@ -108,7 +112,6 @@ export default function HistoricalReports() {
         }
     };
 
-    
     const filteredComparison = useMemo(() => {
         if (!semanas || semanas.length === 0) return [];
         
@@ -153,13 +156,8 @@ export default function HistoricalReports() {
     return (
         <LocalErrorBoundary>
             <div className="view active" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                
-                
                 <div className="toolbar" style={{ borderBottom: '2px solid var(--accent)', background: 'var(--panel2)', alignItems: 'flex-start' }}>
-                    
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
-                        
-                        
                         <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                             <div>
                                 <label className="ms-lbl">Dias Analisados</label>
@@ -185,7 +183,6 @@ export default function HistoricalReports() {
                             </div>
                         </div>
 
-                        
                         {allAvailableRooms.length > 0 && (
                             <div>
                                 <label className="ms-lbl" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: '800px' }}>
@@ -230,7 +227,6 @@ export default function HistoricalReports() {
                     </div>
                 )}
 
-                
                 <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: 'var(--bg)' }}>
                     {semanas.length === 0 ? (
                         <div className="empty-st">
@@ -240,7 +236,6 @@ export default function HistoricalReports() {
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                            
                             
                             <div className="bar-card">
                                 <div className="bar-ttl">Ocupação Consolidada do Prédio</div>
@@ -277,7 +272,6 @@ export default function HistoricalReports() {
                                 </div>
                             </div>
 
-                            
                             <div className="bar-card" style={{ padding: 0, overflow: 'hidden' }}>
                                 <div className="bar-ttl" style={{ padding: '20px', borderBottom: '1px solid var(--border)', background: '#fff' }}>Desempenho por Sala</div>
                                 <div style={{ overflowX: 'auto' }}>

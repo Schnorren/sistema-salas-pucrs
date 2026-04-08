@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAvisos } from '../hooks/useAvisos';
 import ModalNovoAviso from './ModalNovoAviso';
 import ModalConcluirAviso from './ModalConcluirAviso';
@@ -18,48 +18,34 @@ const prioStyle = {
     BAIXA: { color: '#9ca3af', border: '1px solid rgba(156, 163, 175, 0.3)', background: 'rgba(255,255,255,0.05)' },
 };
 
-const pesoPrioridade = { ALTA: 1, NORMAL: 2, BAIXA: 3 };
-
-export default function MuralAvisos({ session }) {
-    const userId = session?.user?.id;
+export default function MuralAvisos({ session, acesso }) {
     const userEmail = session?.user?.email || 'Sistema';
     
-    const { avisos, loading, error, fetchAvisosAtivos, criarAviso, concluirAviso, excluirAviso, adicionarComentario } = useAvisos();
+    const { 
+        avisos, loading, error, criarAviso, concluirAviso, excluirAviso, adicionarComentario 
+    } = useAvisos(session, acesso);
     
     const [isModalNovoAvisoOpen, setIsModalNovoAvisoOpen] = useState(false);
     const [avisoSelecionadoParaConcluir, setAvisoSelecionadoParaConcluir] = useState(null);
-    const [avisoSelecionadoParaComentar, setAvisoSelecionadoParaComentar] = useState(null); // NOVO ESTADO
+    const [avisoSelecionadoParaComentar, setAvisoSelecionadoParaComentar] = useState(null);
     const [isModalHistoricoOpen, setIsModalHistoricoOpen] = useState(false); 
 
-    useEffect(() => { fetchAvisosAtivos(); }, [fetchAvisosAtivos]);
 
-    const autorizacoesChaves = avisos
-        .filter(a => a.tipo === 'CHAVE')
-        .sort((a, b) => {
-            const dataA = a.data_prevista || '9999-12-31'; 
-            const dataB = b.data_prevista || '9999-12-31';
-            if (dataA !== dataB) return dataA.localeCompare(dataB);
-            const perA = a.periodo || '';
-            const perB = b.periodo || '';
-            return perA.localeCompare(perB);
-        });
-
-    const avisosGerais = avisos
-        .filter(a => a.tipo === 'GERAL')
-        .sort((a, b) => pesoPrioridade[a.prioridade || 'NORMAL'] - pesoPrioridade[b.prioridade || 'NORMAL']);
+    const autorizacoesChaves = avisos?.chaves || [];
+    const avisosGerais = avisos?.gerais || [];
 
     const handleSalvarNovo = async (dados) => {
-        const sucesso = await criarAviso(dados, userId);
+        const sucesso = await criarAviso(dados);
         if (sucesso) setIsModalNovoAvisoOpen(false);
     };
 
     const handleConcluirChaveDireto = async (id) => {
-        await concluirAviso(id, "Chave retirada na secretaria (Baixa Expressa)", userId);
+        await concluirAviso(id, "Chave retirada na secretaria (Baixa Expressa)");
     };
 
     const handleConfirmarConclusaoGeral = async (obs) => {
         if (!avisoSelecionadoParaConcluir) return;
-        const sucesso = await concluirAviso(avisoSelecionadoParaConcluir.id, obs, userId);
+        const sucesso = await concluirAviso(avisoSelecionadoParaConcluir.id, obs);
         if (sucesso) setAvisoSelecionadoParaConcluir(null);
     };
 
@@ -75,7 +61,7 @@ export default function MuralAvisos({ session }) {
         }
     };
 
-    if (loading && avisos.length === 0) return <p style={{ padding: 24, color: '#9ca3af' }}>Carregando mural...</p>;
+    if (loading && autorizacoesChaves.length === 0 && avisosGerais.length === 0) return <p style={{ padding: 24, color: '#9ca3af' }}>Carregando mural...</p>;
     if (error) return <p style={{ padding: 24, color: '#ef4444' }}>{error}</p>;
 
     return (
@@ -95,7 +81,6 @@ export default function MuralAvisos({ session }) {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1 }}>
                 
-                {/* Coluna 1: Chaves */}
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                         <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>🔑</div>
@@ -122,7 +107,6 @@ export default function MuralAvisos({ session }) {
                                 <span style={{ ...pillStyle, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Per. {aviso.periodo}</span>
                             </div>
                             
-                            {/* BOTÃO ALTERADO: Executa direto sem Modal */}
                             <button onClick={() => handleConcluirChaveDireto(aviso.id)} style={{ padding: '8px 16px', background: 'transparent', color: '#60a5fa', border: '1px solid #3b82f6', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseOver={e => {e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}} onMouseOut={e => {e.currentTarget.style.background = 'transparent'}}>
                                 ✓ Entregar chave
                             </button>
@@ -160,7 +144,6 @@ export default function MuralAvisos({ session }) {
                                 
                                 <p style={{ fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6', marginBottom: '16px', whiteSpace: 'pre-wrap', margin: '0 0 16px 0' }}>{aviso.descricao}</p>
                                 
-                                {/* BOTÕES DE AÇÃO LADO A LADO */}
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     <button onClick={() => setAvisoSelecionadoParaConcluir(aviso)} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseOver={e => {e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}} onMouseOut={e => {e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}}>
                                         ✓ Marcar resolvido
@@ -193,7 +176,8 @@ export default function MuralAvisos({ session }) {
             {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} />}
             {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} />}
             {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} />}
-            {isModalHistoricoOpen && <ModalHistoricoAvisos onClose={() => setIsModalHistoricoOpen(false)} />}
+            
+            {isModalHistoricoOpen && <ModalHistoricoAvisos onClose={() => setIsModalHistoricoOpen(false)} session={session} acesso={acesso} />}
         </div>
     );
 }

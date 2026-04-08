@@ -1,17 +1,30 @@
 import { useState, useEffect } from 'react';
+import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-export default function FreeRooms() {
+export default function FreeRooms({ session, acesso }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
+  const { predioAtivo } = usePredio(); // 📍 2. Hook
 
   useEffect(() => {
+    if (!predioAtivo && !acesso?.predioId) return;
+
     setLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/livres?dia=${day}`)
-      .then(res => res.json())
+    
+    const headers = {
+      'Authorization': `Bearer ${session?.access_token}`,
+      'x-predio-id': predioAtivo || acesso?.predioId || ''
+    };
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/grade/livres?dia=${day}`, { headers })
+      .then(res => {
+          if (!res.ok) throw new Error('Falha de autenticação ou rede');
+          return res.json();
+      })
       .then(resData => {
         setData(resData);
         setLoading(false);
@@ -20,11 +33,10 @@ export default function FreeRooms() {
         console.error("Erro ao carregar salas livres:", err);
         setLoading(false);
       });
-  }, [day]);
+  }, [day, session, acesso, predioAtivo]); // 📍 4. Dependência adicionada
 
   return (
     <div className="view active" id="vFree" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      
       
       <div className="toolbar">
         <label>Dia:</label>
@@ -33,7 +45,6 @@ export default function FreeRooms() {
         </select>
       </div>
 
-      
       <div className="free-body" id="freeBody" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         
         {loading ? (
