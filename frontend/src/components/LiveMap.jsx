@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react';
-import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import
+import { usePredio } from '../contexts/PredioContext';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const PERIOD_OPTIONS = ['A','B','C','D','E','E1','F','G','H','I','J','K','L','M','N','P'];
+
+const liveMapCache = {};
+
+const horariosPUCRS = [
+  "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
+  "14:00", "14:45", "15:45", "16:30", "17:30", "18:15",
+  "19:15", "20:00", "21:00", "21:45"
+];
 
 export default function LiveMap({ session, acesso }) {
   const [data, setData] = useState(null);
@@ -11,20 +19,28 @@ export default function LiveMap({ session, acesso }) {
   const [per, setPer] = useState('auto');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { predioAtivo } = usePredio(); // 📍 2. Hook
+  const { predioAtivo } = usePredio();
   
   const [tt, setTt] = useState({ visible: false, x: 0, y: 0, sala: '', info: '' });
 
-  useEffect(() => {
+  const carregarDados = (modoSilencioso = false) => {
     if (!predioAtivo && !acesso?.predioId) return;
 
-    let isMounted = true;
-    setLoading(true);
-    setError(null);
-    
+    const predioAtual = predioAtivo || acesso?.predioId || '';
+    const cacheKey = `${predioAtual}-${day}-${per}`;
+
+    if (liveMapCache[cacheKey]) {
+      setData(liveMapCache[cacheKey]);
+      if (!modoSilencioso) setLoading(false);
+      setError(null);
+    } else if (!modoSilencioso) {
+      setLoading(true);
+      setError(null);
+    }
+
     const headers = {
         'Authorization': `Bearer ${session?.access_token}`,
-        'x-predio-id': predioAtivo || acesso?.predioId || ''
+        'x-predio-id': predioAtual
     };
 
     fetch(`${import.meta.env.VITE_API_URL}/api/grade/planta?dia=${day}&periodo=${per}`, { headers })
@@ -32,22 +48,37 @@ export default function LiveMap({ session, acesso }) {
         if (!res.ok) throw new Error(`Falha na API: ${res.status}`);
         return res.json();
       })
-      .then(d => {
-        if (isMounted) {
-          setData(d);
-          setLoading(false);
-        }
+      .then(resData => {
+        liveMapCache[cacheKey] = resData;
+        setData(resData);
+        setLoading(false);
+        setError(null);
       })
       .catch(err => {
-        console.error("Erro na Planta:", err);
-        if (isMounted) {
+        console.error(err);
+        if (!liveMapCache[cacheKey] || !modoSilencioso) {
           setError(err.message === 'Failed to fetch' ? 'Servidor indisponível (Backend desligado)' : err.message);
-          setLoading(false);
         }
+        setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    carregarDados(false);
+  }, [day, per, session, acesso, predioAtivo]);
+
+  useEffect(() => {
+    const intervaloRelogio = setInterval(() => {
+      const agora = new Date();
+      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
       
-    return () => { isMounted = false; };
-  }, [day, per, session, acesso, predioAtivo]); // 📍 4. Dependência
+      if (horariosPUCRS.includes(horaStr)) {
+        carregarDados(true);
+      }
+    }, 60000);
+
+    return () => clearInterval(intervaloRelogio);
+  }, [day, per, session, acesso, predioAtivo]);
 
   const handleMouseEnter = (e, sala) => {
     setTt({
