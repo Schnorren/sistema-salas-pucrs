@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import
+import { usePredio } from '../contexts/PredioContext';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -13,6 +13,14 @@ const PERIOD_OPTIONS = [
   { code: 'P', lb: '21:45' }
 ];
 
+const nextClassesCache = {};
+
+const horariosPUCRS = [
+  "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
+  "14:00", "14:45", "15:45", "16:30", "17:30", "18:15",
+  "19:15", "20:00", "21:00", "21:45"
+];
+
 const normalizeText = (text) => {
   if (!text) return '';
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -23,19 +31,28 @@ export default function NextClasses({ session, acesso }) {
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
-  const { predioAtivo } = usePredio(); // 📍 2. Hook
+  const { predioAtivo } = usePredio();
   
   const [filtro, setFiltro] = useState('');
   const [ordem, setOrdem] = useState('sala');
   const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
 
-  useEffect(() => {
+  const carregarDados = (modoSilencioso = false) => {
     if (!predioAtivo && !acesso?.predioId) return;
-    setLoading(true);
+
+    const predioAtual = predioAtivo || acesso?.predioId || '';
+    const cacheKey = `${predioAtual}-${day}-${per}`;
+
+    if (nextClassesCache[cacheKey]) {
+      setData(nextClassesCache[cacheKey]);
+      if (!modoSilencioso) setLoading(false);
+    } else if (!modoSilencioso) {
+      setLoading(true);
+    }
 
     const headers = {
         'Authorization': `Bearer ${session?.access_token}`,
-        'x-predio-id': predioAtivo || acesso?.predioId || ''
+        'x-predio-id': predioAtual
     };
 
     fetch(`${import.meta.env.VITE_API_URL}/api/grade/proximas?dia=${day}&periodo=${per}`, { headers })
@@ -44,14 +61,32 @@ export default function NextClasses({ session, acesso }) {
           return res.json()
       })
       .then(resData => {
+        nextClassesCache[cacheKey] = resData;
         setData(resData);
         setLoading(false);
       })
       .catch(err => {
-        console.error("Erro ao carregar grade:", err);
-        setLoading(false);
+        console.error(err);
+        if (!nextClassesCache[cacheKey]) setLoading(false);
       });
-  }, [day, per, session, acesso, predioAtivo]); // 📍 4. Dependência
+  };
+
+  useEffect(() => {
+    carregarDados(false);
+  }, [day, per, session, acesso, predioAtivo]);
+
+  useEffect(() => {
+    const intervaloRelogio = setInterval(() => {
+      const agora = new Date();
+      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
+      
+      if (horariosPUCRS.includes(horaStr)) {
+        carregarDados(true);
+      }
+    }, 60000);
+
+    return () => clearInterval(intervaloRelogio);
+  }, [day, per, session, acesso, predioAtivo]);
 
   const filteredAndSortedData = useMemo(() => {
     if (!data) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };

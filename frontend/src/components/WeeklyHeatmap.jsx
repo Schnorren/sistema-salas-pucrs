@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { generateHeatmapPDF } from '../utils/reportGenerator';
-import { usePredio } from '../contexts/PredioContext'; // 📍 1. Import
+import { usePredio } from '../contexts/PredioContext';
 
 const COLORS = ['#1c2b4a', '#1e6b40', '#4e338a', '#a02828', '#96520a', '#1a6878', '#3a6e1a', '#823060'];
+
+const weeklyHeatmapCache = {};
 
 export default function WeeklyHeatmap({ session, acesso }) {
   const [rawData, setRawData] = useState(null);
@@ -12,15 +14,28 @@ export default function WeeklyHeatmap({ session, acesso }) {
   const [activeRooms, setActiveRooms] = useState(new Set());
   const [activePers, setActivePers] = useState(new Set());
 
-  const { predioAtivo } = usePredio(); // 📍 2. Hook
+  const { predioAtivo } = usePredio();
 
   useEffect(() => {
     if (!predioAtivo && !acesso?.predioId) return;
-    setLoading(true);
+    
+    const predioAtual = predioAtivo || acesso?.predioId || '';
+    const cacheKey = `${predioAtual}`;
+
+    if (weeklyHeatmapCache[cacheKey]) {
+      const d = weeklyHeatmapCache[cacheKey];
+      setRawData(d);
+      setActiveDays(new Set(d.diasDisponiveis));
+      setActiveRooms(new Set(d.salasDisponiveis));
+      setActivePers(new Set(d.periodosDisponiveis));
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
     const headers = {
       'Authorization': `Bearer ${session?.access_token}`,
-      'x-predio-id': predioAtivo || acesso?.predioId || ''
+      'x-predio-id': predioAtual
     };
 
     fetch(`${import.meta.env.VITE_API_URL}/api/grade/ocupacao`, { headers })
@@ -29,17 +44,21 @@ export default function WeeklyHeatmap({ session, acesso }) {
         return res.json();
       })
       .then(d => {
+        weeklyHeatmapCache[cacheKey] = d;
         setRawData(d);
-        setActiveDays(new Set(d.diasDisponiveis));
-        setActiveRooms(new Set(d.salasDisponiveis));
-        setActivePers(new Set(d.periodosDisponiveis));
+        
+        if (!weeklyHeatmapCache[cacheKey]) {
+           setActiveDays(new Set(d.diasDisponiveis));
+           setActiveRooms(new Set(d.salasDisponiveis));
+           setActivePers(new Set(d.periodosDisponiveis));
+        }
         setLoading(false);
       })
       .catch(err => {
         console.error("Erro ao buscar dados de ocupação:", err);
-        setLoading(false);
+        if (!weeklyHeatmapCache[cacheKey]) setLoading(false);
       });
-  }, [session, acesso, predioAtivo]); // 📍 4. Dependência adicionada
+  }, [session, acesso, predioAtivo]);
 
   const stats = useMemo(() => {
     if (!rawData) return null;
