@@ -1,6 +1,6 @@
 import gradeRepository from '../repositories/grade.repository.js';
-import { 
-    PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass 
+import {
+    PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
 } from '../utils/timeHelpers.js';
 
 const gradeCacheMap = {};
@@ -17,7 +17,7 @@ class GradeService {
     }
 
     async obterProximasAulas(diaSolicitado, periodoReferencia, predio_id) {
-        const gradeBruta = await this._obterGradeOtimizada(predio_id); 
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
         const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
 
@@ -49,13 +49,12 @@ class GradeService {
             const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
             const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
-            const aulasNoMomento = gradeBruta.filter(d => 
+            const aulasNoMomento = gradeBruta.filter(d =>
                 d.dia_semana === diaSolicitado && extractPeriodCode(d.periodo) === activePer
             );
 
             const salasProcessadas = salasDb.map(s => {
-                // 🛡️ Previne o crash do split se o número da sala vier vazio ou nulo
-                if (!s || !s.numero) return null; 
+                if (!s || !s.numero) return null;
 
                 const aula = aulasNoMomento.find(a => {
                     const numSala = a.salas?.numero || a.sala;
@@ -64,7 +63,7 @@ class GradeService {
 
                 let andarDaSala = s.andar;
                 if (!andarDaSala) {
-                    const numString = String(s.numero); // Garante que é string para o split não quebrar
+                    const numString = String(s.numero);
                     const partes = numString.split('.');
 
                     if (partes.length >= 4 && partes[0] === 'C') {
@@ -82,7 +81,7 @@ class GradeService {
                     disciplina: aula ? (aula.nome_aula || aula.disciplinas?.nome) : null,
                     tipo: aula ? (aula.tipo || (isInternalClass(aula.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
                 };
-            }).filter(Boolean); // 🛡️ Remove as salas nulas do array final
+            }).filter(Boolean);
 
             const andaresUnicos = [...new Set(salasProcessadas.map(s => String(s.andar)))].sort();
 
@@ -113,7 +112,6 @@ class GradeService {
 
         if (!salasDb) return [];
 
-        // 🚀 CORREÇÃO: Consideramos todos os períodos do dia como "potencialmente livres"
         const salasLivres = salasDb.map(salaRef => {
             const occupiedPeriods = aulasDoDia
                 .filter(d => {
@@ -122,15 +120,14 @@ class GradeService {
                 })
                 .map(d => extractPeriodCode(d.periodo));
 
-            // Filtra os períodos que NÃO estão na lista de ocupados
             const freePeriods = PERIODS.filter(p => !occupiedPeriods.includes(p.code));
 
             return {
                 sala: salaRef.numero,
                 quantidadeLivres: freePeriods.length,
                 periodos: freePeriods.map(f => ({
-                    code: f.code, 
-                    label: f.lb, 
+                    code: f.code,
+                    label: f.lb,
                     fim: `${String(f.end[0]).padStart(2, '0')}:${String(f.end[1]).padStart(2, '0')}`
                 }))
             };
@@ -151,7 +148,7 @@ class GradeService {
                     const numSala = d.salas?.numero || d.sala;
                     return numSala === salaRef.numero && extractPeriodCode(d.periodo) === p.code;
                 });
-                
+
                 return {
                     periodo: p.code,
                     horario: p.lb,
@@ -161,34 +158,33 @@ class GradeService {
                     tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
                 };
             });
-            return { 
-                sala: salaRef.numero, 
-                temAulaAgora: slots.some(s => s.isAgora && s.ocupado), 
-                slots 
+            return {
+                sala: salaRef.numero,
+                temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
+                slots
             };
         });
 
-        return { 
-            dia: diaSolicitado, 
-            periodosCabecalho: PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual })), 
-            timeline 
+        return {
+            dia: diaSolicitado,
+            periodosCabecalho: PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual })),
+            timeline
         };
     }
 
-    // Corrigindo nomes de chaves para evitar tela preta no Heatmap/Ocupação
-_processarOcupacaoSemanl(gradeBruta, salasLista) {
+    _processarOcupacaoSemanl(gradeBruta, salasLista) {
         const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
         const ocupacaoBase = gradeBruta.map(g => ({
-            sala: g.salas?.numero || g.Sala || g.sala, // Mantenha como "sala"
-            dia: g.dia_semana || g.Dia || g.dia,       // Mantenha como "dia"
-            periodo: extractPeriodCode(g.periodo || g.Periodo) // Mantenha como "periodo"
+            sala: g.salas?.numero || g.Sala || g.sala,
+            dia: g.dia_semana || g.Dia || g.dia,
+            periodo: extractPeriodCode(g.periodo || g.Periodo)
         })).filter(item => item.sala && item.dia);
 
-        return { 
-            diasDisponiveis: diasSemana, 
-            salasDisponiveis: salasLista, 
-            periodosDisponiveis: PERIODS.map(p => p.code), 
-            ocupacaoBase 
+        return {
+            diasDisponiveis: diasSemana,
+            salasDisponiveis: salasLista,
+            periodosDisponiveis: PERIODS.map(p => p.code),
+            ocupacaoBase
         };
     }
 
@@ -233,16 +229,16 @@ _processarOcupacaoSemanl(gradeBruta, salasLista) {
             const partes = codigo.split('.');
 
             if (partes.length >= 5 && partes[0] === 'C') {
-                const andar = parseInt(partes[3], 10).toString(); 
-                const sala = partes[4]; 
+                const andar = parseInt(partes[3], 10).toString();
+                const sala = partes[4];
 
                 if (sala.startsWith(andar) && sala.length >= 3) {
                     return sala;
                 }
 
-                return `${andar}${sala}`; 
+                return `${andar}${sala}`;
             }
-            return codigo; 
+            return codigo;
         };
 
         const dadosFormatados = dadosCsv.map(d => ({

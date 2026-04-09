@@ -7,7 +7,7 @@ class EmprestimosRepository {
             .select('*')
             .eq('predio_id', predioId)
             .eq('ativo', true);
-            
+
         if (error) throw error;
         return data;
     }
@@ -18,7 +18,7 @@ class EmprestimosRepository {
             .select('*')
             .eq('categoria_id', categoriaId)
             .eq('status', 'DISPONIVEL');
-            
+
         if (error) throw error;
         return data;
     }
@@ -34,7 +34,7 @@ class EmprestimosRepository {
                 )
             `)
             .eq('status', 'ATIVO');
-            
+
         if (error) throw error;
 
         return data.filter(e => e.item?.categoria?.predio_id === predioId);
@@ -46,7 +46,7 @@ class EmprestimosRepository {
             .select('*, categoria:emprestimo_categorias(predio_id)')
             .eq('id', itemId)
             .single();
-            
+
         if (error) throw error;
         return data;
     }
@@ -57,7 +57,7 @@ class EmprestimosRepository {
             .select('*')
             .eq('id', emprestimoId)
             .single();
-            
+
         if (error) throw error;
         return data;
     }
@@ -67,7 +67,7 @@ class EmprestimosRepository {
             .from('emprestimo_itens')
             .update({ status: 'EMPRESTADO' })
             .eq('id', payload.item_id);
-            
+
         if (errItem) throw errItem;
 
         const { data, error: errReg } = await supabase
@@ -75,12 +75,12 @@ class EmprestimosRepository {
             .insert([payload])
             .select()
             .single();
-            
+
         if (errReg) {
             await supabase.from('emprestimo_itens').update({ status: 'DISPONIVEL' }).eq('id', payload.item_id);
             throw errReg;
         }
-        
+
         return data;
     }
 
@@ -89,7 +89,7 @@ class EmprestimosRepository {
             .from('emprestimo_itens')
             .update({ status: 'DISPONIVEL' })
             .eq('id', itemId);
-            
+
         if (errItem) throw errItem;
 
         const { data, error: errReg } = await supabase
@@ -102,15 +102,11 @@ class EmprestimosRepository {
             .eq('id', emprestimoId)
             .select()
             .single();
-            
+
         if (errReg) throw errReg;
         return data;
     }
 
-    // ==========================================
-    // CACHE DE ALUNOS
-    // ==========================================
-    
     async buscarAlunoCache(matricula) {
         const { data, error } = await supabase
             .from('alunos_cache')
@@ -126,7 +122,7 @@ class EmprestimosRepository {
 
     async upsertAlunoCache(matricula, nome) {
         const { error } = await supabase.from('alunos_cache').upsert(
-            { matricula: matricula, nome: nome, ultimo_acesso: new Date().toISOString() }, 
+            { matricula: matricula, nome: nome, ultimo_acesso: new Date().toISOString() },
             { onConflict: 'matricula' }
         );
         if (error) throw error;
