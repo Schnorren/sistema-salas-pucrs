@@ -4,11 +4,12 @@ import { supabase } from '../supabase';
 export const useAuthAccess = (session) => {
     const [acesso, setAcesso] = useState({
         loading: true,
-        nivel: 0, // 0 = Sem acesso liberado
+        nivel: 0,
         perfilNome: '',
         predioId: null,
         predioNome: '',
-        isGlobal: false // True se for Coordenador/Admin (Nível >= 60) ou sem prédio fixo
+        isGlobal: false,
+        permissoes: []
     });
 
     useEffect(() => {
@@ -23,6 +24,7 @@ export const useAuthAccess = (session) => {
                     .from('usuarios_acessos')
                     .select(`
                         predio_id,
+                        permissoes, 
                         predios ( nome ),
                         perfis ( nome, nivel )
                     `)
@@ -35,8 +37,8 @@ export const useAuthAccess = (session) => {
 
                 if (data) {
                     const nivelPoder = data.perfis?.nivel || 0;
-                    
                     const isUserGlobal = data.predio_id === null || nivelPoder >= 60;
+                    const permissoesArray = data.permissoes || [];
 
                     setAcesso({
                         loading: false,
@@ -44,7 +46,8 @@ export const useAuthAccess = (session) => {
                         perfilNome: data.perfis?.nome || 'Sem Perfil',
                         predioId: data.predio_id,
                         predioNome: data.predios?.nome || 'Todos os Prédios',
-                        isGlobal: isUserGlobal
+                        isGlobal: isUserGlobal,
+                        permissoes: permissoesArray
                     });
                 } else {
                     setAcesso(prev => ({ ...prev, loading: false }));

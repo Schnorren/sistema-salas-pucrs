@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { usePredio } from '../contexts/PredioContext'; // 📍 Importamos o contexto!
+import { usePredio } from '../contexts/PredioContext';
 
 export const useAvisos = (session, acesso) => {
     const [avisos, setAvisos] = useState({ chaves: [], gerais: [] });

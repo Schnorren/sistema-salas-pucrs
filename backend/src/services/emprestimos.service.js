@@ -1,0 +1,120 @@
+const repository = require('../repositories/emprestimos.repository');
+
+class EmprestimosService {
+    async listarCategorias(predioId) {
+        if (!predioId) throw new Error("Prédio não informado.");
+        return await repository.getCategoriasPorPredio(predioId);
+    }
+
+    async listarItensDisponiveis(categoriaId) {
+        if (!categoriaId) throw new Error("Categoria não informada.");
+        return await repository.getItensDisponiveis(categoriaId);
+    }
+
+    async listarEmprestimosAtivos(predioId) {
+        if (!predioId) throw new Error("Prédio não informado.");
+
+        const ativos = await repository.getEmprestimosAtivos(predioId);
+
+        return ativos.map(e => ({
+            id: e.id,
+            itemId: e.item_id,
+            nomeItem: e.item.nome_item,
+            patrimonio: e.item.patrimonio,
+            matricula: e.matricula_aluno,
+            nomeAluno: e.nome_aluno,
+            documento: e.documento_retido,
+            dataRetirada: e.data_retirada,
+            responsavel: e.resp_retirada
+        }));
+    }
+
+    async listarHistorico(predioId) {
+        // Aproveitamos a mesma lógica nativa do Supabase
+        const supabase = require('../config/supabase');
+
+        const { data, error } = await supabase
+            .from('emprestimos_registro')
+            .select(`
+                id, matricula_aluno, nome_aluno, data_retirada, data_devolucao, resp_retirada, resp_devolucao,
+                item:emprestimo_itens (nome_item, patrimonio, categoria:emprestimo_categorias(predio_id))
+            `)
+            .eq('status', 'CONCLUIDO')
+            .order('data_devolucao', { ascending: false })
+            .limit(50);
+
+        if (error) throw error;
+
+        return data.filter(e => e.item?.categoria?.predio_id === predioId).map(e => ({
+            id: e.id,
+            nomeItem: e.item.nome_item,
+            matricula: e.matricula_aluno,
+            nomeAluno: e.nome_aluno,
+            dataRetirada: e.data_retirada,
+            dataDevolucao: e.data_devolucao,
+            responsavel: e.resp_devolucao
+        }));
+    }
+
+    async consultarMatricula(matricula, predioId) {
+        if (!matricula) throw new Error("Matrícula não informada.");
+
+        // 🚀 OTIMIZAÇÃO: Executa as duas consultas no banco SIMULTANEAMENTE
+        // Isso corta o tempo de espera do banco pela metade.
+        const [aluno, ativos] = await Promise.all([
+            repository.buscarAlunoCache(matricula),
+            repository.getEmprestimosAtivos(predioId)
+        ]);
+
+        const emprestimoAtivo = ativos.find(e => e.matricula_aluno === matricula);
+
+        return {
+            matricula: matricula,
+            nomeCadastrado: aluno ? aluno.nome : null,
+            emprestimoAtivo: emprestimoAtivo ? {
+                id: emprestimoAtivo.id,
+                itemId: emprestimoAtivo.item_id,
+                nomeItem: emprestimoAtivo.item.nome_item,
+                dataRetirada: emprestimoAtivo.data_retirada
+            } : null
+        };
+    }
+
+    async registrarRetirada({ predioId, itemId, matricula, nomeAluno, documento, respRetirada }) {
+        if (!itemId || !matricula || !nomeAluno) {
+            throw new Error("Dados obrigatórios faltando.");
+        }
+
+        const item = await repository.getItem(itemId);
+
+        if (!item) throw new Error("Item não encontrado.");
+        if (item.status !== 'DISPONIVEL') throw new Error("Este item não está disponível para empréstimo.");
+        if (item.categoria.predio_id !== predioId) throw new Error("Acesso negado. Este item pertence a outro prédio.");
+
+        // Salva/Atualiza o nome do aluno no cache silenciosamente
+        await repository.upsertAlunoCache(matricula, nomeAluno);
+
+        const payload = {
+            item_id: itemId,
+            matricula_aluno: matricula,
+            nome_aluno: nomeAluno,
+            documento_retido: documento || null,
+            resp_retirada: respRetirada
+        };
+
+        return await repository.criarRetirada(payload);
+    }
+
+    async registrarDevolucao({ emprestimoId, respDevolucao }) {
+        if (!emprestimoId) throw new Error("ID do empréstimo não informado.");
+
+        const emprestimo = await repository.getEmprestimo(emprestimoId);
+
+        if (!emprestimo) throw new Error("Registro de empréstimo não encontrado.");
+        if (emprestimo.status !== 'ATIVO') throw new Error("Este empréstimo já foi concluído.");
+
+        return await repository.concluirDevolucao(emprestimoId, emprestimo.item_id, respDevolucao);
+    }
+}
+
+module.exports = new EmprestimosService();

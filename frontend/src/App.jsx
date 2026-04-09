@@ -5,17 +5,17 @@ import Dashboard from './components/Dashboard'
 
 export default function App() {
   const [session, setSession] = useState(null)
-  const [isAuthLoading, setIsAuthLoading] = useState(true) 
+  const [isAuthLoading, setIsAuthLoading] = useState(true)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      setIsAuthLoading(false) // Finalizou a checagem inicial
+      setIsAuthLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      setIsAuthLoading(false) // Finalizou a checagem de mudança de estado
+      setIsAuthLoading(false)
     })
 
     return () => subscription.unsubscribe()

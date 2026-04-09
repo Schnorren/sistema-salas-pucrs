@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import SeletorPredio from './SeletorPredio'; // <-- Importe o componente
+import SeletorPredio from './SeletorPredio';
 
 export default function Topbar({ session, acesso }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');

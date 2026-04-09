@@ -16,7 +16,7 @@ const labelStyle = {
 export default function ModalNovoAviso({ onClose, onSave }) {
     const [tipo, setTipo] = useState('CHAVE');
     const [formData, setFormData] = useState({});
-    const periodosDisponiveis = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','P'];
+    const periodosDisponiveis = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -39,11 +39,11 @@ export default function ModalNovoAviso({ onClose, onSave }) {
     };
 
     const overlayStyle = {
-        position: 'fixed', 
+        position: 'fixed',
         top: 0, left: 0, width: '100vw', height: '100vh',
         backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(3px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', 
-        zIndex: 99999 // Z-index super alto para ficar por cima da topbar
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 99999
     };
 
     return (
@@ -65,7 +65,7 @@ export default function ModalNovoAviso({ onClose, onSave }) {
                                 flex: 1, padding: '10px', border: 'none',
                                 borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold',
                                 background: tipo === val ? '#3b82f6' : 'transparent',
-                                color: tipo === val ? '#ffffff' : '#94a3b8', 
+                                color: tipo === val ? '#ffffff' : '#94a3b8',
                                 transition: 'all 0.2s'
                             }}>{label}</button>
                         ))}
@@ -93,7 +93,7 @@ export default function ModalNovoAviso({ onClose, onSave }) {
                                     </div>
                                     <div>
                                         <label style={labelStyle}>Data Prevista</label>
-                                        <input type="date" name="data_prevista" required onChange={handleChange} style={{...inputStyle, colorScheme: 'dark'}} />
+                                        <input type="date" name="data_prevista" required onChange={handleChange} style={{ ...inputStyle, colorScheme: 'dark' }} />
                                     </div>
                                 </div>
                                 <div>

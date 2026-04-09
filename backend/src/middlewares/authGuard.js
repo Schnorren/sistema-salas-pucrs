@@ -14,7 +14,6 @@ const authGuard = async (req, res, next) => {
     }
 
     try {
-        
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         
         if (authError) {
@@ -26,10 +25,10 @@ const authGuard = async (req, res, next) => {
             throw new Error('Usuário não encontrado');
         }
 
-        
+        // NOVO: Adicionado 'permissoes' no select para puxar o array do banco
         const { data: acesso, error: dbError } = await supabase
             .from('usuarios_acessos')
-            .select('perfil_id, predio_id, perfis(nivel)')
+            .select('perfil_id, predio_id, permissoes, perfis(nivel)')
             .eq('user_id', user.id)
             .single();
 
@@ -40,26 +39,26 @@ const authGuard = async (req, res, next) => {
 
         const nivelPoder = acesso?.perfis?.nivel || 0;
         let predioAtivo = acesso?.predio_id || null;
+        
+        // NOVO: Extraindo as permissões (garantindo que seja um array, mesmo se vier nulo)
+        const permissoesUser = acesso?.permissoes || [];
 
-        
-        
         const predioSelecionadoFrontend = req.headers['x-predio-id'] || req.query.predio_id;
-        
         const isUserGlobal = predioAtivo === null || nivelPoder >= 60;
 
         if (isUserGlobal && predioSelecionadoFrontend) {
-            
             predioAtivo = predioSelecionadoFrontend;
         }
 
+        // NOVO: Injetando as permissões no objeto req.user para o resto da API usar
         req.user = {
             id: user.id,
             nivel: nivelPoder,
-            predio_id: predioAtivo
+            predio_id: predioAtivo,
+            permissoes: permissoesUser 
         };
 
-        
-        console.log(`✅ [AuthGuard] Liberado -> Usuário: ${user.email} | Nível: ${nivelPoder} | Tenant: ${predioAtivo || 'GLOBAL'}`);
+        console.log(`✅ [AuthGuard] Liberado -> Usuário: ${user.email} | Nível: ${nivelPoder} | Permissões: [${permissoesUser.join(', ')}]`);
         next();
 
     } catch (err) {

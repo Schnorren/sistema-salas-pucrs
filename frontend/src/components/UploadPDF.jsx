@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { usePredio } from '../contexts/PredioContext'; // 1. Importe o contexto
+import { usePredio } from '../contexts/PredioContext';
 
 export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
-    
-    const { predioAtivo } = usePredio(); 
+
+    const { predioAtivo } = usePredio();
 
     const handleUpload = async (e) => {
         const file = e.target.files[0];
@@ -14,7 +14,7 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
         const idParaUpload = predioAtivo || acesso?.predioId;
         if (!idParaUpload) {
             setMessage('Erro: Selecione um prédio no menu superior antes de fazer o upload.');
-            e.target.value = null; // Reseta o input file
+            e.target.value = null;
             return;
         }
 
@@ -26,7 +26,7 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
 
         const headers = {
             'Authorization': `Bearer ${session?.access_token}`,
-            'x-predio-id': idParaUpload // Manda o ID selecionado ou o ID fixo do Magril
+            'x-predio-id': idParaUpload
         };
 
         try {
@@ -59,18 +59,18 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             <p style={{ color: 'var(--text2)', marginBottom: '20px' }}>
                 Selecione o arquivo da agenda gerado pelo sistema central em formato <b>.pdf</b>
             </p>
-            
-            <input 
-                type="file" 
-                accept=".pdf" 
-                id="pdfUpload" 
-                hidden 
-                onChange={handleUpload} 
-                disabled={loading} 
+
+            <input
+                type="file"
+                accept=".pdf"
+                id="pdfUpload"
+                hidden
+                onChange={handleUpload}
+                disabled={loading}
             />
-            
-            <button 
-                className="btn-primary" 
+
+            <button
+                className="btn-primary"
                 onClick={() => document.getElementById('pdfUpload').click()}
                 disabled={loading}
             >

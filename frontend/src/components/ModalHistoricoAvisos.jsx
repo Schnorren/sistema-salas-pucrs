@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { usePredio } from '../contexts/PredioContext'; // 1. Importe o contexto
+import { usePredio } from '../contexts/PredioContext';
 
-export default function ModalHistoricoAvisos({ onClose, session, acesso }) {    // 📍 O Backend já envia os dados divididos!
-    const { predioAtivo } = usePredio(); // 2. Pegue o prédio ativo atual
+export default function ModalHistoricoAvisos({ onClose, session, acesso }) {
+    const { predioAtivo } = usePredio();
     const [historico, setHistorico] = useState({ chaves: [], gerais: [] });
     const [loading, setLoading] = useState(true);
     const [abaAtiva, setAbaAtiva] = useState('CHAVE');
@@ -14,7 +14,7 @@ export default function ModalHistoricoAvisos({ onClose, session, acesso }) {    
                 const headers = {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session?.access_token}`,
-                    'x-predio-id': predioAtivo || acesso?.predioId || '' // <-- A mágica acontece aqui!
+                    'x-predio-id': predioAtivo || acesso?.predioId || ''
                 };
 
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/historico`, { headers });
