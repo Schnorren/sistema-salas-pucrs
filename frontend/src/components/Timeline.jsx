@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -39,6 +39,7 @@ export default function Timeline({ session, acesso }) {
   const [filtro, setFiltro] = useState('');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
   const { predioAtivo } = usePredio();
+  const inputRef = useRef(null);
 
   const carregarDados = (modoSilencioso = false) => {
     if (!predioAtivo && !acesso?.predioId) return;
@@ -88,6 +89,21 @@ export default function Timeline({ session, acesso }) {
     return () => clearInterval(intervaloRelogio);
   }, [day, session, acesso, predioAtivo]);
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        return;
+      }
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key.length === 1) {
+        inputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
   const filteredTimeline = useMemo(() => {
     if (!data?.timeline) return [];
     if (!filtro.trim()) return data.timeline;
@@ -118,6 +134,7 @@ export default function Timeline({ session, acesso }) {
 
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
             <input 
+                ref={inputRef}
                 type="text" 
                 placeholder="Pesquisar por disciplina ou sala..." 
                 value={filtro}
