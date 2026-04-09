@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAvisos } from '../hooks/useAvisos';
 import ModalNovoAviso from './ModalNovoAviso';
 import ModalConcluirAviso from './ModalConcluirAviso';
 import ModalHistoricoAvisos from './ModalHistoricoAvisos';
 import ModalComentarAviso from './ModalComentarAviso'; 
+import { usePredio } from '../contexts/PredioContext';
 
 const pillStyle = {
     fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
@@ -20,9 +21,10 @@ const prioStyle = {
 
 export default function MuralAvisos({ session, acesso }) {
     const userEmail = session?.user?.email || 'Sistema';
+    const { predioAtivo } = usePredio();
     
     const { 
-        avisos, loading, error, criarAviso, concluirAviso, excluirAviso, adicionarComentario 
+        avisos, loading, error, criarAviso, concluirAviso, excluirAviso, adicionarComentario, carregarAvisos 
     } = useAvisos(session, acesso);
     
     const [isModalNovoAvisoOpen, setIsModalNovoAvisoOpen] = useState(false);
@@ -30,6 +32,9 @@ export default function MuralAvisos({ session, acesso }) {
     const [avisoSelecionadoParaComentar, setAvisoSelecionadoParaComentar] = useState(null);
     const [isModalHistoricoOpen, setIsModalHistoricoOpen] = useState(false); 
 
+    useEffect(() => {
+      carregarAvisos();
+    }, [predioAtivo, carregarAvisos]);
 
     const autorizacoesChaves = avisos?.chaves || [];
     const avisosGerais = avisos?.gerais || [];
