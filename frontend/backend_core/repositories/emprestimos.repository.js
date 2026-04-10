@@ -13,13 +13,26 @@ class EmprestimosRepository {
     }
 
     async getItensDisponiveis(categoriaId) {
+        console.log(`🔎 Buscando itens para a categoria: ${categoriaId}`);
         const { data, error } = await supabase
             .from('emprestimo_itens')
             .select('*')
             .eq('categoria_id', categoriaId)
-            .eq('status', 'DISPONIVEL');
+            .in('status', ['DISPONIVEL', 'MANUTENCAO'])
+        console.log(`📦 Itens encontrados:`, data);
+        return data || [];
+    }
 
-        if (error) throw error;
+    async criarRetiradaRpc(payload) {
+        const { data, error } = await supabase.rpc('realizar_emprestimo', {
+            p_item_id: payload.item_id,
+            p_matricula: payload.matricula_aluno,
+            p_nome_aluno: payload.nome_aluno,
+            p_documento: payload.documento_retido,
+            p_resp: payload.resp_retirada
+        });
+
+        if (error) throw new Error(error.message || "Erro interno ao processar empréstimo.");
         return data;
     }
 

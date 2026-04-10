@@ -97,36 +97,89 @@ export const useEmprestimos = (session, predioId) => {
     };
 
     const registrarRetirada = async (dados) => {
+        // 🔥 MAGIA 1: Pega os dados do item antes dele sumir da tela
+        const itemAlvo = itensDisponiveis.find(i => i.id === dados.itemId);
+
+        // 🔥 MAGIA 2: UI OTIMISTA - Atualiza a tela ANTES de enviar pro banco
+        const novoEmprestimoFake = {
+            id: `temp-${Date.now()}`, // ID provisório até o banco responder
+            itemId: dados.itemId,
+            nomeItem: itemAlvo?.nome_item || 'Item',
+            patrimonio: itemAlvo?.patrimonio || '---',
+            matricula: dados.matricula,
+            nomeAluno: dados.nomeAluno,
+            dataRetirada: new Date().toISOString()
+        };
+
+        // Tira o card da lista do meio e joga pra lista da direita INSTANTANEAMENTE
+        setItensDisponiveis(prev => prev.filter(i => i.id !== dados.itemId));
+        setEmprestimosAtivos(prev => [novoEmprestimoFake, ...prev]);
+
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/retirar`, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(dados)
             });
-            if (!res.ok) throw new Error('Falha ao registrar empréstimo');
 
-            await carregarAtivos(true);
-            await carregarHistorico(true);
-            if (dados.categoriaId) await carregarItensDisponiveis(dados.categoriaId);
+            if (!res.ok) throw new Error('Falha no Servidor');
 
+            // Tudo certo! O banco salvou. Agora atualizamos os IDs verdadeiros em background
+            Promise.all([carregarAtivos(true), carregarHistorico(true)]).catch(console.log);
             return true;
+
         } catch (err) {
-            alert(err.message);
+            // 🔙 ROLLBACK: Deu erro? (Ex: Sem internet). Nós desfazemos a animação.
+            setItensDisponiveis(prev => [...prev, itemAlvo]);
+            setEmprestimosAtivos(prev => prev.filter(e => e.id !== novoEmprestimoFake.id));
+            alert("Erro na rede. O empréstimo foi desfeito.");
             return false;
         }
     };
 
     const registrarDevolucao = async (emprestimoId) => {
+        const emprestimoAlvo = emprestimosAtivos.find(e => e.id === emprestimoId);
+        setEmprestimosAtivos(prev => prev.filter(e => e.id !== emprestimoId));
+
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/devolver/${emprestimoId}`, {
                 method: 'POST',
                 headers: getHeaders()
             });
-            if (!res.ok) throw new Error('Falha ao registrar devolução');
+            if (!res.ok) throw new Error('Falha no Servidor');
 
-            await carregarAtivos(true);
-            await carregarHistorico(true);
+            // 🔥 AGORA ELE ATUALIZA O ESTOQUE TAMBÉM!
+            // Pega o ID da categoria que está selecionada na tela naquele momento
+            const categoriaAtiva = document.getElementById('cat-sel-hidden')?.value;
 
+            Promise.all([
+                carregarAtivos(true),
+                carregarHistorico(true),
+                categoriaAtiva ? carregarItensDisponiveis(categoriaAtiva) : Promise.resolve()
+            ]).catch(console.log);
+
+            return true;
+        } catch (err) {
+            setEmprestimosAtivos(prev => [emprestimoAlvo, ...prev]);
+            alert("Erro ao devolver. Tente novamente.");
+            return false;
+        }
+    };
+
+    const alterarStatusManutencao = async (itemId, status, observacao = null) => {
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/itens/${itemId}/manutencao`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify({ status, observacoes: observacao })
+            });
+            if (!res.ok) throw new Error('Falha ao atualizar status do item');
+
+            // Atualiza a lista na tela automaticamente
+            if (categorias.length > 0) {
+                // Força o recarregamento da categoria atual
+                carregarItensDisponiveis(document.getElementById('cat-sel-hidden')?.value);
+            }
             return true;
         } catch (err) {
             alert(err.message);
@@ -137,6 +190,6 @@ export const useEmprestimos = (session, predioId) => {
     return {
         categorias, itensDisponiveis, emprestimosAtivos, historico, loading, error,
         carregarCategorias, carregarItensDisponiveis, carregarAtivos, carregarHistorico,
-        consultarAluno, registrarRetirada, registrarDevolucao
+        consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao
     };
 };

@@ -110,6 +110,27 @@ class EmprestimosService {
 
         return await repository.concluirDevolucao(emprestimoId, emprestimo.item_id, respDevolucao);
     }
+
+    async alterarStatusItem(itemId, novoStatus, observacoes) {
+        if (!itemId || !novoStatus) {
+            throw new Error("ID do item e novo status são obrigatórios.");
+        }
+
+        const { error } = await supabase
+            .from('emprestimo_itens')
+            .update({
+                status: novoStatus,
+                observacoes: observacoes || null
+            })
+            .eq('id', itemId);
+
+        if (error) {
+            console.error("Erro ao atualizar status do item no banco:", error);
+            throw new Error("Erro ao atualizar status do item.");
+        }
+
+        return true;
+    }
 }
 
 export default new EmprestimosService();

@@ -7,5 +7,12 @@
       "path": "/api/equipe/perfis",
       "schedule": "0 0 * * *"
     }
+  ],
+  "rewrites": [
+    { "source": "/api/grade/importar-pdf", "destination": "/api/grade/importar-pdf.js" },
+    { "source": "/api/avisos/(.*)", "destination": "/api/avisos" },
+    { "source": "/api/emprestimos/(.*)", "destination": "/api/emprestimos" },
+    { "source": "/api/equipe/(.*)", "destination": "/api/equipe" },
+    { "source": "/api/grade/(.*)", "destination": "/api/grade" }
   ]
 }

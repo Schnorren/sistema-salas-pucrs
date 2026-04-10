@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import SeletorPredio from './SeletorPredio';
 
-export default function Topbar({ session, acesso }) {
+// 🔥 Adicionamos a prop onAbrirPerfil
+export default function Topbar({ session, acesso, onAbrirPerfil }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
   const [time, setTime] = useState(new Date());
 
@@ -17,6 +18,11 @@ export default function Topbar({ session, acesso }) {
   }, [isDark]);
 
   const pad = (n) => String(n).padStart(2, '0');
+
+  // Tenta extrair o nome dos metadados para mostrar no topo (fica mais elegante que o e-mail)
+  const nomeUsuario = session?.user?.user_metadata?.nome 
+    || session?.user?.email?.split('@')[0] 
+    || 'Usuário';
 
   return (
     <div className="topbar">
@@ -35,9 +41,24 @@ export default function Topbar({ session, acesso }) {
       </div>
       
       <div className="tb-right">
-        <div className="tb-file" title={`${session.user.email} (${acesso?.perfilNome || 'Sem Perfil'})`}>
-          👤 {session.user.email.split('@')[0]}
-        </div>
+        {/* 🔥 TRANSFORMAMOS EM UM BOTÃO CLICÁVEL */}
+        <button 
+          className="tb-btn" 
+          onClick={onAbrirPerfil}
+          title={`${session.user.email} (${acesso?.perfilNome || 'Sem Perfil'})`}
+          style={{ 
+            background: 'rgba(59, 130, 246, 0.1)', 
+            borderColor: '#3b82f6', 
+            color: '#60a5fa',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          👤 Meu Perfil ({nomeUsuario})
+        </button>
+
         <button className="tb-btn" onClick={() => setIsDark(!isDark)}>
           {isDark ? '☀️ Claro' : '🌙 Escuro'}
         </button>

@@ -8,11 +8,18 @@ const gradeCacheMap = {};
 class GradeService {
 
     async _obterGradeOtimizada(predio_id) {
-        const cacheKey = predio_id || 'GLOBAL';
-        if (gradeCacheMap[cacheKey]) return gradeCacheMap[cacheKey];
+        const cacheKey = predio_id ? String(predio_id) : 'GLOBAL';
 
+        if (gradeCacheMap[cacheKey] && gradeCacheMap[cacheKey].length > 0) {
+            console.log(`- Usando cache para o prédio: ${cacheKey}`);
+            return gradeCacheMap[cacheKey];
+        }
+
+        console.log(`- Cache vazio ou inválido. Buscando no DB para o prédio: ${cacheKey}`);
         const data = await gradeRepository.buscarGradeCompleta(predio_id);
-        gradeCacheMap[cacheKey] = data || [];
+
+        gradeCacheMap[cacheKey] = Array.isArray(data) ? data : [];
+
         return gradeCacheMap[cacheKey];
     }
 
@@ -49,9 +56,15 @@ class GradeService {
             const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
             const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
-            const aulasNoMomento = gradeBruta.filter(d =>
-                d.dia_semana === diaSolicitado && extractPeriodCode(d.periodo) === activePer
-            );
+            const aulasNoMomento = gradeBruta.filter(d => {
+                const mesmoDia = d.dia_semana?.toLowerCase().includes(diaSolicitado.toLowerCase());
+
+                const codigoPeriodoBanco = extractPeriodCode(d.periodo);
+
+                const noMesmoPeriodo = codigoPeriodoBanco.includes(activePer);
+
+                return mesmoDia && noMesmoPeriodo;
+            });
 
             const salasProcessadas = salasDb.map(s => {
                 if (!s || !s.numero) return null;

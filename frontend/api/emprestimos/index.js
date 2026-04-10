@@ -2,11 +2,17 @@ import service from '../../backend_core/services/emprestimos.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 
 async function handler(req, res) {
-    // 1. Defina os caminhos da URL
+    console.log('🚨 REQUISIÇÃO BATEU NO INDEX.JS. URL:', req.url);
+
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
-    const caminho1 = urlParts.length > 2 ? urlParts[2] : null;
-    const caminho2 = urlParts.length > 3 ? urlParts[3] : null;
-    const caminho3 = urlParts.length > 4 ? urlParts[4] : null;
+    
+    // Procura dinamicamente onde está a palavra 'emprestimos' na URL
+    const baseIndex = urlParts.indexOf('emprestimos');
+
+    // Pega as posições seguintes de forma segura
+    const caminho1 = baseIndex !== -1 && urlParts.length > baseIndex + 1 ? urlParts[baseIndex + 1] : null; 
+    const caminho2 = baseIndex !== -1 && urlParts.length > baseIndex + 2 ? urlParts[baseIndex + 2] : null; 
+    const caminho3 = baseIndex !== -1 && urlParts.length > baseIndex + 3 ? urlParts[baseIndex + 3] : null;
 
     const predioId = req.headers['x-predio-id'] || req.user.predio_id;
 
@@ -90,6 +96,24 @@ async function handler(req, res) {
             });
             return res.status(200).json({ success: true, data: resultado });
         } catch (error) {
+            return res.status(400).json({ error: error.message });
+        }
+    }
+
+    // ==========================================
+    // 🟢 ALTERAR STATUS DO ITEM (MANUTENÇÃO)
+    // URL: /api/emprestimos/itens/:id/manutencao
+    // ==========================================
+    if (req.method === 'PUT' && caminho1 === 'itens' && caminho3 === 'manutencao') {
+        try {
+            const itemId = caminho2;
+            const { status, observacoes } = req.body;
+
+            await service.alterarStatusItem(itemId, status, observacoes);
+            
+            return res.status(200).json({ success: true, message: "Status do item atualizado." });
+        } catch (error) {
+            console.error("❌ [API Error - Manutenção]:", error.message);
             return res.status(400).json({ error: error.message });
         }
     }

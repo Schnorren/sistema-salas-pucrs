@@ -14,7 +14,7 @@ export const withAuth = (handler, moduloRequisitado = null) => {
                 console.log("⚠️ [withAuth] Sem header de autorização.");
                 return res.status(401).json({ error: 'Token não fornecido' });
             }
-            
+
             console.log("🔑 [withAuth] Validando token no Supabase...");
             const token = authHeader.split(' ')[1];
             if (!token || token === 'undefined' || token === 'null') {
@@ -23,7 +23,7 @@ export const withAuth = (handler, moduloRequisitado = null) => {
             }
 
             const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-            
+
             if (authError || !user) {
                 console.log("❌ [AuthGuard] Token rejeitado ou usuário não encontrado.");
                 return res.status(401).json({ error: 'Usuário não autenticado ou token inválido' });
@@ -55,14 +55,14 @@ export const withAuth = (handler, moduloRequisitado = null) => {
             }
 
             // ==========================================
-            // PARTE 3: PROTEÇÃO POR MÓDULO (Ex-CheckPermission)
+            // PARTE 3: PROTEÇÃO POR MÓDULO (100% Permissões)
             // ==========================================
             if (moduloRequisitado) {
-                // Nível 60+ (Coordenador/Admin) passa direto. Senão, checa o array.
-                if (nivelPoder < 60 && !permissoesUser.includes(moduloRequisitado)) {
+                // Nível 99 (Super Admin) passa direto. Todo o resto obedece o array.
+                if (nivelPoder !== 99 && !permissoesUser.includes(moduloRequisitado)) {
                     console.log(`🚫 [CheckPerm] Bloqueado: Usuário tentou acessar '${moduloRequisitado}'.`);
-                    return res.status(403).json({ 
-                        error: `Acesso restrito ao módulo: ${moduloRequisitado}` 
+                    return res.status(403).json({
+                        error: `Acesso restrito ao módulo: ${moduloRequisitado}`
                     });
                 }
             }

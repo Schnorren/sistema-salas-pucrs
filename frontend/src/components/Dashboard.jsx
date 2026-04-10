@@ -10,9 +10,12 @@ import HistoricalReports from './HistoricalReports';
 import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
 import AdminPanel from './AdminPanel';
+import GestaoEquipe from './GestaoEquipe';
+// 🔥 1. Importamos o componente do Perfil
+import MeuPerfil from './MeuPerfil'; 
+
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
-import GestaoEquipe from './GestaoEquipe';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
@@ -93,6 +96,7 @@ export default function Dashboard({ session }) {
       case 'heat': return <WeeklyHeatmap session={session} acesso={acesso} />;
       case 'reports': return <HistoricalReports session={session} acesso={acesso} />;
       case 'equipe': return <GestaoEquipe session={session} acesso={acesso} />;
+      case 'perfil': return <MeuPerfil session={session} onClose={() => setActiveTab('map')} />;
       case 'upload':
         return (
           <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
@@ -131,7 +135,12 @@ export default function Dashboard({ session }) {
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
 
-      <Topbar session={session} acesso={acesso} />
+      {/* 🔥 3. Passamos a função onAbrirPerfil para o Topbar! */}
+      <Topbar 
+        session={session} 
+        acesso={acesso} 
+        onAbrirPerfil={() => setActiveTab('perfil')} 
+      />
 
       <div className="search-bar" ref={searchRef}>
         <div className="search-input-wrap">
