@@ -10,9 +10,9 @@
   ],
   "rewrites": [
     { "source": "/api/grade/importar-pdf", "destination": "/api/grade/importar-pdf.js" },
-    { "source": "/api/avisos/(.*)", "destination": "/api/avisos" },
-    { "source": "/api/emprestimos/(.*)", "destination": "/api/emprestimos" },
-    { "source": "/api/equipe/(.*)", "destination": "/api/equipe" },
-    { "source": "/api/grade/(.*)", "destination": "/api/grade" }
+    { "source": "/api/avisos/(.*)", "destination": "/api/avisos/index.js" },
+    { "source": "/api/emprestimos/(.*)", "destination": "/api/emprestimos/index.js" },
+    { "source": "/api/equipe/(.*)", "destination": "/api/equipe/index.js" },
+    { "source": "/api/grade/(.*)", "destination": "/api/grade/index.js" }
   ]
 }

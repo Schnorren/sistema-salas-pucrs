@@ -10,3 +10,5 @@ backend/node_modules/
 
 # Ignorar builds
 frontend/dist/
+.vercel
+.env*.local
