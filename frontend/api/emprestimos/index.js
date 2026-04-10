@@ -2,12 +2,19 @@ import service from '../../backend_core/services/emprestimos.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 
 async function handler(req, res) {
+    // 1. Defina os caminhos da URL
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
     const caminho1 = urlParts.length > 2 ? urlParts[2] : null;
     const caminho2 = urlParts.length > 3 ? urlParts[3] : null;
     const caminho3 = urlParts.length > 4 ? urlParts[4] : null;
 
     const predioId = req.headers['x-predio-id'] || req.user.predio_id;
+
+    // 🔥 ADICIONE AQUI:
+    // Isso instrui o navegador e a Vercel a tratarem a conexão de forma imediata
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
     if (req.method === 'GET' && caminho1 === 'ativos') {
         try {
