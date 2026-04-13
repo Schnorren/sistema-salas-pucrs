@@ -2,6 +2,7 @@ import gradeRepository from '../repositories/grade.repository.js';
 import {
     PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
 } from '../utils/timeHelpers.js';
+import supabase from '../config/supabase.js'; // Garanta que o caminho está correto
 
 const gradeCacheMap = {};
 
@@ -149,6 +150,48 @@ class GradeService {
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
 
+    // 🔥 NOVO MÉTODO: Gera o Super Index e joga no Storage
+    async gerarEPublicarIndexEstatico(predio_id) {
+        try {
+            console.log(`[Cache] Gerando Super Index Estático para o prédio: ${predio_id}`);
+
+            // 1. Busca os dados brutos e as salas (mesma lógica que você já usa)
+            const [gradeBruta, salasDb] = await Promise.all([
+                gradeRepository.buscarGradeCompleta(predio_id),
+                gradeRepository.buscarSalas(predio_id)
+            ]);
+
+            // 2. Montamos o "Super Objeto" com tudo que o frontend precisa
+            const superIndex = {
+                predio_id,
+                atualizado_em: new Date().toISOString(),
+                salas: salasDb,
+                grade: gradeBruta,
+                // Você pode até pré-processar os andares aqui se quiser economizar CPU no celular do usuário
+            };
+
+            const jsonString = JSON.stringify(superIndex);
+            const fileName = `grade_predio_${predio_id}.json`;
+
+            // 3. Upload para o Supabase Storage (Bucket: 'grades')
+            // O 'upsert: true' faz sobrescrever o arquivo antigo
+            const { data, error } = await supabase
+                .storage
+                .from('grades')
+                .upload(fileName, jsonString, {
+                    contentType: 'application/json',
+                    upsert: true
+                });
+
+            if (error) throw error;
+            console.log(`✅ [Cache] Super Index publicado com sucesso: ${fileName}`);
+            return true;
+        } catch (error) {
+            console.error("❌ [Cache] Erro ao publicar index estático:", error.message);
+            return false;
+        }
+    }
+
     async obterTimeline(diaSolicitado, predio_id) {
         const salasDb = await gradeRepository.buscarSalas(predio_id) || [];
         const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
@@ -276,6 +319,10 @@ class GradeService {
 
         await gradeRepository.limparGrade(predio_id);
         await gradeRepository.inserirGradeLote(gradeInsert);
+
+        // 🔥 A CORREÇÃO: Coloque o 'await' aqui!
+        // Isso obriga a Vercel a esperar o upload do JSON terminar antes de desligar a função.
+        await this.gerarEPublicarIndexEstatico(predio_id);
 
         gradeCacheMap[predio_id] = null;
         gradeCacheMap['GLOBAL'] = null;

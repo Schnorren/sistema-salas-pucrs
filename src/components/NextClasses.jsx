@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
+import { useGrade } from '../hooks/useGrade';
+import { PERIODS, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -8,12 +10,10 @@ const PERIOD_OPTIONS = [
   { code: 'A', lb: '08:00' }, { code: 'B', lb: '08:45' }, { code: 'C', lb: '09:45' },
   { code: 'D', lb: '10:30' }, { code: 'E', lb: '11:30' }, { code: 'E1', lb: '12:15' },
   { code: 'F', lb: '14:00' }, { code: 'G', lb: '14:45' }, { code: 'H', lb: '15:45' },
-  { code: 'I', lb: '16:30' }, { code: 'J', lb: '17:30' }, { code: 'K', lb: '18:15' },
+  { code: 'I', lb: '16:30' }, { code: 'J', line: '17:30' }, { code: 'K', lb: '18:15' },
   { code: 'L', lb: '19:15' }, { code: 'M', lb: '20:00' }, { code: 'N', lb: '21:00' },
   { code: 'P', lb: '21:45' }
 ];
-
-const nextClassesCache = {};
 
 const horariosPUCRS = [
   "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
@@ -27,53 +27,21 @@ const normalizeText = (text) => {
 };
 
 export default function NextClasses({ session, acesso }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { predioAtivo } = usePredio();
+  const predioAtual = predioAtivo || acesso?.predioId || '';
+
+  // 🔥 Hook consumindo o Super Index via CDN!
+  const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
+
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
-  const { predioAtivo } = usePredio();
   
   const [filtro, setFiltro] = useState('');
   const [ordem, setOrdem] = useState('sala');
   const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
 
-  const carregarDados = (modoSilencioso = false) => {
-    if (!predioAtivo && !acesso?.predioId) return;
-
-    const predioAtual = predioAtivo || acesso?.predioId || '';
-    const cacheKey = `${predioAtual}-${day}-${per}`;
-
-    if (nextClassesCache[cacheKey]) {
-      setData(nextClassesCache[cacheKey]);
-      if (!modoSilencioso) setLoading(false);
-    } else if (!modoSilencioso) {
-      setLoading(true);
-    }
-
-    const headers = {
-        'Authorization': `Bearer ${session?.access_token}`,
-        'x-predio-id': predioAtual
-    };
-
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/proximas?dia=${day}&periodo=${per}`, { headers })
-      .then(res => {
-          if (!res.ok) throw new Error("Erro ao carregar grade");
-          return res.json()
-      })
-      .then(resData => {
-        nextClassesCache[cacheKey] = resData;
-        setData(resData);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        if (!nextClassesCache[cacheKey]) setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    carregarDados(false);
-  }, [day, per, session, acesso, predioAtivo]);
+  // Tick para forçar atualização no horário exato das trocas de período
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const intervaloRelogio = setInterval(() => {
@@ -81,15 +49,57 @@ export default function NextClasses({ session, acesso }) {
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
       
       if (horariosPUCRS.includes(horaStr)) {
-        carregarDados(true);
+        setTick(t => t + 1); // Força recálculo
       }
     }, 60000);
 
     return () => clearInterval(intervaloRelogio);
-  }, [day, per, session, acesso, predioAtivo]);
+  }, []);
 
+  // ==========================================
+  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
+  // ==========================================
+  const dataProcessed = useMemo(() => {
+    if (!rawGradeData || !rawGradeData.grade) return null;
+
+    const gradeBruta = rawGradeData.grade;
+    const activePer = per === 'auto' ? getCurrentPeriod() : per;
+    
+    // Filtra as aulas do dia atual selecionado
+    const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
+
+    const response = {
+      periodoAtualReferencia: activePer, 
+      labelPeriodoAtual: '',
+      emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: []
+    };
+
+    if (activePer) {
+      const pi = PERIODS.findIndex(p => p.code === activePer);
+      if (pi >= 0) {
+        response.labelPeriodoAtual = PERIODS[pi].lb;
+        const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
+        
+        response.emAndamento = todasAgrupadas.filter(g => g.periodosFormatados.includes(activePer));
+        
+        const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
+        response.proximas = todasAgrupadas.filter(g => nextPeriodCodes.includes(g.periodosFormatados[0]));
+        
+        const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
+        response.restoDoDia = todasAgrupadas.filter(g => futurePeriodCodes.includes(g.periodosFormatados[0]));
+      }
+    } else {
+      response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
+    }
+    
+    return response;
+  }, [rawGradeData, day, per, tick]);
+
+  // ==========================================
+  // LÓGICA DE FILTRO (SEARCH) E ORDENAÇÃO
+  // ==========================================
   const filteredAndSortedData = useMemo(() => {
-    if (!data) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
+    if (!dataProcessed) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
 
     const termo = normalizeText(filtro);
     
@@ -119,13 +129,16 @@ export default function NextClasses({ session, acesso }) {
     };
 
     return {
-      emAndamento: applyFilterAndSort(data.emAndamento),
-      proximas: applyFilterAndSort(data.proximas),
-      restoDoDia: applyFilterAndSort(data.restoDoDia),
-      todasAsAulas: applyFilterAndSort(data.todasAsAulas)
+      emAndamento: applyFilterAndSort(dataProcessed.emAndamento),
+      proximas: applyFilterAndSort(dataProcessed.proximas),
+      restoDoDia: applyFilterAndSort(dataProcessed.restoDoDia),
+      todasAsAulas: applyFilterAndSort(dataProcessed.todasAsAulas)
     };
-  }, [data, filtro, ordem]);
+  }, [dataProcessed, filtro, ordem]);
 
+  // ==========================================
+  // RENDERIZADORES
+  // ==========================================
   const renderCard = (aula, isCurrent) => (
     <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`}>
       <div className="nct">
@@ -162,6 +175,11 @@ export default function NextClasses({ session, acesso }) {
     </div>
   );
 
+  if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
+  if (loading) return <div className="empty-st">Carregando lista de aulas da CDN...</div>;
+  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro: {error}</div>;
+  if (!dataProcessed) return <div className="empty-st">Erro ao processar os dados da matriz.</div>;
+
   return (
     <div className="view active" id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       
@@ -179,7 +197,7 @@ export default function NextClasses({ session, acesso }) {
                 <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Período ref.:</label>
                 <select value={per} onChange={e => setPer(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                 <option value="auto">
-                    ⟳ Automático {data?.periodoAtualReferencia ? `— Per. ${data.periodoAtualReferencia}` : '— Fora de horário'}
+                    ⟳ Automático {dataProcessed.periodoAtualReferencia ? `— Per. ${dataProcessed.periodoAtualReferencia}` : '— Fora de horário'}
                 </option>
                 {PERIOD_OPTIONS.map(p => (
                     <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>
@@ -234,14 +252,10 @@ export default function NextClasses({ session, acesso }) {
       </div>
       
       <div className="nx-body" id="nxBody" style={{ paddingBottom: '40px' }}>
-        {loading ? (
-           <div className="empty-st">Carregando dados do servidor...</div>
-        ) : !data ? (
-           <div className="empty-st">Erro ao carregar os dados.</div>
-        ) : data.periodoAtualReferencia ? (
+        {dataProcessed.periodoAtualReferencia ? (
           <>
             <div>
-              <div className="nx-hd">🔴 Em andamento — <em>Período {data.periodoAtualReferencia}</em> ({data.labelPeriodoAtual})</div>
+              <div className="nx-hd">🔴 Em andamento — <em>Período {dataProcessed.periodoAtualReferencia}</em> ({dataProcessed.labelPeriodoAtual})</div>
               {filteredAndSortedData.emAndamento.length === 0 ? (
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed var(--border)', textAlign: 'center' }}>
                     Nenhuma aula encontrada {filtro && `para a busca "${filtro}"`}.

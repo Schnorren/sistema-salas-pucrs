@@ -1,69 +1,62 @@
 import { useState, useEffect, useMemo } from 'react';
 import { generateHeatmapPDF } from '../utils/reportGenerator';
 import { usePredio } from '../contexts/PredioContext';
+import { useGrade } from '../hooks/useGrade';
+import { PERIODS, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
 
 const COLORS = ['#1c2b4a', '#1e6b40', '#4e338a', '#a02828', '#96520a', '#1a6878', '#3a6e1a', '#823060'];
-
-const weeklyHeatmapCache = {};
+const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
 export default function WeeklyHeatmap({ session, acesso }) {
-  const [rawData, setRawData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { predioAtivo } = usePredio();
+  const predioAtual = predioAtivo || acesso?.predioId || '';
+
+  // 🔥 Substituímos o fetch manual pelo nosso Hook de CDN!
+  const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
   const [activeDays, setActiveDays] = useState(new Set());
   const [activeRooms, setActiveRooms] = useState(new Set());
   const [activePers, setActivePers] = useState(new Set());
 
-  const { predioAtivo } = usePredio();
+  // ==========================================
+  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
+  // ==========================================
+  const processedData = useMemo(() => {
+    if (!rawGradeData || !rawGradeData.grade) return null;
 
-  useEffect(() => {
-    if (!predioAtivo && !acesso?.predioId) return;
-    
-    const predioAtual = predioAtivo || acesso?.predioId || '';
-    const cacheKey = `${predioAtual}`;
+    const salasDisponiveis = rawGradeData.salas.map(s => s.numero).sort();
+    const periodosDisponiveis = PERIODS.map(p => p.code);
 
-    if (weeklyHeatmapCache[cacheKey]) {
-      const d = weeklyHeatmapCache[cacheKey];
-      setRawData(d);
-      setActiveDays(new Set(d.diasDisponiveis));
-      setActiveRooms(new Set(d.salasDisponiveis));
-      setActivePers(new Set(d.periodosDisponiveis));
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
+    const ocupacaoBase = rawGradeData.grade.map(g => ({
+        sala: g.salas?.numero || g.Sala || g.sala,
+        dia: g.dia_semana || g.Dia || g.dia,
+        periodo: extractPeriodCode(g.periodo || g.Periodo)
+    })).filter(item => item.sala && item.dia);
 
-    const headers = {
-      'Authorization': `Bearer ${session?.access_token}`,
-      'x-predio-id': predioAtual
+    return {
+        diasDisponiveis: DIAS_SEMANA,
+        salasDisponiveis,
+        periodosDisponiveis,
+        ocupacaoBase
     };
+  }, [rawGradeData]);
 
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/ocupacao`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error("Erro na API");
-        return res.json();
-      })
-      .then(d => {
-        weeklyHeatmapCache[cacheKey] = d;
-        setRawData(d);
-        
-        if (!weeklyHeatmapCache[cacheKey]) {
-           setActiveDays(new Set(d.diasDisponiveis));
-           setActiveRooms(new Set(d.salasDisponiveis));
-           setActivePers(new Set(d.periodosDisponiveis));
-        }
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Erro ao buscar dados de ocupação:", err);
-        if (!weeklyHeatmapCache[cacheKey]) setLoading(false);
-      });
-  }, [session, acesso, predioAtivo]);
+  // Sincroniza os filtros (marca todos os checkboxes) sempre que o prédio muda
+  useEffect(() => {
+    if (processedData) {
+      setActiveDays(new Set(processedData.diasDisponiveis));
+      setActiveRooms(new Set(processedData.salasDisponiveis));
+      setActivePers(new Set(processedData.periodosDisponiveis));
+    }
+  }, [predioAtual, processedData?.salasDisponiveis.length]); 
 
+  // ==========================================
+  // ESTATÍSTICAS DO HEATMAP
+  // ==========================================
   const stats = useMemo(() => {
-    if (!rawData) return null;
+    if (!processedData) return null;
 
-    const filtered = rawData.ocupacaoBase.filter(item =>
+    const filtered = processedData.ocupacaoBase.filter(item =>
       activeDays.has(item.dia) &&
       activeRooms.has(item.sala) &&
       activePers.has(item.periodo)
@@ -99,14 +92,11 @@ export default function WeeklyHeatmap({ session, acesso }) {
     const usageByDay = [...activeDays].map(dia => {
       const aulasNoDiaGeral = filtered.filter(f => f.dia === dia);
       const slotsUnicosOcupados = new Set(aulasNoDiaGeral.map(a => `${a.sala}-${a.periodo}`)).size;
-      return {
-        dia,
-        total: slotsUnicosOcupados
-      };
+      return { dia, total: slotsUnicosOcupados };
     });
 
     return { heatmap, usageByDay, mxCount, totalOccupied, totalPossible, percGeral };
-  }, [rawData, activeDays, activeRooms, activePers]);
+  }, [processedData, activeDays, activeRooms, activePers]);
 
   const handleFilterChange = (set, value, setter) => {
     const newSet = new Set(set);
@@ -116,8 +106,9 @@ export default function WeeklyHeatmap({ session, acesso }) {
   };
 
   const toggleAll = (type, value) => {
-    if (type === 'rooms') setActiveRooms(value ? new Set(rawData.salasDisponiveis) : new Set());
-    if (type === 'pers') setActivePers(value ? new Set(rawData.periodosDisponiveis) : new Set());
+    if (!processedData) return;
+    if (type === 'rooms') setActiveRooms(value ? new Set(processedData.salasDisponiveis) : new Set());
+    if (type === 'pers') setActivePers(value ? new Set(processedData.periodosDisponiveis) : new Set());
   };
 
   const getHeatClass = (v) => {
@@ -146,11 +137,14 @@ export default function WeeklyHeatmap({ session, acesso }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ocupacao_secretaria_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `ocupacao_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
   };
 
-  if (loading) return <div className="empty-st">Analisando histórico de ocupação...</div>;
+  if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
+  if (loading) return <div className="empty-st">Analisando histórico de ocupação da CDN...</div>;
+  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ {error}</div>;
+  if (!processedData || !stats) return null;
 
   return (
     <div className="view active" id="vHeat" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -161,7 +155,7 @@ export default function WeeklyHeatmap({ session, acesso }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <label style={{ minWidth: 60 }}>Dias:</label>
             <div className="day-flt">
-              {rawData.diasDisponiveis.map(d => (
+              {processedData.diasDisponiveis.map(d => (
                 <label key={d} className={`dcb ${activeDays.has(d) ? 'on' : ''}`}>
                   <input type="checkbox" checked={activeDays.has(d)} onChange={() => handleFilterChange(activeDays, d, setActiveDays)} />
                   {d.substring(0, 3).toUpperCase()}
@@ -178,7 +172,7 @@ export default function WeeklyHeatmap({ session, acesso }) {
               </div>
             </label>
             <div className="day-flt" style={{ maxHeight: 85, overflowY: 'auto', paddingRight: 5 }}>
-              {rawData.salasDisponiveis.map(r => (
+              {processedData.salasDisponiveis.map(r => (
                 <label key={r} className={`dcb ${activeRooms.has(r) ? 'on' : ''}`}>
                   <input type="checkbox" checked={activeRooms.has(r)} onChange={() => handleFilterChange(activeRooms, r, setActiveRooms)} />
                   {r}
@@ -195,7 +189,7 @@ export default function WeeklyHeatmap({ session, acesso }) {
               </div>
             </label>
             <div className="day-flt" style={{ maxHeight: 60, overflowY: 'auto', paddingRight: 5 }}>
-              {rawData.periodosDisponiveis.map(p => (
+              {processedData.periodosDisponiveis.map(p => (
                 <label key={p} className={`dcb ${activePers.has(p) ? 'on' : ''}`}>
                   <input type="checkbox" checked={activePers.has(p)} onChange={() => handleFilterChange(activePers, p, setActivePers)} />
                   {p}
