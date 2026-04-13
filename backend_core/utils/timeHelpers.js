@@ -1,4 +1,3 @@
-// Removemos as declarações "module.exports" e exportamos cada item diretamente.
 
 export const PERIODS = [
   { code: 'A', lb: '08:00', start: [8, 0], end: [8, 45] },

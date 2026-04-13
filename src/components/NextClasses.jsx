@@ -29,8 +29,6 @@ const normalizeText = (text) => {
 export default function NextClasses({ session, acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
-
-  // 🔥 Hook consumindo o Super Index via CDN!
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
@@ -39,8 +37,6 @@ export default function NextClasses({ session, acesso }) {
   const [filtro, setFiltro] = useState('');
   const [ordem, setOrdem] = useState('sala');
   const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
-
-  // Tick para forçar atualização no horário exato das trocas de período
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -55,17 +51,11 @@ export default function NextClasses({ session, acesso }) {
 
     return () => clearInterval(intervaloRelogio);
   }, []);
-
-  // ==========================================
-  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
-  // ==========================================
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.grade) return null;
 
     const gradeBruta = rawGradeData.grade;
     const activePer = per === 'auto' ? getCurrentPeriod() : per;
-    
-    // Filtra as aulas do dia atual selecionado
     const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
 
     const response = {
@@ -94,10 +84,6 @@ export default function NextClasses({ session, acesso }) {
     
     return response;
   }, [rawGradeData, day, per, tick]);
-
-  // ==========================================
-  // LÓGICA DE FILTRO (SEARCH) E ORDENAÇÃO
-  // ==========================================
   const filteredAndSortedData = useMemo(() => {
     if (!dataProcessed) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
 
@@ -135,10 +121,6 @@ export default function NextClasses({ session, acesso }) {
       todasAsAulas: applyFilterAndSort(dataProcessed.todasAsAulas)
     };
   }, [dataProcessed, filtro, ordem]);
-
-  // ==========================================
-  // RENDERIZADORES
-  // ==========================================
   const renderCard = (aula, isCurrent) => (
     <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`}>
       <div className="nct">

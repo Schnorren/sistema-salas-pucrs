@@ -6,8 +6,6 @@ async function handler(req, res) {
     const endpoint = urlParts.length > 2 ? urlParts[2] : null;
 
     const predioId = req.headers['x-predio-id'] || req.user?.predio_id;
-
-    // Apenas a rota de Busca Global sobreviveu a migração para a CDN!
     if (req.method === 'GET' && endpoint === 'busca') {
         try {
             const { q } = req.query;

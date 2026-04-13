@@ -6,8 +6,6 @@ import { PERIODS, getCurrentPeriod, extractPeriodCode, isInternalClass } from '.
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const PERIOD_OPTIONS = ['A','B','C','D','E','E1','F','G','H','I','J','K','L','M','N','P'];
-
-// Tabela de horários em que a PUC "vira a chave" dos períodos
 const horariosPUCRS = [
   "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
   "14:00", "14:45", "15:45", "16:30", "17:30", "18:15",
@@ -17,14 +15,10 @@ const horariosPUCRS = [
 export default function LiveMap({ session, acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
-  
-  // 🔥 NOVO: Usamos o nosso hook para trazer o JSON gigante e veloz
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
-  
-  // Força atualização da tela nos horários de troca de aula
   const [, setTick] = useState(0);
 
   const [tt, setTt] = useState({ visible: false, x: 0, y: 0, sala: '', info: '' });
@@ -41,28 +35,18 @@ export default function LiveMap({ session, acesso }) {
 
     return () => clearInterval(intervaloRelogio);
   }, []);
-
-  // ==========================================
-  // 🔥 O CÉREBRO: PROCESSA O JSON NO FRONTEND
-  // ==========================================
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.salas) return null;
 
     const salasDb = rawGradeData.salas;
     const gradeBruta = rawGradeData.grade || [];
-    
-    // Descobre o período atual se estiver no modo "auto"
     const activePer = per === 'auto' ? getCurrentPeriod() : per;
-
-    // Filtra apenas as aulas que estão acontecendo no dia e período exatos
     const aulasNoMomento = gradeBruta.filter(d => {
         const mesmoDia = d.dia_semana?.toLowerCase().includes(day.toLowerCase());
         const codigoPeriodoBanco = extractPeriodCode(d.periodo);
         const noMesmoPeriodo = codigoPeriodoBanco.includes(activePer);
         return mesmoDia && noMesmoPeriodo;
     });
-
-    // Mapeia as salas base, cruzando com quem tem aula no momento
     const salasProcessadas = salasDb.map(s => {
         if (!s || !s.numero) return null;
 
@@ -70,8 +54,6 @@ export default function LiveMap({ session, acesso }) {
             const numSala = a.salas?.numero || a.sala;
             return numSala === s.numero;
         });
-
-        // Lógica de cálculo de andares (mesma que ficava no backend)
         let andarDaSala = s.andar;
         if (!andarDaSala) {
             const numString = String(s.numero);
@@ -92,8 +74,6 @@ export default function LiveMap({ session, acesso }) {
             tipo: aula ? (aula.tipo || (isInternalClass(aula.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
         };
     }).filter(Boolean);
-
-    // Agrupa as salas processadas por andar
     const andaresUnicos = [...new Set(salasProcessadas.map(s => String(s.andar)))].sort();
     const andares = andaresUnicos.map(num => ({
         label: num === '0' ? 'Térreo / Outros' : `${num}º Andar`,
@@ -111,11 +91,6 @@ export default function LiveMap({ session, acesso }) {
     };
 
   }, [rawGradeData, day, per]); 
-  // O 'useMemo' só refaz a conta se a grade baixar, ou se o dia/período mudar.
-
-  // ==========================================
-  // INTERAÇÕES DA UI
-  // ==========================================
   const handleMouseEnter = (e, sala) => {
     setTt({
       visible: true,

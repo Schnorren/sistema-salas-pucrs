@@ -1,10 +1,4 @@
 import supabase from '../config/supabase.js';
-
-/**
- * Wrapper de Autenticação e Autorização para Vercel Serverless
- * @param {Function} handler - A função da rota real que será executada se aprovada.
- * @param {String} moduloRequisitado - (Opcional) O nome do módulo para checar a permissão.
- */
 export const withAuth = (handler, moduloRequisitado = null) => {
     return async (req, res) => {
         console.log("🚀 [withAuth] Requisição recebida em:", req.url);
@@ -28,10 +22,6 @@ export const withAuth = (handler, moduloRequisitado = null) => {
                 console.log("❌ [AuthGuard] Token rejeitado ou usuário não encontrado.");
                 return res.status(401).json({ error: 'Usuário não autenticado ou token inválido' });
             }
-
-            // ==========================================
-            // PARTE 2: BUSCA DE ACESSOS E PREDIO ATIVO
-            // ==========================================
             const { data: acesso, error: dbError } = await supabase
                 .from('usuarios_acessos')
                 .select('perfil_id, predio_id, permissoes, perfis(nivel)')
@@ -53,12 +43,7 @@ export const withAuth = (handler, moduloRequisitado = null) => {
             if (isUserGlobal && predioSelecionadoFrontend) {
                 predioAtivo = predioSelecionadoFrontend;
             }
-
-            // ==========================================
-            // PARTE 3: PROTEÇÃO POR MÓDULO (100% Permissões)
-            // ==========================================
             if (moduloRequisitado) {
-                // Nível 99 (Super Admin) passa direto. Todo o resto obedece o array.
                 if (nivelPoder !== 99 && !permissoesUser.includes(moduloRequisitado)) {
                     console.log(`🚫 [CheckPerm] Bloqueado: Usuário tentou acessar '${moduloRequisitado}'.`);
                     return res.status(403).json({
@@ -66,18 +51,12 @@ export const withAuth = (handler, moduloRequisitado = null) => {
                     });
                 }
             }
-
-            // ==========================================
-            // PARTE 4: INJEÇÃO E LIBERAÇÃO
-            // ==========================================
             req.user = {
                 id: user.id,
                 nivel: nivelPoder,
                 predio_id: predioAtivo,
                 permissoes: permissoesUser
             };
-
-            // Tudo certo! Passamos a bola para a função principal da rota:
             return await handler(req, res);
 
         } catch (err) {
