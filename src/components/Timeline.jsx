@@ -35,15 +35,11 @@ const formatarAula = (nomeBruto) => {
 export default function Timeline({ session, acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
-
-  // 🔥 Substituímos o fetch pesado pelo Hook da CDN
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [filtro, setFiltro] = useState('');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
-  
-  // Tick para forçar atualização da "linha de tempo atual"
   const [tick, setTick] = useState(0); 
   const inputRef = useRef(null);
 
@@ -72,10 +68,6 @@ export default function Timeline({ session, acesso }) {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
-
-  // ==========================================
-  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
-  // ==========================================
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return null;
 
@@ -90,8 +82,6 @@ export default function Timeline({ session, acesso }) {
         label: p.lb,
         isAgora: p.code === periodoAtual
     }));
-
-    // Ordena as salas alfabeticamente/numericamente
     const sortedSalas = [...salasDb].sort((a, b) => a.numero.localeCompare(b.numero, undefined, { numeric: true }));
 
     const timeline = sortedSalas.map(salaRef => {
@@ -108,7 +98,6 @@ export default function Timeline({ session, acesso }) {
                 ocupado: !!aulaNoSlot,
                 nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
                 tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
-                // Usamos o nome_aula como ID de disciplina caso não exista, para agrupar o Hover
                 disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula) : null 
             };
         });
@@ -122,10 +111,6 @@ export default function Timeline({ session, acesso }) {
 
     return { periodosCabecalho, timeline };
   }, [rawGradeData, day, tick]); // Refaz se mudar a grade, o dia, ou se o relógio virar (tick)
-
-  // ==========================================
-  // LÓGICA DE FILTRO (SEARCH)
-  // ==========================================
   const filteredTimeline = useMemo(() => {
     if (!dataProcessed?.timeline) return [];
     if (!filtro.trim()) return dataProcessed.timeline;

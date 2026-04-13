@@ -5,8 +5,6 @@ import { PERIODS, extractPeriodCode } from '../../backend_core/utils/timeHelpers
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-
-// Mapeamento de horários de fim de aula para preencher os cards
 const PERIOD_END_TIMES = {
   'A': '08:45', 'B': '09:30', 'C': '10:30', 'D': '11:15', 'E': '12:15', 'E1': '13:00',
   'F': '14:45', 'G': '15:30', 'H': '16:30', 'I': '17:15', 'J': '18:15', 'K': '19:00',
@@ -16,15 +14,9 @@ const PERIOD_END_TIMES = {
 export default function FreeRooms({ session, acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
-
-  // 🔥 Hook consumindo o Super Index via CDN!
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
-
-  // ==========================================
-  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
-  // ==========================================
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return [];
 
@@ -33,13 +25,10 @@ export default function FreeRooms({ session, acesso }) {
     );
 
     const salasLivres = rawGradeData.salas.map(salaRef => {
-      // Encontra todas as aulas desta sala neste dia
       const aulasDaSala = aulasDoDia.filter(d => {
         const numSala = d.salas?.numero || d.sala;
         return numSala === salaRef.numero;
       });
-
-      // Filtra os períodos deixando apenas os que NÃO tem aula
       const freePeriods = PERIODS.filter(p => {
         const isOccupied = aulasDaSala.some(aula => {
             const codes = extractPeriodCode(aula.periodo);
@@ -58,8 +47,6 @@ export default function FreeRooms({ session, acesso }) {
         }))
       };
     });
-
-    // Retorna apenas salas que tenham pelo menos 1 período livre, ordenadas
     return salasLivres
       .filter(s => s.quantidadeLivres > 0)
       .sort((a, b) => a.sala.localeCompare(b.sala, undefined, { numeric: true }));

@@ -10,17 +10,11 @@ const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'
 export default function WeeklyHeatmap({ session, acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
-
-  // 🔥 Substituímos o fetch manual pelo nosso Hook de CDN!
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
   const [activeDays, setActiveDays] = useState(new Set());
   const [activeRooms, setActiveRooms] = useState(new Set());
   const [activePers, setActivePers] = useState(new Set());
-
-  // ==========================================
-  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
-  // ==========================================
   const processedData = useMemo(() => {
     if (!rawGradeData || !rawGradeData.grade) return null;
 
@@ -40,8 +34,6 @@ export default function WeeklyHeatmap({ session, acesso }) {
         ocupacaoBase
     };
   }, [rawGradeData]);
-
-  // Sincroniza os filtros (marca todos os checkboxes) sempre que o prédio muda
   useEffect(() => {
     if (processedData) {
       setActiveDays(new Set(processedData.diasDisponiveis));
@@ -49,10 +41,6 @@ export default function WeeklyHeatmap({ session, acesso }) {
       setActivePers(new Set(processedData.periodosDisponiveis));
     }
   }, [predioAtual, processedData?.salasDisponiveis.length]); 
-
-  // ==========================================
-  // ESTATÍSTICAS DO HEATMAP
-  // ==========================================
   const stats = useMemo(() => {
     if (!processedData) return null;
 

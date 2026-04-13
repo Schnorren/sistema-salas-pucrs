@@ -1,6 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-
-// Cache global no navegador para evitar re-download ao trocar de abas
 if (!window.__GRADE_CACHE) {
     window.__GRADE_CACHE = {};
 }
@@ -12,8 +10,6 @@ export const useGrade = (predioId) => {
 
     const carregarGrade = useCallback(async (forcar = false) => {
         if (!predioId) return;
-
-        // Se já temos no cache e não é um refresh forçado, não faz nada
         if (!forcar && window.__GRADE_CACHE[predioId]) {
             setDados(window.__GRADE_CACHE[predioId]);
             return;
@@ -30,8 +26,6 @@ export const useGrade = (predioId) => {
             }
 
             const json = await res.json();
-
-            // Salva no cache global e no estado
             window.__GRADE_CACHE[predioId] = json;
             setDados(json);
             setError(null);
@@ -42,8 +36,6 @@ export const useGrade = (predioId) => {
             setLoading(false);
         }
     }, [predioId]);
-
-    // Carrega automaticamente quando o prédio mudar
     useEffect(() => {
         carregarGrade();
     }, [carregarGrade]);
