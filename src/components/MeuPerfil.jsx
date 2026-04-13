@@ -2,14 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js'; 
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
-
-// 🔥 Adicionamos a prop onClose para fechar a tela automaticamente
 export default function MeuPerfil({ session, onClose }) {
     const [nome, setNome] = useState('');
     const [senha, setSenha] = useState('');
     const [confirmarSenha, setConfirmarSenha] = useState('');
-    
-    // 🔥 Novo estado para esconder/mostrar os campos de senha
     const [mostrarSenha, setMostrarSenha] = useState(false);
     
     const [loading, setLoading] = useState(false);
@@ -25,8 +21,6 @@ export default function MeuPerfil({ session, onClose }) {
     const handleSalvar = async (e) => {
         e.preventDefault();
         setMensagem(null);
-
-        // Se a pessoa abriu a aba de senha, validamos os campos
         if (mostrarSenha) {
             if (!senha) return setMensagem({ tipo: 'erro', texto: 'Digite a nova senha ou feche a alteração de senha.' });
             if (senha !== confirmarSenha) return setMensagem({ tipo: 'erro', texto: 'As senhas não coincidem.' });
@@ -46,8 +40,6 @@ export default function MeuPerfil({ session, onClose }) {
 
             const { error } = await supabase.auth.updateUser(updates);
             if (error) throw error;
-
-            // Sucesso! Mostra a mensagem por 1 segundo e depois fecha
             setMensagem({ tipo: 'sucesso', texto: 'Perfil atualizado com sucesso!' });
             
             setTimeout(() => {
@@ -86,8 +78,6 @@ export default function MeuPerfil({ session, onClose }) {
                 )}
 
                 <form onSubmit={handleSalvar} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    {/* E-MAIL (Bloqueado) */}
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block', color: '#94a3b8' }}>E-MAIL INSTITUCIONAL (LOGIN)</label>
                         <input
@@ -101,8 +91,6 @@ export default function MeuPerfil({ session, onClose }) {
                             }}
                         />
                     </div>
-
-                    {/* NOME COMPLETO */}
                     <div>
                         <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block', color: '#e2e8f0' }}>NOME COMPLETO</label>
                         <input
@@ -122,8 +110,6 @@ export default function MeuPerfil({ session, onClose }) {
                     </div>
 
                     <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '10px 0' }}></div>
-
-                    {/* 🔥 BOTÃO PARA EXIBIR/ESCONDER A TROCA DE SENHA */}
                     {!mostrarSenha ? (
                         <button 
                             type="button" 
@@ -177,8 +163,6 @@ export default function MeuPerfil({ session, onClose }) {
                             />
                         </div>
                     )}
-
-                    {/* BOTÕES DE AÇÃO */}
                     <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                         {onClose && (
                             <button 

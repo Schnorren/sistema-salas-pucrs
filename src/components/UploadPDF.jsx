@@ -42,6 +42,10 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             }
 
             const data = await res.json();
+            if (window.__GRADE_CACHE) {
+                window.__GRADE_CACHE[idParaUpload] = null;
+            }
+
             setMessage(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
             if (onUploadSuccess) onUploadSuccess();
 

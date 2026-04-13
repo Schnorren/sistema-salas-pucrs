@@ -2,6 +2,7 @@ import gradeRepository from '../repositories/grade.repository.js';
 import {
     PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
 } from '../utils/timeHelpers.js';
+import supabase from '../config/supabase.js'; // Garanta que o caminho está correto
 
 const gradeCacheMap = {};
 
@@ -148,6 +149,38 @@ class GradeService {
 
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
+    async gerarEPublicarIndexEstatico(predio_id) {
+        try {
+            console.log(`[Cache] Gerando Super Index Estático para o prédio: ${predio_id}`);
+            const [gradeBruta, salasDb] = await Promise.all([
+                gradeRepository.buscarGradeCompleta(predio_id),
+                gradeRepository.buscarSalas(predio_id)
+            ]);
+            const superIndex = {
+                predio_id,
+                atualizado_em: new Date().toISOString(),
+                salas: salasDb,
+                grade: gradeBruta,
+            };
+
+            const jsonString = JSON.stringify(superIndex);
+            const fileName = `grade_predio_${predio_id}.json`;
+            const { data, error } = await supabase
+                .storage
+                .from('grades')
+                .upload(fileName, jsonString, {
+                    contentType: 'application/json',
+                    upsert: true
+                });
+
+            if (error) throw error;
+            console.log(`✅ [Cache] Super Index publicado com sucesso: ${fileName}`);
+            return true;
+        } catch (error) {
+            console.error("❌ [Cache] Erro ao publicar index estático:", error.message);
+            return false;
+        }
+    }
 
     async obterTimeline(diaSolicitado, predio_id) {
         const salasDb = await gradeRepository.buscarSalas(predio_id) || [];
@@ -276,6 +309,7 @@ class GradeService {
 
         await gradeRepository.limparGrade(predio_id);
         await gradeRepository.inserirGradeLote(gradeInsert);
+        await this.gerarEPublicarIndexEstatico(predio_id);
 
         gradeCacheMap[predio_id] = null;
         gradeCacheMap['GLOBAL'] = null;

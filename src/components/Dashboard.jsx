@@ -11,7 +11,6 @@ import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
 import AdminPanel from './AdminPanel';
 import GestaoEquipe from './GestaoEquipe';
-// 🔥 1. Importamos o componente do Perfil
 import MeuPerfil from './MeuPerfil'; 
 
 import { useAuthAccess } from '../hooks/useAuthAccess';
@@ -134,8 +133,6 @@ export default function Dashboard({ session }) {
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-
-      {/* 🔥 3. Passamos a função onAbrirPerfil para o Topbar! */}
       <Topbar 
         session={session} 
         acesso={acesso} 

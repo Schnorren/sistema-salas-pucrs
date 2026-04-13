@@ -1,6 +1,4 @@
 import { useState, useCallback } from 'react';
-
-// 🔥 Cache global para evitar refetching ao trocar de abas
 const cacheStorage = {
     equipe: {},
     perfis: {},
@@ -21,8 +19,6 @@ export const useEquipe = (session, predioId) => {
 
     const carregarDados = useCallback(async (forcarAtualizacao = false) => {
         if (!predioId) return;
-        
-        // Se já tem no cache e não pedimos pra forçar, pula o fetch!
         if (!forcarAtualizacao && cacheStorage.equipe[predioId]) {
             return;
         }
@@ -39,13 +35,9 @@ export const useEquipe = (session, predioId) => {
                 const dataEquipe = await resEquipe.json();
                 const dataPerfis = await resPerfis.json();
                 const dataModulos = await resModulos.json();
-
-                // Salva no cache
                 cacheStorage.equipe[predioId] = dataEquipe;
                 cacheStorage.perfis[predioId] = dataPerfis;
                 cacheStorage.modulos[predioId] = dataModulos;
-
-                // Atualiza os estados
                 setEquipe(dataEquipe);
                 setPerfis(dataPerfis);
                 setModulos(dataModulos);

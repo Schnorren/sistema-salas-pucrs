@@ -9,20 +9,14 @@ export default function GestaoEquipe({ session, acesso }) {
         equipe, perfis, modulos, loading, 
         carregarDados, atualizarMembro, convidarMembro 
     } = useEquipe(session, predioAtivo || acesso?.predioId);
-
-    // Estados do Formulário Esquerdo
     const [nomeBusca, setNomeBusca] = useState('');
     const [emailBusca, setEmailBusca] = useState('');
     const [cargoSelecionado, setCargoSelecionado] = useState('');
     const [permissoesEditadas, setPermissoesEditadas] = useState([]);
     const [usuarioSelecionado, setUsuarioSelecionado] = useState(null);
-    
-    // Estados do Dropdown Customizado de Cargos
     const [buscaCargo, setBuscaCargo] = useState('');
     const [dropdownAberto, setDropdownAberto] = useState(false);
     const dropdownRef = useRef(null);
-
-    // Estados da Tabela Direita (Filtro e Ordenação)
     const [termoBuscaTabela, setTermoBuscaTabela] = useState('');
     const [ordenacao, setOrdenacao] = useState('email_asc');
 
@@ -31,8 +25,6 @@ export default function GestaoEquipe({ session, acesso }) {
     useEffect(() => {
         carregarDados();
     }, [carregarDados]);
-
-    // Lógica para fechar o dropdown customizado ao clicar fora
     useEffect(() => {
         const handleClickFora = (e) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -42,8 +34,6 @@ export default function GestaoEquipe({ session, acesso }) {
         document.addEventListener('mousedown', handleClickFora);
         return () => document.removeEventListener('mousedown', handleClickFora);
     }, []);
-
-    // Auto-Preenchimento das Permissões
     useEffect(() => {
         if (modoEdicao && usuarioSelecionado.perfil_id === cargoSelecionado) return;
 
@@ -115,10 +105,6 @@ const payload = {
             } else alert("Erro ao convidar: " + res.error);
         }
     };
-
-    // ==========================================
-    // 🔍 LÓGICA DE FILTRO E ORDENAÇÃO DA TABELA
-    // ==========================================
     const perfisFiltradosDropdown = perfis.filter(p => p.nome.toLowerCase().includes(buscaCargo.toLowerCase()));
 
     let equipeProcessada = equipe.filter(u => 
@@ -137,8 +123,6 @@ const payload = {
 
     return (
         <div style={{ padding: '24px', color: 'var(--text)', display: 'flex', gap: '24px', height: '100%' }}>
-            
-            {/* PAINEL ESQUERDO: WIZARD DE GESTÃO */}
             <div style={{ width: '420px', background: 'var(--surface, #1e293b)', padding: '24px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
                 <h3 style={{ marginTop: 0, color: modoEdicao ? '#f59e0b' : '#60a5fa' }}>
                     {modoEdicao ? 'Editando Acessos' : 'Convidar Novo Membro'}
@@ -181,8 +165,6 @@ const payload = {
                             }}
                         />
                     </div>
-
-                    {/* 🔥 COMBO BOX CUSTOMIZADO DE CARGOS 🔥 */}
                     <div style={{ gridColumn: 'span 2', position: 'relative' }} ref={dropdownRef}>
                         <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>CARGO / FUNÇÃO</label>
                         <input
@@ -275,12 +257,8 @@ const payload = {
                     </button>
                 </div>
             </div>
-
-            {/* PAINEL DIREITO: TABELA DE USUÁRIOS */}
             <div style={{ flex: 1, background: 'var(--surface, #1e293b)', padding: '24px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Equipe Registrada</h3>
-                
-                {/* 🔍 BARRA DE PESQUISA E ORDENAÇÃO */}
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
                     <input 
                         type="text" 
