@@ -42,6 +42,12 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             }
 
             const data = await res.json();
+
+            // 🔥 A MÁGICA ACONTECE AQUI: Matando o cache da grade antiga!
+            if (window.__GRADE_CACHE) {
+                window.__GRADE_CACHE[idParaUpload] = null;
+            }
+
             setMessage(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
             if (onUploadSuccess) onUploadSuccess();
 

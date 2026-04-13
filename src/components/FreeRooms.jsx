@@ -1,73 +1,73 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
+import { useGrade } from '../hooks/useGrade';
+import { PERIODS, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-const freeRoomsCache = {};
-
-const horariosPUCRS = [
-  "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
-  "14:00", "14:45", "15:45", "16:30", "17:30", "18:15",
-  "19:15", "20:00", "21:00", "21:45"
-];
+// Mapeamento de horários de fim de aula para preencher os cards
+const PERIOD_END_TIMES = {
+  'A': '08:45', 'B': '09:30', 'C': '10:30', 'D': '11:15', 'E': '12:15', 'E1': '13:00',
+  'F': '14:45', 'G': '15:30', 'H': '16:30', 'I': '17:15', 'J': '18:15', 'K': '19:00',
+  'L': '20:00', 'M': '20:45', 'N': '21:45', 'P': '22:30'
+};
 
 export default function FreeRooms({ session, acesso }) {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const { predioAtivo } = usePredio();
+  const predioAtual = predioAtivo || acesso?.predioId || '';
 
-  const carregarDados = (modoSilencioso = false) => {
-    if (!predioAtivo && !acesso?.predioId) return;
+  // 🔥 Hook consumindo o Super Index via CDN!
+  const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-    const predioAtual = predioAtivo || acesso?.predioId || '';
-    const cacheKey = `${predioAtual}-${day}`;
+  const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
 
-    if (freeRoomsCache[cacheKey]) {
-      setData(freeRoomsCache[cacheKey]);
-      if (!modoSilencioso) setLoading(false);
-    } else if (!modoSilencioso) {
-      setLoading(true);
-    }
+  // ==========================================
+  // 🔥 PROCESSAMENTO: BACKEND -> FRONTEND
+  // ==========================================
+  const dataProcessed = useMemo(() => {
+    if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return [];
 
-    const headers = {
-      'Authorization': `Bearer ${session?.access_token}`,
-      'x-predio-id': predioAtual
-    };
+    const aulasDoDia = rawGradeData.grade.filter(d => 
+      d.dia_semana?.toLowerCase().includes(day.toLowerCase())
+    );
 
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/livres?dia=${day}`, { headers })
-      .then(res => {
-          if (!res.ok) throw new Error('Falha de autenticação ou rede');
-          return res.json();
-      })
-      .then(resData => {
-        freeRoomsCache[cacheKey] = resData;
-        setData(resData);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        if (!freeRoomsCache[cacheKey]) setLoading(false);
+    const salasLivres = rawGradeData.salas.map(salaRef => {
+      // Encontra todas as aulas desta sala neste dia
+      const aulasDaSala = aulasDoDia.filter(d => {
+        const numSala = d.salas?.numero || d.sala;
+        return numSala === salaRef.numero;
       });
-  };
 
-  useEffect(() => {
-    carregarDados(false);
-  }, [day, session, acesso, predioAtivo]);
+      // Filtra os períodos deixando apenas os que NÃO tem aula
+      const freePeriods = PERIODS.filter(p => {
+        const isOccupied = aulasDaSala.some(aula => {
+            const codes = extractPeriodCode(aula.periodo);
+            return codes && codes.includes(p.code);
+        });
+        return !isOccupied; // Retorna true se estiver livre
+      });
 
-  useEffect(() => {
-    const intervaloRelogio = setInterval(() => {
-      const agora = new Date();
-      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-      
-      if (horariosPUCRS.includes(horaStr)) {
-        carregarDados(true);
-      }
-    }, 60000);
+      return {
+        sala: salaRef.numero,
+        quantidadeLivres: freePeriods.length,
+        periodos: freePeriods.map(f => ({
+          code: f.code,
+          label: f.lb,
+          fim: PERIOD_END_TIMES[f.code] || ''
+        }))
+      };
+    });
 
-    return () => clearInterval(intervaloRelogio);
-  }, [day, session, acesso, predioAtivo]);
+    // Retorna apenas salas que tenham pelo menos 1 período livre, ordenadas
+    return salasLivres
+      .filter(s => s.quantidadeLivres > 0)
+      .sort((a, b) => a.sala.localeCompare(b.sala, undefined, { numeric: true }));
+
+  }, [rawGradeData, day]);
+
+  if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
+  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro: {error}</div>;
 
   return (
     <div className="view active" id="vFree" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
@@ -82,11 +82,11 @@ export default function FreeRooms({ session, acesso }) {
       <div className="free-body" id="freeBody" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         
         {loading ? (
-          <div className="empty-st">Analisando disponibilidade de salas...</div>
-        ) : data.length === 0 ? (
+          <div className="empty-st">Baixando matriz de disponibilidade da CDN...</div>
+        ) : dataProcessed.length === 0 ? (
           <div className="empty-st">Nenhuma sala livre encontrada para este dia. (Prédio 100% ocupado!)</div>
         ) : (
-          data.map(sala => (
+          dataProcessed.map(sala => (
             <div key={sala.sala} className="free-card">
               <div className="free-summary">
                 <div className="free-room-title">Sala {sala.sala}</div>
