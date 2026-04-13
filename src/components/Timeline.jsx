@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
+import { useGrade } from '../hooks/useGrade';
+import { PERIODS, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-
-const timelineCache = {};
 
 const horariosPUCRS = [
   "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
@@ -33,61 +33,26 @@ const formatarAula = (nomeBruto) => {
 };
 
 export default function Timeline({ session, acesso }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { predioAtivo } = usePredio();
+  const predioAtual = predioAtivo || acesso?.predioId || '';
+  const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
+
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [filtro, setFiltro] = useState('');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
-  const { predioAtivo } = usePredio();
+  const [tick, setTick] = useState(0); 
   const inputRef = useRef(null);
-
-  const carregarDados = (modoSilencioso = false) => {
-    if (!predioAtivo && !acesso?.predioId) return;
-    const predioAtual = predioAtivo || acesso?.predioId || '';
-    const cacheKey = `${predioAtual}-${day}`;
-
-    if (timelineCache[cacheKey]) {
-      setData(timelineCache[cacheKey]);
-      if (!modoSilencioso) setLoading(false); 
-    } else if (!modoSilencioso) {
-      setLoading(true);
-    }
-
-    const headers = {
-      'Authorization': `Bearer ${session?.access_token}`,
-      'x-predio-id': predioAtual
-    };
-
-    fetch(`${import.meta.env.VITE_API_URL}/api/grade/timeline?dia=${day}`, { headers })
-      .then(res => {
-        if (!res.ok) throw new Error("Erro de autorização ou servidor");
-        return res.json();
-      })
-      .then(resData => {
-        timelineCache[cacheKey] = resData;
-        setData(resData);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Erro ao carregar timeline:", err);
-        if (!timelineCache[cacheKey]) setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    carregarDados(false);
-  }, [day, session, acesso, predioAtivo]);
 
   useEffect(() => {
     const intervaloRelogio = setInterval(() => {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
       if (horariosPUCRS.includes(horaStr)) {
-        carregarDados(true);
+        setTick(t => t + 1); // Força recálculo do período atual
       }
     }, 60000);
     return () => clearInterval(intervaloRelogio);
-  }, [day, session, acesso, predioAtivo]);
+  }, []);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
@@ -103,24 +68,68 @@ export default function Timeline({ session, acesso }) {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
+  const dataProcessed = useMemo(() => {
+    if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return null;
 
+    const salasDb = rawGradeData.salas;
+    const gradeBruta = rawGradeData.grade;
+    const periodoAtual = getCurrentPeriod();
+
+    const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
+
+    const periodosCabecalho = PERIODS.map(p => ({
+        code: p.code,
+        label: p.lb,
+        isAgora: p.code === periodoAtual
+    }));
+    const sortedSalas = [...salasDb].sort((a, b) => a.numero.localeCompare(b.numero, undefined, { numeric: true }));
+
+    const timeline = sortedSalas.map(salaRef => {
+        const slots = PERIODS.map(p => {
+            const aulaNoSlot = aulasDoDia.find(d => {
+                const numSala = d.salas?.numero || d.sala;
+                return numSala === salaRef.numero && extractPeriodCode(d.periodo) === p.code;
+            });
+
+            return {
+                periodo: p.code,
+                horario: p.lb,
+                isAgora: p.code === periodoAtual,
+                ocupado: !!aulaNoSlot,
+                nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
+                tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
+                disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula) : null 
+            };
+        });
+
+        return {
+            sala: salaRef.numero,
+            temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
+            slots
+        };
+    });
+
+    return { periodosCabecalho, timeline };
+  }, [rawGradeData, day, tick]); // Refaz se mudar a grade, o dia, ou se o relógio virar (tick)
   const filteredTimeline = useMemo(() => {
-    if (!data?.timeline) return [];
-    if (!filtro.trim()) return data.timeline;
+    if (!dataProcessed?.timeline) return [];
+    if (!filtro.trim()) return dataProcessed.timeline;
 
     const termo = normalizeText(filtro);
 
-    return data.timeline.filter(linha => {
+    return dataProcessed.timeline.filter(linha => {
       const matchSala = normalizeText(linha.sala).includes(termo);
       const matchAula = linha.slots.some(slot => 
         slot.ocupado && normalizeText(slot.nome).includes(termo)
       );
       return matchSala || matchAula;
     });
-  }, [data, filtro]);
+  }, [dataProcessed, filtro]);
 
-  if (loading) return <div className="empty-st">Gerando matriz de horários...</div>;
-  if (!data) return <div className="empty-st" style={{color: 'var(--red)'}}>Falha ao carregar a matriz.</div>;
+  if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
+  if (loading) return <div className="empty-st">Carregando matriz de horários da CDN...</div>;
+  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro: {error}</div>;
+  if (!dataProcessed) return <div className="empty-st">Nenhuma matriz encontrada para este prédio.</div>;
 
   return (
     <div className="view active" id="vTl" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -171,7 +180,7 @@ export default function Timeline({ session, acesso }) {
           <div className="tl-hdr">
             <div className="tl-rl">Sala</div>
             <div className="tl-pers">
-              {data.periodosCabecalho.map(p => (
+              {dataProcessed.periodosCabecalho.map(p => (
                 <div key={p.code} className={`tl-phd ${p.isAgora ? 'now' : ''}`}>
                   {p.code}<br />
                   <span style={{ fontSize: '0.65rem', fontWeight: 'normal', opacity: 0.8 }}>

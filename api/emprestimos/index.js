@@ -5,19 +5,12 @@ async function handler(req, res) {
     console.log('🚨 REQUISIÇÃO BATEU NO INDEX.JS. URL:', req.url);
 
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
-    
-    // Procura dinamicamente onde está a palavra 'emprestimos' na URL
     const baseIndex = urlParts.indexOf('emprestimos');
-
-    // Pega as posições seguintes de forma segura
     const caminho1 = baseIndex !== -1 && urlParts.length > baseIndex + 1 ? urlParts[baseIndex + 1] : null; 
     const caminho2 = baseIndex !== -1 && urlParts.length > baseIndex + 2 ? urlParts[baseIndex + 2] : null; 
     const caminho3 = baseIndex !== -1 && urlParts.length > baseIndex + 3 ? urlParts[baseIndex + 3] : null;
 
     const predioId = req.headers['x-predio-id'] || req.user.predio_id;
-
-    // 🔥 ADICIONE AQUI:
-    // Isso instrui o navegador e a Vercel a tratarem a conexão de forma imediata
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -99,11 +92,6 @@ async function handler(req, res) {
             return res.status(400).json({ error: error.message });
         }
     }
-
-    // ==========================================
-    // 🟢 ALTERAR STATUS DO ITEM (MANUTENÇÃO)
-    // URL: /api/emprestimos/itens/:id/manutencao
-    // ==========================================
     if (req.method === 'PUT' && caminho1 === 'itens' && caminho3 === 'manutencao') {
         try {
             const itemId = caminho2;
