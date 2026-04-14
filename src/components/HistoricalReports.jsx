@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, Component } from 'react';
 import { generateComparisonPDF } from '../utils/reportGenerator';
-
+import { usePredio } from '../contexts/PredioContext';
 const COLORS = ['#1c2b4a', '#c8973a', '#4e338a', '#1e6b40', '#a02828', '#1a6878', '#823060'];
 const DAYS_OPTIONS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const PERIOD_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
@@ -15,7 +15,7 @@ class LocalErrorBoundary extends Component {
                     <div className="empty-st" style={{ border: '1px solid var(--red)', color: 'var(--red)' }}>
                         <h3>⚠️ Falha Crítica de Renderização</h3>
                         <p>O arquivo carregado possui um formato incompatível que quebrou os gráficos.</p>
-                        <code>Detalhe: {this.state.errorMsg}</code><br/><br/>
+                        <code>Detalhe: {this.state.errorMsg}</code><br /><br />
                         <button className="tb-btn" onClick={() => window.location.reload()}>Recarregar Painel</button>
                     </div>
                 </div>
@@ -26,6 +26,8 @@ class LocalErrorBoundary extends Component {
 }
 
 export default function HistoricalReports({ session, acesso }) {
+    const { predioAtivo } = usePredio();
+
     const [semanas, setSemanas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
@@ -58,11 +60,17 @@ export default function HistoricalReports({ session, acesso }) {
         }
     }, [allAvailableRooms]);
 
-    
+
     const handleFiles = async (e) => {
         const target = e.target;
         const files = Array.from(target.files);
         if (!files.length) return;
+
+        const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
+        if (!currentPredioId) {
+            setErrorMsg("Por favor, selecione um prédio no menu superior antes de enviar o arquivo.");
+            return;
+        }
 
         setLoading(true);
         setErrorMsg('');
@@ -71,24 +79,20 @@ export default function HistoricalReports({ session, acesso }) {
             const processados = await Promise.all(files.map(async (file) => {
                 try {
                     const formData = new FormData();
-                    formData.append('arquivo', file);
+                    formData.append('file', file);
 
-                    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/analisar-externo-pdf`, {
+                    const res = await fetch(import.meta.env.VITE_PYTHON_API_URL, {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${session?.access_token}`,
-                            'x-predio-id': acesso?.predioId || ''
-                        },
                         body: formData
                     });
 
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({}));
-                        throw new Error(errData.error || `O servidor rejeitou ${file.name}`);
+                        throw new Error(errData.error || `A API Python rejeitou o arquivo ${file.name}`);
                     }
 
                     const stats = await res.json();
-                    
+
                     return {
                         id: Math.random().toString(36).substr(2, 9),
                         nome: file.name.replace('.pdf', ''),
@@ -102,19 +106,19 @@ export default function HistoricalReports({ session, acesso }) {
 
             const validos = processados.filter(Boolean);
             if (validos.length > 0) setSemanas(prev => [...prev, ...validos]);
-            else setErrorMsg("Nenhum arquivo pôde ser processado. Verifique a formatação do PDF da PUCRS.");
-            
+            else setErrorMsg("Nenhum arquivo pôde ser processado. Verifique se a API Python está online e retornando o formato correto.");
+
         } catch (err) {
             setErrorMsg("Falha crítica ao ler arquivos: " + err.message);
         } finally {
             setLoading(false);
-            if (target) target.value = ''; 
+            if (target) target.value = '';
         }
     };
 
     const filteredComparison = useMemo(() => {
         if (!semanas || semanas.length === 0) return [];
-        
+
         return semanas.map(s => {
             if (!s?.data?.ocupacaoBase) return { id: s.id, nome: s?.nome || 'Erro', total: 0, percentual: '0.0', roomStats: {} };
 
@@ -133,12 +137,12 @@ export default function HistoricalReports({ session, acesso }) {
                 roomStats[room] = { count: aulasDaSala, perc: percSala };
             });
 
-            return { 
+            return {
                 id: s.id,
-                nome: s.nome, 
-                total: baseFiltrada.length, 
+                nome: s.nome,
+                total: baseFiltrada.length,
                 percentual: percGeral,
-                roomStats 
+                roomStats
             };
         });
     }, [semanas, activeDays, activePers, activeRooms]);
@@ -236,7 +240,7 @@ export default function HistoricalReports({ session, acesso }) {
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                            
+
                             <div className="bar-card">
                                 <div className="bar-ttl">Ocupação Consolidada do Prédio</div>
                                 <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', marginTop: '15px' }}>
@@ -244,25 +248,25 @@ export default function HistoricalReports({ session, acesso }) {
                                         const color = COLORS[i % COLORS.length];
                                         return (
                                             <div key={s.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid var(--border)', minWidth: '180px', position: 'relative' }}>
-                                                
+
                                                 <button onClick={() => setSemanas(semanas.filter(sem => sem.id !== s.id))} style={{ position: 'absolute', top: 5, right: 5, background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '16px' }}>×</button>
-                                                
+
                                                 <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--navy)', marginBottom: '15px', textAlign: 'center' }}>{s.nome}</div>
-                                                
-                                                <div style={{ 
-                                                    width: '100px', height: '100px', borderRadius: '50%', 
+
+                                                <div style={{
+                                                    width: '100px', height: '100px', borderRadius: '50%',
                                                     background: `conic-gradient(${color} ${s.percentual}%, #f0ede8 0)`,
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                                                 }}>
-                                                    <div style={{ 
-                                                        width: '70px', height: '70px', background: '#fff', borderRadius: '50%', 
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                                                    <div style={{
+                                                        width: '70px', height: '70px', background: '#fff', borderRadius: '50%',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                         fontSize: '18px', fontWeight: 'bold', color: color
                                                     }}>
                                                         {s.percentual}%
                                                     </div>
                                                 </div>
-                                                
+
                                                 <div style={{ marginTop: '15px', fontSize: '12px', color: 'var(--text2)' }}>
                                                     <b>{s.total}</b> aulas registradas
                                                 </div>
@@ -288,18 +292,18 @@ export default function HistoricalReports({ session, acesso }) {
                                             {allAvailableRooms.filter(r => activeRooms.has(r)).map(room => (
                                                 <tr key={room} style={{ borderBottom: '1px solid var(--border)' }}>
                                                     <td style={{ padding: '15px', fontWeight: 'bold', textAlign: 'left', color: 'var(--navy)' }}>{room}</td>
-                                                    
+
                                                     {filteredComparison.map((s, i) => {
                                                         const stat = s.roomStats[room] || { perc: 0, count: 0 };
                                                         const color = COLORS[i % COLORS.length];
                                                         return (
                                                             <td key={s.id} style={{ padding: '15px' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                                                                    <div style={{ 
-                                                                        width: '24px', height: '24px', borderRadius: '50%', 
+                                                                    <div style={{
+                                                                        width: '24px', height: '24px', borderRadius: '50%',
                                                                         background: `conic-gradient(${color} ${stat.perc}%, #f0ede8 0)`
                                                                     }}></div>
-                                                                    
+
                                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                                                                         <span style={{ fontWeight: 600, fontSize: '13px' }}>{stat.perc}%</span>
                                                                         <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{stat.count} aulas</span>
