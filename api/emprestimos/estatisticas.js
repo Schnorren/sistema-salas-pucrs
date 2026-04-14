@@ -16,10 +16,13 @@ export default withAuth(async (req, res) => {
         const { data: rankingItens, error: err1 } = await supabase.rpc('fn_estatisticas_itens', { p_predio_id: predioId, p_inicio, p_fim });
         const { data: picos, error: err2 } = await supabase.rpc('fn_picos_atendimento', { p_predio_id: predioId, p_inicio, p_fim });
         const { data: kpisList, error: err3 } = await supabase.rpc('fn_resumo_emprestimos', { p_predio_id: predioId, p_inicio, p_fim });
+        
+        const { data: picosHorario, error: err4 } = await supabase.rpc('fn_picos_horario', { p_predio_id: predioId, p_inicio, p_fim });
 
         if (err1) throw err1;
         if (err2) throw err2;
         if (err3) throw err3;
+        if (err4) throw err4;
 
         const kpis = kpisList?.[0] || { total_emprestimos: 0, alunos_unicos: 0 };
 
@@ -34,7 +37,8 @@ export default withAuth(async (req, res) => {
             },
             rankingItens: ordenadoPorSaida,
             rankingHoras: ordenadoPorHoras,
-            picos: picos || []
+            picos: picos || [],
+            picosHorario: picosHorario || []
         });
     } catch (err) {
         console.error("Erro SQL:", err);

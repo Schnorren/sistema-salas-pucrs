@@ -127,7 +127,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                             )}
                         </div>
 
-                        <div style={{ ...chartContainerStyle, gridColumn: 'span 2' }}>
+                        <div style={chartContainerStyle}>
                             <h3 style={titleStyle}>📈 Fluxo de Atendimento (Por Dia da Semana)</h3>
                             {dados.picos.length === 0 ? <div style={emptyDataStyle}>Nenhum registro no período.</div> : (
                                 <ResponsiveContainer width="100%" height={250}>
@@ -147,6 +147,29 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                                 </ResponsiveContainer>
                             )}
                         </div>
+
+                        {/* 🔥 NOVO GRÁFICO: Picos por Horário */}
+                        <div style={chartContainerStyle}>
+                            <h3 style={titleStyle}>⏰ Picos de Utilização (Por Horário)</h3>
+                            {dados.picosHorario && dados.picosHorario.length === 0 ? <div style={emptyDataStyle}>Nenhum registro no período.</div> : (
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <AreaChart data={dados.picosHorario}>
+                                        <defs>
+                                            <linearGradient id="colorHora" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                        <XAxis dataKey="hora" style={{ fontSize: '13px', fill: '#e2e8f0', fontWeight: 'bold' }} />
+                                        <YAxis style={{ fontSize: '12px', fill: '#94a3b8' }} />
+                                        <Tooltip contentStyle={tooltipStyle} />
+                                        <Area type="monotone" name="Empréstimos" dataKey="quantidade" stroke="#10b981" fillOpacity={1} fill="url(#colorHora)" strokeWidth={4} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            )}
+                        </div>
+
                     </div>
                 </>
             )}
