@@ -2,7 +2,7 @@ import gradeRepository from '../repositories/grade.repository.js';
 import {
     PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
 } from '../utils/timeHelpers.js';
-import supabase from '../config/supabase.js'; // Garanta que o caminho está correto
+import supabase from '../config/supabase.js';
 
 const gradeCacheMap = {};
 
@@ -242,7 +242,7 @@ class GradeService {
     }
 
     async _enviarParaPythonComRetry(buffer, filename) {
-        const PYTHON_API_URL = process.env.PYTHON_API_URL || 'https://extrator-pdf-pucrs.onrender.com/extract-pdf';
+        const PYTHON_API_URL = process.env.PYTHON_API_URL;
         const formData = new FormData();
         formData.append('file', new Blob([buffer], { type: 'application/pdf' }), filename);
         const response = await fetch(PYTHON_API_URL, { method: 'POST', body: formData });

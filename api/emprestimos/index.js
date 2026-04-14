@@ -4,6 +4,11 @@ import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 async function handler(req, res) {
     console.log('🚨 REQUISIÇÃO BATEU NO INDEX.JS. URL:', req.url);
 
+    const temPermissao = req.user?.permissoes?.includes('emprestimos') || req.user?.permissoes?.includes('admin');
+    if (!temPermissao) {
+        return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Empréstimos.' });
+    }
+
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
     const baseIndex = urlParts.indexOf('emprestimos');
     const caminho1 = baseIndex !== -1 && urlParts.length > baseIndex + 1 ? urlParts[baseIndex + 1] : null; 

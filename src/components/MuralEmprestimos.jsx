@@ -43,9 +43,9 @@ export default function MuralEmprestimos({ session }) {
     useEffect(() => {
         if (categorias.length > 0) {
             setCategoriaSel(prev => {
-                if (!prev) return categorias[0].id; // Se vazio, pega o primeiro
+                if (!prev) return categorias[0].id;
                 const isValid = categorias.some(c => c.id === prev);
-                return isValid ? prev : categorias[0].id; // Se o antigo não existe aqui, pega o primeiro
+                return isValid ? prev : categorias[0].id;
             });
         } else {
             setCategoriaSel('');
