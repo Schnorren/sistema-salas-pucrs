@@ -32,6 +32,7 @@ export default function MuralEmprestimos({ session }) {
         const timer = setInterval(() => setAgora(new Date()), 30000);
         return () => clearInterval(timer);
     }, []);
+
     useEffect(() => {
         if (predioAtivo) {
             setCategoriaSel('');
@@ -40,6 +41,7 @@ export default function MuralEmprestimos({ session }) {
             resetFlow();
         }
     }, [predioAtivo, carregarCategorias, carregarAtivos]);
+
     useEffect(() => {
         if (categorias.length > 0) {
             setCategoriaSel(prev => {
@@ -51,6 +53,7 @@ export default function MuralEmprestimos({ session }) {
             setCategoriaSel('');
         }
     }, [categorias]);
+
     useEffect(() => {
         const pertenceAoPredioAtual = categorias.some(c => c.id === categoriaSel);
 
@@ -65,11 +68,13 @@ export default function MuralEmprestimos({ session }) {
         if (abaAtiva === 'historico') carregarHistorico(true);
         else carregarAtivos(true);
     }, [abaAtiva, carregarHistorico, carregarAtivos]);
+
     useEffect(() => {
         if (step === 1 && inputMatriculaRef.current) inputMatriculaRef.current.focus();
         if (step === 2 && inputItemRef.current) inputItemRef.current.focus();
         if (step === 3 && inputNomeRef.current) inputNomeRef.current.focus();
     }, [step]);
+
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (step === 4 && e.key === 'Enter') {
@@ -187,9 +192,21 @@ export default function MuralEmprestimos({ session }) {
             await alterarStatusManutencao(item.id, 'DISPONIVEL', null);
         }
     };
+
     const calcularTempoAtivo = (dataIso) => {
         if (!dataIso) return '--';
         const diffMs = Math.max(0, agora - new Date(dataIso));
+        const diffMin = Math.floor(diffMs / 60000);
+
+        if (diffMin < 60) return `${diffMin} min`;
+        const h = Math.floor(diffMin / 60);
+        const m = diffMin % 60;
+        return `${h}h ${m}m`;
+    };
+
+    const calcularDuracaoTotal = (inicioIso, fimIso) => {
+        if (!inicioIso || !fimIso) return '--';
+        const diffMs = new Date(fimIso) - new Date(inicioIso);
         const diffMin = Math.floor(diffMs / 60000);
 
         if (diffMin < 60) return `${diffMin} min`;
@@ -267,15 +284,15 @@ export default function MuralEmprestimos({ session }) {
                                     {itensProntos.map(item => (
                                         <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: '6px', padding: '10px' }}>
                                             <div>
-                                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#e2e8f0' }}>{item.nome_item}</div>
-                                                <div style={{ fontSize: '10px', color: '#64748b' }}>{item.patrimonio}</div>
+                                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#e2e8f0' }}>{item.nome_item}</div>
+                                                <div style={{ fontSize: '11px', color: '#64748b' }}>Cód: {item.patrimonio}</div>
                                             </div>
                                             <button
                                                 onClick={() => handleEnviarManutencao(item)}
                                                 title="Reportar defeito ou enviar para manutenção"
                                                 style={{
                                                     background: 'transparent', color: '#94a3b8', border: 'none',
-                                                    padding: '6px', cursor: 'pointer', fontSize: '14px',
+                                                    padding: '6px', cursor: 'pointer', fontSize: '16px',
                                                     transition: 'all 0.2s', borderRadius: '4px'
                                                 }}
                                                 onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
@@ -289,15 +306,15 @@ export default function MuralEmprestimos({ session }) {
                                     {itensQuebrados.map(item => (
                                         <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(245, 158, 11, 0.05)', border: '1px dashed #f59e0b', borderRadius: '6px', padding: '10px' }}>
                                             <div>
-                                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fbbf24' }}>⚠️ {item.nome_item}</div>
-                                                <div style={{ fontSize: '10px', color: '#fcd34d' }}>{item.observacoes || 'Em manutenção'}</div>
+                                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#fbbf24' }}>⚠️ {item.nome_item}</div>
+                                                <div style={{ fontSize: '11px', color: '#fcd34d' }}>{item.observacoes || 'Em manutenção'}</div>
                                             </div>
                                             <button
                                                 onClick={() => handleLiberarManutencao(item)}
                                                 title="Marcar como consertado"
                                                 style={{
                                                     background: 'transparent', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)',
-                                                    borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold',
+                                                    borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold',
                                                     transition: 'all 0.2s'
                                                 }}
                                                 onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)'; }}
@@ -314,14 +331,14 @@ export default function MuralEmprestimos({ session }) {
 
                     {step === 2 && alunoAnalisado && (
                         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', paddingTop: '10px' }}>
-                            <div style={{ marginBottom: '20px' }}>
-                                <div style={{ fontSize: '11px', color: '#94a3b8' }}>ALUNO</div>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>{nomeAluno || 'Novo Cadastro (Pendente)'}</div>
-                                <div style={{ fontSize: '13px', color: '#60a5fa' }}>{alunoAnalisado.matricula}</div>
+                            <div style={{ marginBottom: '24px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '8px' }}>
+                                <div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>ALUNO IDENTIFICADO</div>
+                                <div style={{ fontSize: '20px', fontWeight: '900', color: '#fff', marginTop: '4px' }}>👤 {nomeAluno || 'Novo Cadastro (Pendente)'}</div>
+                                <div style={{ fontSize: '14px', color: '#60a5fa', marginTop: '2px', fontWeight: 'bold' }}>Matrícula: {alunoAnalisado.matricula}</div>
                             </div>
 
                             <form onSubmit={handleBiparItem} style={{ marginBottom: '24px' }}>
-                                <label style={{ fontSize: '11px', color: '#10b981', display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>BIPE O ITEM PARA EMPRESTAR</label>
+                                <label style={{ fontSize: '12px', color: '#10b981', display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>BIPE O ITEM PARA EMPRESTAR</label>
                                 <input
                                     ref={inputItemRef}
                                     type="text" value={inputItem} onChange={e => setInputItem(e.target.value)}
@@ -355,8 +372,8 @@ export default function MuralEmprestimos({ session }) {
                                         onMouseOver={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
                                         onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                                     >
-                                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#e2e8f0', marginBottom: '4px' }}>{item.nome_item}</div>
-                                        <div style={{ fontSize: '10px', color: '#64748b' }}>{item.patrimonio}</div>
+                                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#e2e8f0', marginBottom: '4px' }}>{item.nome_item}</div>
+                                        <div style={{ fontSize: '11px', color: '#64748b' }}>Cód: {item.patrimonio}</div>
                                     </div>
                                 ))}
                             </div>
@@ -365,13 +382,13 @@ export default function MuralEmprestimos({ session }) {
 
                     {step === 3 && itemSelecionado && (
                         <form onSubmit={handleSalvarNomeENovoEmprestimo} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%', paddingTop: '10px' }}>
-                            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+                            <div style={{ textAlign: 'center', marginBottom: '30px', background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '8px' }}>
                                 <div style={{ fontSize: '40px', marginBottom: '10px' }}>📦</div>
-                                <div style={{ color: '#94a3b8', fontSize: '13px' }}>Item Selecionado:</div>
-                                <div style={{ color: '#fff', fontSize: '18px', fontWeight: 'bold' }}>{itemSelecionado.nome_item}</div>
+                                <div style={{ color: '#94a3b8', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>Item Selecionado</div>
+                                <div style={{ color: '#fbbf24', fontSize: '20px', fontWeight: 'bold', marginTop: '4px' }}>{itemSelecionado.nome_item}</div>
                             </div>
 
-                            <label style={{ fontSize: '12px', color: '#8b5cf6', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
+                            <label style={{ fontSize: '13px', color: '#8b5cf6', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>
                                 ALUNO NOVO! DIGITE O NOME PARA REGISTRAR:
                             </label>
                             <input
@@ -389,12 +406,14 @@ export default function MuralEmprestimos({ session }) {
 
                     {step === 4 && alunoAnalisado && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', paddingTop: '10px' }}>
-                            <div style={{ fontSize: '13px', color: '#94a3b8' }}>{alunoAnalisado.nomeCadastrado} ({alunoAnalisado.matricula})</div>
 
-                            <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', padding: '30px', textAlign: 'center', marginTop: '20px', width: '100%' }}>
+                            <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', padding: '30px', textAlign: 'center', width: '100%' }}>
+                                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff', marginBottom: '4px' }}>👤 {alunoAnalisado.nomeCadastrado}</div>
+                                <div style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '24px' }}>Matrícula: {alunoAnalisado.matricula}</div>
+
                                 <div style={{ fontSize: '50px', marginBottom: '10px' }}>📦</div>
                                 <h3 style={{ color: '#fbbf24', margin: '0 0 10px 0' }}>Item a Devolver:</h3>
-                                <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#fde68a', margin: '0 0 30px 0' }}>
+                                <p style={{ fontSize: '24px', fontWeight: '900', color: '#fde68a', margin: '0 0 30px 0' }}>
                                     {alunoAnalisado.emprestimoAtivo.nomeItem}
                                 </p>
                                 <button onClick={handleConfirmarDevolucao} style={{ width: '100%', padding: '16px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}>
@@ -405,10 +424,11 @@ export default function MuralEmprestimos({ session }) {
                     )}
                 </div>
             </div>
+
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--surface, #1e293b)', borderRadius: '8px', border: '1px solid var(--border)', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-                    <button onClick={() => setAbaAtiva('ativos')} style={{ flex: 1, padding: '16px', background: abaAtiva === 'ativos' ? 'rgba(255,255,255,0.05)' : 'transparent', color: abaAtiva === 'ativos' ? '#60a5fa' : 'var(--muted)', border: 'none', borderBottom: abaAtiva === 'ativos' ? '2px solid #60a5fa' : '2px solid transparent', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}>Em Andamento ({emprestimosOrdenados.length})</button>
-                    <button onClick={() => setAbaAtiva('historico')} style={{ flex: 1, padding: '16px', background: abaAtiva === 'historico' ? 'rgba(255,255,255,0.05)' : 'transparent', color: abaAtiva === 'historico' ? '#60a5fa' : 'var(--muted)', border: 'none', borderBottom: abaAtiva === 'historico' ? '2px solid #60a5fa' : '2px solid transparent', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}>Histórico Recente</button>
+                    <button onClick={() => setAbaAtiva('ativos')} style={{ flex: 1, padding: '16px', background: abaAtiva === 'ativos' ? 'rgba(255,255,255,0.05)' : 'transparent', color: abaAtiva === 'ativos' ? '#60a5fa' : 'var(--muted)', border: 'none', borderBottom: abaAtiva === 'ativos' ? '2px solid #60a5fa' : '2px solid transparent', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>Em Andamento ({emprestimosOrdenados.length})</button>
+                    <button onClick={() => setAbaAtiva('historico')} style={{ flex: 1, padding: '16px', background: abaAtiva === 'historico' ? 'rgba(255,255,255,0.05)' : 'transparent', color: abaAtiva === 'historico' ? '#60a5fa' : 'var(--muted)', border: 'none', borderBottom: abaAtiva === 'historico' ? '2px solid #60a5fa' : '2px solid transparent', cursor: 'pointer', fontWeight: 'bold', fontSize: '15px' }}>Histórico Recente</button>
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
@@ -416,19 +436,27 @@ export default function MuralEmprestimos({ session }) {
                         <div style={{ color: 'var(--muted)' }}>Carregando dados...</div>
                     ) : abaAtiva === 'ativos' ? (
                         emprestimosOrdenados.length === 0 ? (
-                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: '8px' }}>Nenhum item emprestado no momento.</div>
+                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: '8px', fontSize: '15px' }}>Nenhum item emprestado no momento.</div>
                         ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
                                 {emprestimosOrdenados.map(emp => (
                                     <div key={emp.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderLeft: '4px solid #f59e0b', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column' }}>
-                                        <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#f8fafc' }}>{emp.nomeItem}</div>
-                                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>{emp.patrimonio}</div>
 
-                                        <div style={{ fontSize: '13px', color: '#cbd5e1', flex: 1 }}>👤 {emp.nomeAluno}</div>
+                                        <div style={{ fontSize: '18px', fontWeight: '900', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            👤 <span style={{ textTransform: 'capitalize' }}>{emp.nomeAluno}</span>
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '12px' }}>
+                                            Matrícula: {emp.matricula}
+                                        </div>
 
-                                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#fbbf24' }}>📦 {emp.nomeItem}</div>
+                                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Cód: {emp.patrimonio}</div>
+                                        </div>
+
+                                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <span>🕒 {new Date(emp.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            <span style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                                            <span style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', letterSpacing: '0.5px' }}>
                                                 ⏳ {calcularTempoAtivo(emp.dataRetirada)}
                                             </span>
                                         </div>
@@ -436,8 +464,8 @@ export default function MuralEmprestimos({ session }) {
                                         <button
                                             onClick={() => handleDevolucaoDireta(emp.id, emp.nomeItem)}
                                             style={{
-                                                width: '100%', padding: '10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444',
-                                                border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', transition: 'all 0.2s'
+                                                width: '100%', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444',
+                                                border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', transition: 'all 0.2s'
                                             }}
                                             onMouseOver={(e) => { e.target.style.background = '#ef4444'; e.target.style.color = '#fff'; }}
                                             onMouseOut={(e) => { e.target.style.background = 'rgba(239, 68, 68, 0.1)'; e.target.style.color = '#ef4444'; }}
@@ -450,26 +478,39 @@ export default function MuralEmprestimos({ session }) {
                         )
                     ) : (
                         historico.length === 0 ? (
-                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: '8px' }}>Nenhum histórico encontrado.</div>
+                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: '8px', fontSize: '15px' }}>Nenhum histórico encontrado.</div>
                         ) : (
-                            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
-                                        <th style={{ padding: '12px' }}>Aluno</th>
-                                        <th style={{ padding: '12px' }}>Item Devolvido</th>
-                                        <th style={{ padding: '12px' }}>Data</th>
+                                        <th style={{ padding: '14px 12px' }}>Aluno</th>
+                                        <th style={{ padding: '14px 12px' }}>Item Devolvido</th>
+                                        <th style={{ padding: '14px 12px' }}>Período do Empréstimo</th>
+                                        <th style={{ padding: '14px 12px' }}>Duração</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {historico.map(h => (
                                         <tr key={h.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                            <td style={{ padding: '12px' }}>
-                                                <strong style={{ color: '#e2e8f0' }}>{h.nomeAluno}</strong><br />
-                                                <span style={{ fontSize: '11px', color: '#64748b' }}>{h.matricula}</span>
+                                            <td style={{ padding: '14px 12px' }}>
+                                                <strong style={{ color: '#fff', fontSize: '15px' }}>{h.nomeAluno}</strong><br />
+                                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>Matrícula: {h.matricula}</span>
                                             </td>
-                                            <td style={{ padding: '12px', color: '#cbd5e1' }}>{h.nomeItem}</td>
-                                            <td style={{ padding: '12px', color: '#94a3b8' }}>
-                                                {new Date(h.dataDevolucao).toLocaleDateString('pt-BR')} às {new Date(h.dataDevolucao).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            <td style={{ padding: '14px 12px', color: '#fbbf24', fontWeight: 'bold' }}>📦 {h.nomeItem}</td>
+                                            <td style={{ padding: '14px 12px', color: '#94a3b8', fontSize: '13px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>↑</span>
+                                                    {new Date(h.dataRetirada).toLocaleDateString('pt-BR')} às {new Date(h.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                                                    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>↓</span>
+                                                    {new Date(h.dataDevolucao).toLocaleDateString('pt-BR')} às {new Date(h.dataDevolucao).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '14px 12px' }}>
+                                                <span style={{ background: 'rgba(255,255,255,0.1)', color: '#e2e8f0', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
+                                                    ⏳ {calcularDuracaoTotal(h.dataRetirada, h.dataDevolucao)}
+                                                </span>
                                             </td>
                                         </tr>
                                     ))}

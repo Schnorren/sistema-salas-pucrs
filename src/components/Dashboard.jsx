@@ -11,10 +11,12 @@ import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
 import AdminPanel from './AdminPanel';
 import GestaoEquipe from './GestaoEquipe';
-import MeuPerfil from './MeuPerfil'; 
+import MeuPerfil from './MeuPerfil';
+import RelatoriosEmprestimos from './RelatoriosEmprestimos';
 
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
+import { supabase } from '../supabase';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
@@ -94,6 +96,7 @@ export default function Dashboard({ session }) {
       case 'free': return <div style={{ padding: 20 }}><FreeRooms session={session} acesso={acesso} /></div>;
       case 'heat': return <WeeklyHeatmap session={session} acesso={acesso} />;
       case 'reports': return <HistoricalReports session={session} acesso={acesso} />;
+      case 'reports_emprestimos': return <RelatoriosEmprestimos session={session} acesso={acesso} />;
       case 'equipe': return <GestaoEquipe session={session} acesso={acesso} />;
       case 'perfil': return <MeuPerfil session={session} onClose={() => setActiveTab('map')} />;
       case 'upload':
@@ -111,9 +114,8 @@ export default function Dashboard({ session }) {
     return <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>Verificando credenciais de segurança...</div>;
   }
 
-const isAdmin = acesso.permissoes?.includes('admin');
+  const isAdmin = acesso.permissoes?.includes('admin');
   const hasPredioContext = Boolean(acesso.predioId || predioAtivo);
-
   const isOrphan = !acesso.predioId && (!acesso.permissoes || acesso.permissoes.length === 0);
 
   if (isOrphan && !isAdmin) {
@@ -121,12 +123,11 @@ const isAdmin = acesso.permissoes?.includes('admin');
       <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
         <h2>Acesso Restrito</h2>
         <p style={{ color: 'var(--muted)', marginTop: '10px' }}>Sua conta foi criada, mas o encarregado/administrador precisa liberar o seu acesso ao Prédio.</p>
-        
-        <button 
-            onClick={() => supabase.auth.signOut()} 
-            style={{ marginTop: '20px', padding: '10px 20px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+        <button
+          onClick={() => supabase.auth.signOut()}
+          style={{ marginTop: '20px', padding: '10px 20px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
         >
-            Sair da conta
+          Sair da conta
         </button>
       </div>
     );
@@ -135,19 +136,16 @@ const isAdmin = acesso.permissoes?.includes('admin');
   const canViewAvisos = (acesso.permissoes?.includes('avisos') || isAdmin) && hasPredioContext;
   const canViewEmprestimos = (acesso.permissoes?.includes('emprestimos') || isAdmin) && hasPredioContext;
 
-  const isGestaoActive = ['free', 'heat', 'reports', 'upload', 'equipe'].includes(activeTab);
-  
+  const isGestaoActive = ['free', 'heat', 'reports', 'upload', 'equipe', 'reports_emprestimos'].includes(activeTab);
+
   const canViewRelatorios = (acesso.permissoes?.includes('grade') || isAdmin);
   const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin);
-  const isGestor = canViewRelatorios || canViewEquipe;
+
+  const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos;
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <Topbar 
-        session={session} 
-        acesso={acesso} 
-        onAbrirPerfil={() => setActiveTab('perfil')} 
-      />
+      <Topbar session={session} acesso={acesso} onAbrirPerfil={() => setActiveTab('perfil')} />
 
       <div className="search-bar" ref={searchRef}>
         <div className="search-input-wrap">
@@ -200,7 +198,6 @@ const isAdmin = acesso.permissoes?.includes('admin');
       </div>
 
       <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
           <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
           <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>Linha do Tempo</div>
@@ -271,14 +268,24 @@ const isAdmin = acesso.permissoes?.includes('admin');
                       style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
                       onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
                       onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
-                    >📊 Relatórios Históricos</div>
+                    >📊 Histórico de Aulas</div>
                     <div
                       onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent' }}
+                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
                       onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
                       onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
                     >🔄 Atualizar Grade CSV</div>
                   </>
+                )}
+
+                {/* 🔥 NOVO BOTÃO DE RELATÓRIO DE EMPRÉSTIMOS */}
+                {canViewEmprestimos && (
+                  <div
+                    onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}
+                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports_emprestimos' ? '#fff' : '#cbd5e1', background: activeTab === 'reports_emprestimos' ? '#2563eb' : 'transparent' }}
+                    onMouseEnter={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = '#0f172a' }}
+                    onMouseLeave={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = 'transparent' }}
+                  >📊 Relatório de Empréstimos</div>
                 )}
               </div>
             )}
