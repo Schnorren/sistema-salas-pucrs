@@ -20,7 +20,7 @@ export default function FreeRooms({ session, acesso }) {
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return [];
 
-    const aulasDoDia = rawGradeData.grade.filter(d => 
+    const aulasDoDia = rawGradeData.grade.filter(d =>
       d.dia_semana?.toLowerCase().includes(day.toLowerCase())
     );
 
@@ -31,10 +31,10 @@ export default function FreeRooms({ session, acesso }) {
       });
       const freePeriods = PERIODS.filter(p => {
         const isOccupied = aulasDaSala.some(aula => {
-            const codes = extractPeriodCode(aula.periodo);
-            return codes && codes.includes(p.code);
+          const codes = extractPeriodCode(aula.periodo);
+          return codes && codes.includes(p.code);
         });
-        return !isOccupied; // Retorna true se estiver livre
+        return !isOccupied;
       });
 
       return {
@@ -54,11 +54,11 @@ export default function FreeRooms({ session, acesso }) {
   }, [rawGradeData, day]);
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
-  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro: {error}</div>;
+  if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ Erro: {error}</div>;
 
   return (
     <div className="view active" id="vFree" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      
+
       <div className="toolbar">
         <label>Dia:</label>
         <select value={day} onChange={e => setDay(e.target.value)}>
@@ -67,7 +67,7 @@ export default function FreeRooms({ session, acesso }) {
       </div>
 
       <div className="free-body" id="freeBody" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        
+
         {loading ? (
           <div className="empty-st">Baixando matriz de disponibilidade da CDN...</div>
         ) : dataProcessed.length === 0 ? (

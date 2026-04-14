@@ -13,6 +13,7 @@
     { "source": "/api/avisos/(.*)", "destination": "/api/avisos/index.js" },
     { "source": "/api/emprestimos/(.*)", "destination": "/api/emprestimos/index.js" },
     { "source": "/api/equipe/(.*)", "destination": "/api/equipe/index.js" },
-    { "source": "/api/grade/(.*)", "destination": "/api/grade/index.js" }
+    { "source": "/api/grade/(.*)", "destination": "/api/grade/index.js" },
+    { "source": "/api/admin/(.*)", "destination": "/api/admin/index.js" }
   ]
 }

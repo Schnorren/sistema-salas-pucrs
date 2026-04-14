@@ -4,7 +4,6 @@ import { supabase } from '../supabase';
 export const useAuthAccess = (session) => {
     const [acesso, setAcesso] = useState({
         loading: true,
-        nivel: 0,
         perfilNome: '',
         predioId: null,
         predioNome: '',
@@ -26,7 +25,7 @@ export const useAuthAccess = (session) => {
                         predio_id,
                         permissoes, 
                         predios ( nome ),
-                        perfis ( nome, nivel )
+                        perfis ( nome )
                     `)
                     .eq('user_id', session.user.id)
                     .single();
@@ -36,13 +35,13 @@ export const useAuthAccess = (session) => {
                 }
 
                 if (data) {
-                    const nivelPoder = data.perfis?.nivel || 0;
-                    const isUserGlobal = data.predio_id === null || nivelPoder >= 60;
                     const permissoesArray = data.permissoes || [];
+                    
+                    const isAdmin = permissoesArray.includes('admin');
+                    const isUserGlobal = data.predio_id === null || isAdmin;
 
                     setAcesso({
                         loading: false,
-                        nivel: nivelPoder,
                         perfilNome: data.perfis?.nome || 'Sem Perfil',
                         predioId: data.predio_id,
                         predioNome: data.predios?.nome || 'Todos os Prédios',
