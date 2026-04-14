@@ -33,7 +33,7 @@ export default function NextClasses({ session, acesso }) {
 
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [per, setPer] = useState('auto');
-  
+
   const [filtro, setFiltro] = useState('');
   const [ordem, setOrdem] = useState('sala');
   const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
@@ -43,9 +43,9 @@ export default function NextClasses({ session, acesso }) {
     const intervaloRelogio = setInterval(() => {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-      
+
       if (horariosPUCRS.includes(horaStr)) {
-        setTick(t => t + 1); // Força recálculo
+        setTick(t => t + 1);
       }
     }, 60000);
 
@@ -59,7 +59,7 @@ export default function NextClasses({ session, acesso }) {
     const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
 
     const response = {
-      periodoAtualReferencia: activePer, 
+      periodoAtualReferencia: activePer,
       labelPeriodoAtual: '',
       emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: []
     };
@@ -69,34 +69,34 @@ export default function NextClasses({ session, acesso }) {
       if (pi >= 0) {
         response.labelPeriodoAtual = PERIODS[pi].lb;
         const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
-        
+
         response.emAndamento = todasAgrupadas.filter(g => g.periodosFormatados.includes(activePer));
-        
+
         const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
         response.proximas = todasAgrupadas.filter(g => nextPeriodCodes.includes(g.periodosFormatados[0]));
-        
+
         const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
         response.restoDoDia = todasAgrupadas.filter(g => futurePeriodCodes.includes(g.periodosFormatados[0]));
       }
     } else {
       response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
     }
-    
+
     return response;
   }, [rawGradeData, day, per, tick]);
   const filteredAndSortedData = useMemo(() => {
     if (!dataProcessed) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
 
     const termo = normalizeText(filtro);
-    
+
     const applyFilterAndSort = (aulasArray) => {
       if (!aulasArray) return [];
-      
+
       let resultado = aulasArray;
       if (termo) {
         resultado = aulasArray.filter(aula => {
-          return normalizeText(aula.nome).includes(termo) || 
-                 normalizeText(aula.sala).includes(termo);
+          return normalizeText(aula.nome).includes(termo) ||
+            normalizeText(aula.sala).includes(termo);
         });
       }
 
@@ -129,8 +129,8 @@ export default function NextClasses({ session, acesso }) {
       </div>
       <div className="ncc">{aula.nome}</div>
       <div className="nct2">
-        {isCurrent 
-          ? `Término às ${aula.horarioFim}` 
+        {isCurrent
+          ? `Término às ${aula.horarioFim}`
           : `Início às ${aula.horarioInicio} (${aula.quantidadePeriodos} períodos)`
         }
       </div>
@@ -141,10 +141,10 @@ export default function NextClasses({ session, acesso }) {
   );
 
   const renderCompactRow = (aula) => (
-    <div key={aula.id} style={{ 
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-        padding: '12px 16px', borderBottom: '1px solid var(--border, #334155)', 
-        background: 'var(--surface, #1e293b)', borderRadius: '6px', marginBottom: '8px' 
+    <div key={aula.id} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '12px 16px', borderBottom: '1px solid var(--border, #334155)',
+      background: 'var(--surface, #1e293b)', borderRadius: '6px', marginBottom: '8px'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div style={{ fontWeight: 'bold', color: '#60a5fa', width: '45px' }}>{aula.horarioInicio}</div>
@@ -159,80 +159,80 @@ export default function NextClasses({ session, acesso }) {
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
   if (loading) return <div className="empty-st">Carregando lista de aulas da CDN...</div>;
-  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro: {error}</div>;
+  if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ Erro: {error}</div>;
   if (!dataProcessed) return <div className="empty-st">Erro ao processar os dados da matriz.</div>;
 
   return (
     <div className="view active" id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      
-      <div className="toolbar" style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: '1px solid var(--border, #334155)', paddingBottom: '16px', marginBottom: '16px' }}>
-        
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Dia:</label>
-                <select value={day} onChange={e => setDay(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-                {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Período ref.:</label>
-                <select value={per} onChange={e => setPer(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-                <option value="auto">
-                    ⟳ Automático {dataProcessed.periodoAtualReferencia ? `— Per. ${dataProcessed.periodoAtualReferencia}` : '— Fora de horário'}
-                </option>
-                {PERIOD_OPTIONS.map(p => (
-                    <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>
-                ))}
-                </select>
-            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
-                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>⇅</span>
-                <select 
-                  value={ordem} 
-                  onChange={e => setOrdem(e.target.value)} 
-                  style={{ 
-                    padding: '4px 8px', borderRadius: '4px', background: 'transparent', 
-                    color: 'var(--text-secondary)', border: '1px solid transparent', 
-                    fontSize: '13px', cursor: 'pointer', outline: 'none', appearance: 'none' 
-                  }}
-                  onMouseOver={e => e.currentTarget.style.border = '1px solid var(--border)'}
-                  onMouseOut={e => e.currentTarget.style.border = '1px solid transparent'}
-                  title="Ordenar resultados"
-                >
-                    <option value="sala">Ordenar por Sala</option>
-                    <option value="horario">Ordenar por Horário</option>
-                    <option value="nome">Ordenar por Nome</option>
-                </select>
-            </div>
+      <div className="toolbar" style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: '1px solid var(--border, #334155)', paddingBottom: '16px', marginBottom: '16px' }}>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Dia:</label>
+            <select value={day} onChange={e => setDay(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontWeight: 'bold', color: 'var(--text-secondary)' }}>Período ref.:</label>
+            <select value={per} onChange={e => setPer(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <option value="auto">
+                ⟳ Automático {dataProcessed.periodoAtualReferencia ? `— Per. ${dataProcessed.periodoAtualReferencia}` : '— Fora de horário'}
+              </option>
+              {PERIOD_OPTIONS.map(p => (
+                <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+            <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>⇅</span>
+            <select
+              value={ordem}
+              onChange={e => setOrdem(e.target.value)}
+              style={{
+                padding: '4px 8px', borderRadius: '4px', background: 'transparent',
+                color: 'var(--text-secondary)', border: '1px solid transparent',
+                fontSize: '13px', cursor: 'pointer', outline: 'none', appearance: 'none'
+              }}
+              onMouseOver={e => e.currentTarget.style.border = '1px solid var(--border)'}
+              onMouseOut={e => e.currentTarget.style.border = '1px solid transparent'}
+              title="Ordenar resultados"
+            >
+              <option value="sala">Ordenar por Sala</option>
+              <option value="horario">Ordenar por Horário</option>
+              <option value="nome">Ordenar por Nome</option>
+            </select>
+          </div>
         </div>
 
         <div style={{ position: 'relative', width: '100%' }}>
-            <span style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', color: '#3b82f6' }}>🔍</span>
-            <input 
-                type="text" 
-                placeholder="Qual sala o professor está procurando? Digite o nome da disciplina..." 
-                value={filtro}
-                onChange={(e) => setFiltro(e.target.value)}
-                style={{
-                    width: '100%', padding: '14px 44px', borderRadius: '8px',
-                    border: '2px solid #3b82f6', background: 'rgba(59, 130, 246, 0.05)', 
-                    color: 'var(--text, #f8fafc)', fontSize: '15px', fontWeight: '500',
-                    outline: 'none', boxSizing: 'border-box', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                }}
-            />
-            {filtro && (
-                <button 
-                    onClick={() => setFiltro('')}
-                    style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: '#3b82f6', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '4px' }}
-                >
-                    LIMPAR
-                </button>
-            )}
+          <span style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', color: '#3b82f6' }}>🔍</span>
+          <input
+            type="text"
+            placeholder="Qual sala o professor está procurando? Digite o nome da disciplina..."
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            style={{
+              width: '100%', padding: '14px 44px', borderRadius: '8px',
+              border: '2px solid #3b82f6', background: 'rgba(59, 130, 246, 0.05)',
+              color: 'var(--text, #f8fafc)', fontSize: '15px', fontWeight: '500',
+              outline: 'none', boxSizing: 'border-box', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+            }}
+          />
+          {filtro && (
+            <button
+              onClick={() => setFiltro('')}
+              style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: '#3b82f6', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '4px' }}
+            >
+              LIMPAR
+            </button>
+          )}
         </div>
       </div>
-      
+
       <div className="nx-body" id="nxBody" style={{ paddingBottom: '40px' }}>
         {dataProcessed.periodoAtualReferencia ? (
           <>
@@ -240,7 +240,7 @@ export default function NextClasses({ session, acesso }) {
               <div className="nx-hd">🔴 Em andamento — <em>Período {dataProcessed.periodoAtualReferencia}</em> ({dataProcessed.labelPeriodoAtual})</div>
               {filteredAndSortedData.emAndamento.length === 0 ? (
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed var(--border)', textAlign: 'center' }}>
-                    Nenhuma aula encontrada {filtro && `para a busca "${filtro}"`}.
+                  Nenhuma aula encontrada {filtro && `para a busca "${filtro}"`}.
                 </div>
               ) : (
                 <div className="nx-cards">
@@ -260,23 +260,23 @@ export default function NextClasses({ session, acesso }) {
 
             {filteredAndSortedData.restoDoDia.length > 0 && (
               <div style={{ marginTop: '32px' }}>
-                <div 
-                    onClick={() => setMostrarMaisTarde(!mostrarMaisTarde)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px' }}
+                <div
+                  onClick={() => setMostrarMaisTarde(!mostrarMaisTarde)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px' }}
                 >
-                    <div className="nx-hd" style={{ margin: 0, border: 'none', padding: 0 }}>⚪ Mais tarde — <em>Restante do dia</em></div>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '12px', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '12px' }}>
-                        {filteredAndSortedData.restoDoDia.length} aulas
-                    </span>
-                    <span style={{ marginLeft: 'auto', color: '#60a5fa', fontSize: '14px', fontWeight: 'bold' }}>
-                        {mostrarMaisTarde ? 'Ocultar ▴' : 'Expandir ▾'}
-                    </span>
+                  <div className="nx-hd" style={{ margin: 0, border: 'none', padding: 0 }}>⚪ Mais tarde — <em>Restante do dia</em></div>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '12px', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '12px' }}>
+                    {filteredAndSortedData.restoDoDia.length} aulas
+                  </span>
+                  <span style={{ marginLeft: 'auto', color: '#60a5fa', fontSize: '14px', fontWeight: 'bold' }}>
+                    {mostrarMaisTarde ? 'Ocultar ▴' : 'Expandir ▾'}
+                  </span>
                 </div>
-                
+
                 {(mostrarMaisTarde || filtro) && (
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        {filteredAndSortedData.restoDoDia.map(aula => renderCompactRow(aula))}
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {filteredAndSortedData.restoDoDia.map(aula => renderCompactRow(aula))}
+                  </div>
                 )}
               </div>
             )}

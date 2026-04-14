@@ -111,24 +111,34 @@ export default function Dashboard({ session }) {
     return <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>Verificando credenciais de segurança...</div>;
   }
 
-  if (acesso.nivel === 0) {
+const isAdmin = acesso.permissoes?.includes('admin');
+  const hasPredioContext = Boolean(acesso.predioId || predioAtivo);
+
+  const isOrphan = !acesso.predioId && (!acesso.permissoes || acesso.permissoes.length === 0);
+
+  if (isOrphan && !isAdmin) {
     return (
       <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
         <h2>Acesso Restrito</h2>
-        <p style={{ color: 'var(--muted)', marginTop: '10px' }}>Sua conta foi criada, mas um Coordenador precisa liberar o seu acesso ao Prédio.</p>
+        <p style={{ color: 'var(--muted)', marginTop: '10px' }}>Sua conta foi criada, mas o encarregado/administrador precisa liberar o seu acesso ao Prédio.</p>
+        
+        <button 
+            onClick={() => supabase.auth.signOut()} 
+            style={{ marginTop: '20px', padding: '10px 20px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+        >
+            Sair da conta
+        </button>
       </div>
     );
   }
 
-  const hasPredioContext = Boolean(acesso.predioId || predioAtivo);
-  const isSuperAdmin = acesso.nivel >= 60;
-
-  const canViewAvisos = (acesso.permissoes?.includes('avisos') || isSuperAdmin) && hasPredioContext;
-  const canViewEmprestimos = (acesso.permissoes?.includes('emprestimos') || isSuperAdmin) && hasPredioContext;
+  const canViewAvisos = (acesso.permissoes?.includes('avisos') || isAdmin) && hasPredioContext;
+  const canViewEmprestimos = (acesso.permissoes?.includes('emprestimos') || isAdmin) && hasPredioContext;
 
   const isGestaoActive = ['free', 'heat', 'reports', 'upload', 'equipe'].includes(activeTab);
-  const canViewRelatorios = (acesso.permissoes?.includes('relatorios') || isSuperAdmin);
-  const canViewEquipe = (acesso.permissoes?.includes('equipe') || isSuperAdmin);
+  
+  const canViewRelatorios = (acesso.permissoes?.includes('grade') || isAdmin);
+  const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin);
   const isGestor = canViewRelatorios || canViewEquipe;
 
   return (
@@ -204,7 +214,7 @@ export default function Dashboard({ session }) {
             <div className={`navtab ${activeTab === 'emprestimos' ? 'active' : ''}`} onClick={() => setActiveTab('emprestimos')}>📦 Empréstimos</div>
           )}
 
-          {acesso.nivel === 99 && (
+          {isAdmin && (
             <div className={`navtab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} style={{ color: activeTab === 'admin' ? '#fbbf24' : '', borderBottomColor: activeTab === 'admin' ? '#fbbf24' : '' }}>
               🛡️ Painel Admin
             </div>

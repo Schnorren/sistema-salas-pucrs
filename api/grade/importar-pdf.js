@@ -8,6 +8,11 @@ export const config = { api: { bodyParser: false } };
 async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
 
+    const temPermissao = req.user?.permissoes?.includes('grade') || req.user?.permissoes?.includes('admin');
+    if (!temPermissao) {
+        return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Grade e Salas.' });
+    }
+
     console.log("📥 [Upload PDF] Recebendo requisição...");
     const form = formidable({ keepExtensions: true });
 

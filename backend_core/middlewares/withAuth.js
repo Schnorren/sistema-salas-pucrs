@@ -1,4 +1,5 @@
 import supabase from '../config/supabase.js';
+
 export const withAuth = (handler, moduloRequisitado = null) => {
     return async (req, res) => {
         console.log("🚀 [withAuth] Requisição recebida em:", req.url);
@@ -22,9 +23,10 @@ export const withAuth = (handler, moduloRequisitado = null) => {
                 console.log("❌ [AuthGuard] Token rejeitado ou usuário não encontrado.");
                 return res.status(401).json({ error: 'Usuário não autenticado ou token inválido' });
             }
+
             const { data: acesso, error: dbError } = await supabase
                 .from('usuarios_acessos')
-                .select('perfil_id, predio_id, permissoes, perfis(nivel)')
+                .select('perfil_id, predio_id, permissoes')
                 .eq('user_id', user.id)
                 .single();
 
@@ -33,30 +35,34 @@ export const withAuth = (handler, moduloRequisitado = null) => {
                 return res.status(500).json({ error: 'Erro interno ao validar acessos' });
             }
 
-            const nivelPoder = acesso?.perfis?.nivel || 0;
             let predioAtivo = acesso?.predio_id || null;
             const permissoesUser = acesso?.permissoes || [];
 
+            const isAdmin = permissoesUser.includes('admin');
+            
+            const isUserGlobal = predioAtivo === null || isAdmin;
+
             const predioSelecionadoFrontend = req.headers['x-predio-id'] || req.query.predio_id;
-            const isUserGlobal = predioAtivo === null || nivelPoder >= 60;
 
             if (isUserGlobal && predioSelecionadoFrontend) {
                 predioAtivo = predioSelecionadoFrontend;
             }
+
             if (moduloRequisitado) {
-                if (nivelPoder !== 99 && !permissoesUser.includes(moduloRequisitado)) {
+                if (!isAdmin && !permissoesUser.includes(moduloRequisitado)) {
                     console.log(`🚫 [CheckPerm] Bloqueado: Usuário tentou acessar '${moduloRequisitado}'.`);
                     return res.status(403).json({
                         error: `Acesso restrito ao módulo: ${moduloRequisitado}`
                     });
                 }
             }
+
             req.user = {
                 id: user.id,
-                nivel: nivelPoder,
                 predio_id: predioAtivo,
                 permissoes: permissoesUser
             };
+            
             return await handler(req, res);
 
         } catch (err) {

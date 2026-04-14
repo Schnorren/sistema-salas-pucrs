@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js'; 
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
 export default function MeuPerfil({ session, onClose }) {
@@ -7,7 +7,7 @@ export default function MeuPerfil({ session, onClose }) {
     const [senha, setSenha] = useState('');
     const [confirmarSenha, setConfirmarSenha] = useState('');
     const [mostrarSenha, setMostrarSenha] = useState(false);
-    
+
     const [loading, setLoading] = useState(false);
     const [mensagem, setMensagem] = useState(null);
 
@@ -41,11 +41,11 @@ export default function MeuPerfil({ session, onClose }) {
             const { error } = await supabase.auth.updateUser(updates);
             if (error) throw error;
             setMensagem({ tipo: 'sucesso', texto: 'Perfil atualizado com sucesso!' });
-            
+
             setTimeout(() => {
-                if (onClose) onClose(); // 🔥 Volta para a tela principal (Dashboard)
+                if (onClose) onClose();
             }, 1200);
-            
+
         } catch (error) {
             console.error("Erro ao atualizar perfil:", error);
             setMensagem({ tipo: 'erro', texto: error.message || 'Erro ao atualizar os dados.' });
@@ -55,9 +55,9 @@ export default function MeuPerfil({ session, onClose }) {
 
     return (
         <div style={{ padding: '24px', color: 'var(--text)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: '100%', overflowY: 'auto' }}>
-            
+
             <div style={{ width: '100%', maxWidth: '450px', background: 'var(--surface, #1e293b)', padding: '32px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2)', marginTop: '20px' }}>
-                
+
                 <div style={{ textAlign: 'center', marginBottom: '30px' }}>
                     <div style={{ width: '70px', height: '70px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', margin: '0 auto 16px auto', border: '2px solid rgba(59, 130, 246, 0.3)' }}>
                         👤
@@ -67,7 +67,7 @@ export default function MeuPerfil({ session, onClose }) {
                 </div>
 
                 {mensagem && (
-                    <div style={{ 
+                    <div style={{
                         padding: '12px', marginBottom: '24px', borderRadius: '6px', fontSize: '14px', textAlign: 'center', fontWeight: 'bold',
                         background: mensagem.tipo === 'sucesso' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                         color: mensagem.tipo === 'sucesso' ? '#10b981' : '#ef4444',
@@ -84,9 +84,9 @@ export default function MeuPerfil({ session, onClose }) {
                             type="email"
                             value={session?.user?.email || ''}
                             disabled
-                            style={{ 
-                                width: '100%', padding: '12px', borderRadius: '6px', 
-                                background: 'rgba(0,0,0,0.2)', color: 'var(--muted)', 
+                            style={{
+                                width: '100%', padding: '12px', borderRadius: '6px',
+                                background: 'rgba(0,0,0,0.2)', color: 'var(--muted)',
                                 border: '1px solid var(--border)', outline: 'none', cursor: 'not-allowed'
                             }}
                         />
@@ -99,9 +99,9 @@ export default function MeuPerfil({ session, onClose }) {
                             onChange={e => setNome(e.target.value)}
                             placeholder="Como você quer ser chamado?"
                             required
-                            style={{ 
-                                width: '100%', padding: '12px', borderRadius: '6px', 
-                                background: 'rgba(255,255,255,0.05)', color: '#fff', 
+                            style={{
+                                width: '100%', padding: '12px', borderRadius: '6px',
+                                background: 'rgba(255,255,255,0.05)', color: '#fff',
                                 border: '1px solid var(--border)', outline: 'none', transition: 'border-color 0.2s'
                             }}
                             onFocus={e => e.target.style.borderColor = '#3b82f6'}
@@ -111,8 +111,8 @@ export default function MeuPerfil({ session, onClose }) {
 
                     <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '10px 0' }}></div>
                     {!mostrarSenha ? (
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             onClick={() => setMostrarSenha(true)}
                             style={{
                                 background: 'transparent', border: '1px dashed var(--border)', color: '#94a3b8',
@@ -128,36 +128,36 @@ export default function MeuPerfil({ session, onClose }) {
                         <div style={{ background: 'rgba(0,0,0,0.1)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#fbbf24', margin: 0 }}>🔒 NOVA SENHA</label>
-                                <button 
-                                    type="button" 
+                                <button
+                                    type="button"
                                     onClick={() => { setMostrarSenha(false); setSenha(''); setConfirmarSenha(''); setMensagem(null); }}
                                     style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                                 >
                                     Cancelar
                                 </button>
                             </div>
-                            
+
                             <input
                                 type="password"
                                 value={senha}
                                 onChange={e => setSenha(e.target.value)}
                                 placeholder="Digite a nova senha"
                                 autoFocus
-                                style={{ 
-                                    width: '100%', padding: '12px', borderRadius: '6px', 
-                                    background: 'rgba(255,255,255,0.05)', color: '#fff', 
+                                style={{
+                                    width: '100%', padding: '12px', borderRadius: '6px',
+                                    background: 'rgba(255,255,255,0.05)', color: '#fff',
                                     border: '1px solid var(--border)', outline: 'none', marginBottom: '12px'
                                 }}
                             />
-                            
+
                             <input
                                 type="password"
                                 value={confirmarSenha}
                                 onChange={e => setConfirmarSenha(e.target.value)}
                                 placeholder="Confirme a nova senha"
-                                style={{ 
-                                    width: '100%', padding: '12px', borderRadius: '6px', 
-                                    background: 'rgba(255,255,255,0.05)', color: '#fff', 
+                                style={{
+                                    width: '100%', padding: '12px', borderRadius: '6px',
+                                    background: 'rgba(255,255,255,0.05)', color: '#fff',
                                     border: '1px solid var(--border)', outline: 'none'
                                 }}
                             />
@@ -165,24 +165,24 @@ export default function MeuPerfil({ session, onClose }) {
                     )}
                     <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                         {onClose && (
-                            <button 
-                                type="button" 
+                            <button
+                                type="button"
                                 onClick={onClose}
                                 disabled={loading}
-                                style={{ 
-                                    flex: 1, padding: '14px', background: 'transparent', color: '#94a3b8', 
+                                style={{
+                                    flex: 1, padding: '14px', background: 'transparent', color: '#94a3b8',
                                     border: '1px solid #475569', borderRadius: '6px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 'bold'
                                 }}
                             >
                                 Voltar
                             </button>
                         )}
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             disabled={loading}
-                            style={{ 
-                                flex: 2, padding: '14px', background: loading ? '#64748b' : '#3b82f6', 
-                                color: '#fff', border: 'none', borderRadius: '6px', 
+                            style={{
+                                flex: 2, padding: '14px', background: loading ? '#64748b' : '#3b82f6',
+                                color: '#fff', border: 'none', borderRadius: '6px',
                                 cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '15px'
                             }}
                         >

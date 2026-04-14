@@ -9,6 +9,7 @@ export default function GestaoEquipe({ session, acesso }) {
         equipe, perfis, modulos, loading, 
         carregarDados, atualizarMembro, convidarMembro 
     } = useEquipe(session, predioAtivo || acesso?.predioId);
+    
     const [nomeBusca, setNomeBusca] = useState('');
     const [emailBusca, setEmailBusca] = useState('');
     const [cargoSelecionado, setCargoSelecionado] = useState('');
@@ -23,8 +24,9 @@ export default function GestaoEquipe({ session, acesso }) {
     const modoEdicao = !!usuarioSelecionado;
 
     useEffect(() => {
-        carregarDados();
+        carregarDados(true);
     }, [carregarDados]);
+
     useEffect(() => {
         const handleClickFora = (e) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -34,26 +36,19 @@ export default function GestaoEquipe({ session, acesso }) {
         document.addEventListener('mousedown', handleClickFora);
         return () => document.removeEventListener('mousedown', handleClickFora);
     }, []);
+
+
     useEffect(() => {
-        if (modoEdicao && usuarioSelecionado.perfil_id === cargoSelecionado) return;
-
-        const perfilInfo = perfis.find(p => p.id === cargoSelecionado);
-        if (!perfilInfo) return setPermissoesEditadas([]);
-
-        const nomeCargo = perfilInfo.nome.toLowerCase();
-
-        if (nomeCargo.includes('bolsista')) {
-            setPermissoesEditadas(['avisos', 'emprestimos']);
-        } else if (nomeCargo.includes('encarregado') || nomeCargo.includes('coordenador')) {
-            setPermissoesEditadas(modulos.map(m => m.id)); 
-        } else {
-            setPermissoesEditadas([]);
+        if (modoEdicao && usuarioSelecionado?.perfil_id === cargoSelecionado) {
+            return;
         }
-    }, [cargoSelecionado, modoEdicao, perfis, usuarioSelecionado, modulos]);
 
-const handleSelecionar = (user) => {
+        setPermissoesEditadas([]);
+    }, [cargoSelecionado, modoEdicao, usuarioSelecionado]);
+
+    const handleSelecionar = (user) => {
         setUsuarioSelecionado(user);
-        setNomeBusca(user.nome || ''); // 🔥 Puxa o nome
+        setNomeBusca(user.nome || ''); 
         setEmailBusca(user.email);
         setCargoSelecionado(user.perfil_id || '');
         setBuscaCargo(user.perfil_nome || ''); 
@@ -63,7 +58,7 @@ const handleSelecionar = (user) => {
 
     const resetarFormulario = () => {
         setUsuarioSelecionado(null);
-        setNomeBusca(''); // 🔥 Limpa o nome
+        setNomeBusca(''); 
         setEmailBusca('');
         setCargoSelecionado('');
         setBuscaCargo('');
@@ -81,8 +76,8 @@ const handleSelecionar = (user) => {
         if (!emailBusca) return alert("Preencha o e-mail do funcionário.");
         if (!cargoSelecionado) return alert("Selecione um cargo para o funcionário.");
 
-const payload = {
-            nome: nomeBusca.trim(), // 🔥 Envia pro backend
+        const payload = {
+            nome: nomeBusca.trim(),
             email: emailBusca.trim(),
             perfil_id: cargoSelecionado,
             permissoes: permissoesEditadas
@@ -105,6 +100,7 @@ const payload = {
             } else alert("Erro ao convidar: " + res.error);
         }
     };
+    
     const perfisFiltradosDropdown = perfis.filter(p => p.nome.toLowerCase().includes(buscaCargo.toLowerCase()));
 
     let equipeProcessada = equipe.filter(u => 
@@ -166,14 +162,14 @@ const payload = {
                         />
                     </div>
                     <div style={{ gridColumn: 'span 2', position: 'relative' }} ref={dropdownRef}>
-                        <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>CARGO / FUNÇÃO</label>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>CARGO (RÓTULO)</label>
                         <input
                             type="text"
                             value={buscaCargo}
                             onChange={(e) => {
                                 setBuscaCargo(e.target.value);
                                 setDropdownAberto(true);
-                                setCargoSelecionado(''); // Reseta ID se o usuário digitar algo novo
+                                setCargoSelecionado(''); 
                             }}
                             onFocus={() => setDropdownAberto(true)}
                             placeholder="Buscar ou selecionar cargo..."
@@ -257,6 +253,7 @@ const payload = {
                     </button>
                 </div>
             </div>
+            
             <div style={{ flex: 1, background: 'var(--surface, #1e293b)', padding: '24px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Equipe Registrada</h3>
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
@@ -285,8 +282,8 @@ const payload = {
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
                                     <th style={{ padding: '12px' }}>Nome / E-mail</th>
-                                    <th style={{ padding: '12px' }}>Cargo / Perfil</th>
-                                    <th style={{ padding: '12px' }}>Tags de Acesso</th>
+                                    <th style={{ padding: '12px' }}>Cargo (Rótulo)</th>
+                                    <th style={{ padding: '12px' }}>Módulos Habilitados</th>
                                     <th style={{ padding: '12px', textAlign: 'right' }}>Ação</th>
                                 </tr>
                             </thead>

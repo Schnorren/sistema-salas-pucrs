@@ -7,7 +7,7 @@ const supabase = createClient(
       fetch: (url, options) => {
         return fetch(url, {
           ...options,
-          keepalive: true, // 👈 ISSO AQUI mantém o túnel aberto com Virgínia
+          keepalive: true,
         })
       }
     },
