@@ -58,8 +58,8 @@ export const useEquipe = (session, predioId) => {
             });
             const result = await res.json();
             if (!res.ok) throw new Error(result.error);
-            
-            await carregarDados(true); // 🔥 Força atualização no cache após editar
+
+            await carregarDados(true);
             return { success: true };
         } catch (err) {
             return { success: false, error: err.message };
@@ -75,8 +75,8 @@ export const useEquipe = (session, predioId) => {
             });
             const result = await res.json();
             if (!res.ok) throw new Error(result.error);
-            
-            await carregarDados(true); // 🔥 Força atualização no cache
+
+            await carregarDados(true);
             return { success: true };
         } catch (err) {
             return { success: false, error: err.message };

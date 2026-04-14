@@ -40,7 +40,7 @@ export default function Timeline({ session, acesso }) {
   const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
   const [filtro, setFiltro] = useState('');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
-  const [tick, setTick] = useState(0); 
+  const [tick, setTick] = useState(0);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export default function Timeline({ session, acesso }) {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
       if (horariosPUCRS.includes(horaStr)) {
-        setTick(t => t + 1); // Força recálculo do período atual
+        setTick(t => t + 1);
       }
     }, 60000);
     return () => clearInterval(intervaloRelogio);
@@ -78,39 +78,39 @@ export default function Timeline({ session, acesso }) {
     const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
 
     const periodosCabecalho = PERIODS.map(p => ({
-        code: p.code,
-        label: p.lb,
-        isAgora: p.code === periodoAtual
+      code: p.code,
+      label: p.lb,
+      isAgora: p.code === periodoAtual
     }));
     const sortedSalas = [...salasDb].sort((a, b) => a.numero.localeCompare(b.numero, undefined, { numeric: true }));
 
     const timeline = sortedSalas.map(salaRef => {
-        const slots = PERIODS.map(p => {
-            const aulaNoSlot = aulasDoDia.find(d => {
-                const numSala = d.salas?.numero || d.sala;
-                return numSala === salaRef.numero && extractPeriodCode(d.periodo) === p.code;
-            });
-
-            return {
-                periodo: p.code,
-                horario: p.lb,
-                isAgora: p.code === periodoAtual,
-                ocupado: !!aulaNoSlot,
-                nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
-                tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
-                disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula) : null 
-            };
+      const slots = PERIODS.map(p => {
+        const aulaNoSlot = aulasDoDia.find(d => {
+          const numSala = d.salas?.numero || d.sala;
+          return numSala === salaRef.numero && extractPeriodCode(d.periodo) === p.code;
         });
 
         return {
-            sala: salaRef.numero,
-            temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
-            slots
+          periodo: p.code,
+          horario: p.lb,
+          isAgora: p.code === periodoAtual,
+          ocupado: !!aulaNoSlot,
+          nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
+          tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
+          disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula) : null
         };
+      });
+
+      return {
+        sala: salaRef.numero,
+        temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
+        slots
+      };
     });
 
     return { periodosCabecalho, timeline };
-  }, [rawGradeData, day, tick]); // Refaz se mudar a grade, o dia, ou se o relógio virar (tick)
+  }, [rawGradeData, day, tick]);
   const filteredTimeline = useMemo(() => {
     if (!dataProcessed?.timeline) return [];
     if (!filtro.trim()) return dataProcessed.timeline;
@@ -119,7 +119,7 @@ export default function Timeline({ session, acesso }) {
 
     return dataProcessed.timeline.filter(linha => {
       const matchSala = normalizeText(linha.sala).includes(termo);
-      const matchAula = linha.slots.some(slot => 
+      const matchAula = linha.slots.some(slot =>
         slot.ocupado && normalizeText(slot.nome).includes(termo)
       );
       return matchSala || matchAula;
@@ -128,44 +128,44 @@ export default function Timeline({ session, acesso }) {
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
   if (loading) return <div className="empty-st">Carregando matriz de horários da CDN...</div>;
-  if (error) return <div className="empty-st" style={{color: 'var(--red)'}}>⚠️ Erro: {error}</div>;
+  if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ Erro: {error}</div>;
   if (!dataProcessed) return <div className="empty-st">Nenhuma matriz encontrada para este prédio.</div>;
 
   return (
     <div className="view active" id="vTl" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label>Dia:</label>
-            <select value={day} onChange={e => setDay(e.target.value)}>
+          <label>Dia:</label>
+          <select value={day} onChange={e => setDay(e.target.value)}>
             {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
+          </select>
         </div>
 
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-            <input 
-                ref={inputRef}
-                type="text" 
-                placeholder="Pesquisar por disciplina ou sala..." 
-                value={filtro}
-                onChange={(e) => setFiltro(e.target.value)}
-                style={{
-                    width: '100%',
-                    padding: '6px 32px 6px 12px',
-                    borderRadius: '6px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text)',
-                    fontSize: '13px'
-                }}
-            />
-            {filtro && (
-                <span 
-                    onClick={() => setFiltro('')}
-                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', opacity: 0.5, fontSize: '12px' }}
-                >
-                    ✕
-                </span>
-            )}
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Pesquisar por disciplina ou sala..."
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '6px 32px 6px 12px',
+              borderRadius: '6px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              fontSize: '13px'
+            }}
+          />
+          {filtro && (
+            <span
+              onClick={() => setFiltro('')}
+              style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', opacity: 0.5, fontSize: '12px' }}
+            >
+              ✕
+            </span>
+          )}
         </div>
 
         <div className="tl-leg">
@@ -195,96 +195,96 @@ export default function Timeline({ session, acesso }) {
             <div className="empty-st" style={{ padding: '40px' }}>Nenhuma sala ou aula encontrada para "{filtro}".</div>
           ) : (
             filteredTimeline.map(linha => (
-                <div key={linha.sala} className="tl-row" style={{ display: 'flex', minHeight: '65px', alignItems: 'stretch' }}> 
-                  <div className={`tl-rn ${linha.temAulaAgora ? 'on' : ''}`} style={{ display: 'flex', alignItems: 'center' }}>
-                    {linha.sala}
-                  </div>
-                  <div className="tl-cells" style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
-                    {linha.slots.map((slot, idx) => {
-                      const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
-                      const aula = formatarAula(slot.nome);
-                      
-                      const aulaUniqueKey = slot.ocupado ? `${slot.disciplinaId}-${slot.nome}-${linha.sala}` : null;
-                      const isHovered = hoveredAulaId && hoveredAulaId === aulaUniqueKey;
-                      
-                      const termoNormalizado = normalizeText(filtro).trim();
-                      const isSearchMatch = termoNormalizado && slot.ocupado && normalizeText(slot.nome).includes(termoNormalizado);
-                      const isRoomMatch = termoNormalizado && normalizeText(linha.sala).includes(termoNormalizado);
-    
-                      const getTooltip = () => {
-                        if (!slot.ocupado) return `Livre (${slot.horario})`;
-                        const matches = linha.slots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId);
-                        if (matches.length > 0) {
-                          const first = matches[0];
-                          const last = matches[matches.length - 1];
-                          const periodosLetras = matches.map(m => m.periodo || m.code).join('');
-                          const fimReal = PERIOD_END_TIMES[last.periodo || last.code] || last.horario;
-                          return `${slot.nome}\nPeríodos: ${periodosLetras}\nHorário: ${first.horario} às ${fimReal}`;
-                        }
-                        return `${slot.nome} (${slot.horario})`;
-                      };
-    
-                      return (
-                        <div 
-                          key={idx} 
-                          className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`}
-                          title={getTooltip()}
-                          onMouseEnter={() => slot.ocupado && setHoveredAulaId(aulaUniqueKey)}
-                          onMouseLeave={() => setHoveredAulaId(null)}
-                          style={{ 
-                            flex: 1,
-                            padding: '6px 8px', 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            justifyContent: 'center',
-                            height: 'auto',
-                            minHeight: '100%',
-                            boxSizing: 'border-box',
-                            cursor: slot.ocupado ? 'pointer' : 'default',
-                            transition: 'all 0.2s ease',
-                            backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.15)' : (isSearchMatch ? 'rgba(59, 130, 246, 0.25)' : undefined),
-                            outline: isHovered ? '2px solid var(--accent, #ffd700)' : (isSearchMatch ? '2px solid #3b82f6' : (isRoomMatch ? '1px dashed rgba(255,255,255,0.3)' : 'none')),
-                            outlineOffset: '-2px',
-                            zIndex: isHovered || isSearchMatch ? 10 : 1,
-                            boxShadow: isHovered ? '0 0 10px rgba(0,0,0,0.5)' : (isSearchMatch ? '0 0 8px rgba(59, 130, 246, 0.4)' : 'none')
-                          }}
-                        >
-                          {slot.ocupado && (
-                            <>
-                              <div style={{ 
-                                fontSize: '0.75rem', 
-                                lineHeight: 1.3, 
-                                fontWeight: 600, 
-                                whiteSpace: 'normal', 
-                                wordBreak: 'break-word', 
-                                display: '-webkit-box',
-                                WebkitLineClamp: 3, 
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                color: (isHovered || isSearchMatch) ? '#fff' : undefined
-                              }}>
-                                {aula.nome}
-                              </div>
-                              {aula.codigo && (
-                                <div style={{ 
-                                  fontSize: '0.65rem', 
-                                  opacity: (isHovered || isSearchMatch) ? 1 : 0.7, 
-                                  marginTop: '2px', 
-                                  whiteSpace: 'nowrap', 
-                                  overflow: 'hidden', 
-                                  textOverflow: 'ellipsis' 
-                                }}>
-                                  {aula.codigo}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+              <div key={linha.sala} className="tl-row" style={{ display: 'flex', minHeight: '65px', alignItems: 'stretch' }}>
+                <div className={`tl-rn ${linha.temAulaAgora ? 'on' : ''}`} style={{ display: 'flex', alignItems: 'center' }}>
+                  {linha.sala}
                 </div>
-              ))
+                <div className="tl-cells" style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
+                  {linha.slots.map((slot, idx) => {
+                    const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
+                    const aula = formatarAula(slot.nome);
+
+                    const aulaUniqueKey = slot.ocupado ? `${slot.disciplinaId}-${slot.nome}-${linha.sala}` : null;
+                    const isHovered = hoveredAulaId && hoveredAulaId === aulaUniqueKey;
+
+                    const termoNormalizado = normalizeText(filtro).trim();
+                    const isSearchMatch = termoNormalizado && slot.ocupado && normalizeText(slot.nome).includes(termoNormalizado);
+                    const isRoomMatch = termoNormalizado && normalizeText(linha.sala).includes(termoNormalizado);
+
+                    const getTooltip = () => {
+                      if (!slot.ocupado) return `Livre (${slot.horario})`;
+                      const matches = linha.slots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId);
+                      if (matches.length > 0) {
+                        const first = matches[0];
+                        const last = matches[matches.length - 1];
+                        const periodosLetras = matches.map(m => m.periodo || m.code).join('');
+                        const fimReal = PERIOD_END_TIMES[last.periodo || last.code] || last.horario;
+                        return `${slot.nome}\nPeríodos: ${periodosLetras}\nHorário: ${first.horario} às ${fimReal}`;
+                      }
+                      return `${slot.nome} (${slot.horario})`;
+                    };
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`}
+                        title={getTooltip()}
+                        onMouseEnter={() => slot.ocupado && setHoveredAulaId(aulaUniqueKey)}
+                        onMouseLeave={() => setHoveredAulaId(null)}
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                          height: 'auto',
+                          minHeight: '100%',
+                          boxSizing: 'border-box',
+                          cursor: slot.ocupado ? 'pointer' : 'default',
+                          transition: 'all 0.2s ease',
+                          backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.15)' : (isSearchMatch ? 'rgba(59, 130, 246, 0.25)' : undefined),
+                          outline: isHovered ? '2px solid var(--accent, #ffd700)' : (isSearchMatch ? '2px solid #3b82f6' : (isRoomMatch ? '1px dashed rgba(255,255,255,0.3)' : 'none')),
+                          outlineOffset: '-2px',
+                          zIndex: isHovered || isSearchMatch ? 10 : 1,
+                          boxShadow: isHovered ? '0 0 10px rgba(0,0,0,0.5)' : (isSearchMatch ? '0 0 8px rgba(59, 130, 246, 0.4)' : 'none')
+                        }}
+                      >
+                        {slot.ocupado && (
+                          <>
+                            <div style={{
+                              fontSize: '0.75rem',
+                              lineHeight: 1.3,
+                              fontWeight: 600,
+                              whiteSpace: 'normal',
+                              wordBreak: 'break-word',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              color: (isHovered || isSearchMatch) ? '#fff' : undefined
+                            }}>
+                              {aula.nome}
+                            </div>
+                            {aula.codigo && (
+                              <div style={{
+                                fontSize: '0.65rem',
+                                opacity: (isHovered || isSearchMatch) ? 1 : 0.7,
+                                marginTop: '2px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
+                                {aula.codigo}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
