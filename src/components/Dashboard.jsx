@@ -278,7 +278,6 @@ export default function Dashboard({ session }) {
                   </>
                 )}
 
-                {/* 🔥 NOVO BOTÃO DE RELATÓRIO DE EMPRÉSTIMOS */}
                 {canViewEmprestimos && (
                   <div
                     onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}

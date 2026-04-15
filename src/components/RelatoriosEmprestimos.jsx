@@ -148,7 +148,6 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                             )}
                         </div>
 
-                        {/* 🔥 NOVO GRÁFICO: Picos por Horário */}
                         <div style={chartContainerStyle}>
                             <h3 style={titleStyle}>⏰ Picos de Utilização (Por Horário)</h3>
                             {dados.picosHorario && dados.picosHorario.length === 0 ? <div style={emptyDataStyle}>Nenhum registro no período.</div> : (
