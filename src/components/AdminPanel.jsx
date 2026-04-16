@@ -5,6 +5,7 @@ export default function AdminPanel({ session, acesso }) {
     const [perfis, setPerfis] = useState([]);
     const [predios, setPredios] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
+    const [modulosSistema, setModulosSistema] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const [busca, setBusca] = useState('');
@@ -16,19 +17,14 @@ export default function AdminPanel({ session, acesso }) {
 
     const isAdmin = acesso?.permissoes?.includes('admin');
 
-    const MODULOS_SISTEMA = [
-        { id: 'admin', nome: '👑 Painel Admin (Acesso Global)' },
-        { id: 'grade', nome: 'Grade e Salas' },
-        { id: 'emprestimos', nome: 'Empréstimos' },
-        { id: 'avisos', nome: 'Avisos e Murais' },
-        { id: 'equipe', nome: 'Gestão de Equipe (Local)' }
-    ];
-
     const carregarDados = useCallback(async () => {
         if (!isAdmin) return;
         setLoading(true);
         try {
             const headers = { 'Authorization': `Bearer ${token}` };
+
+            const resModulos = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/modulos`, { headers });
+            if (resModulos.ok) setModulosSistema(await resModulos.json());
 
             const resPerfis = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/perfis`, { headers });
             if (resPerfis.ok) setPerfis(await resPerfis.json());
@@ -146,7 +142,7 @@ export default function AdminPanel({ session, acesso }) {
                             cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', textTransform: 'capitalize'
                         }}
                     >
-                        {t === 'usuarios' ? '👥 Usuários & Permissões' : t === 'perfis' ? '🏷️ Cargos (Rótulos)' : '🏢 Prédios'}
+                        {t === 'usuarios' ? 'Usuários & Permissões' : t === 'perfis' ? 'Cargos (Rótulos)' : 'Prédios'}
                     </button>
                 ))}
             </div>
@@ -162,7 +158,7 @@ export default function AdminPanel({ session, acesso }) {
                                     <h3>Controle de Usuários</h3>
                                     <input
                                         type="text"
-                                        placeholder="🔍 Buscar por nome ou e-mail..."
+                                        placeholder="Buscar por nome ou e-mail..."
                                         value={busca}
                                         onChange={(e) => setBusca(e.target.value)}
                                         style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', width: '300px', outline: 'none' }}
@@ -175,17 +171,17 @@ export default function AdminPanel({ session, acesso }) {
                                     <table className="heat-tbl" style={{ width: '100%' }}>
                                         <thead>
                                             <tr>
-                                                <th style={{ textAlign: 'center' }}>Usuário / E-mail</th>
+                                                <th style={{ textAlign: 'left' }}>Usuário / E-mail</th>
                                                 <th style={{ textAlign: 'center' }}>Prédio (Tenant)</th>
                                                 <th style={{ textAlign: 'center' }}>Cargo (Organizacional)</th>
-                                                <th style={{ textAlign: 'center' }}>Módulos Habilitados</th>
+                                                <th style={{ textAlign: 'left' }}>Módulos Habilitados</th>
                                                 <th style={{ textAlign: 'center' }}>Ação</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {usuariosFiltrados.map(u => (
                                                 <tr key={u.id}>
-                                                    <td style={{ textAlign: 'center' }}>
+                                                    <td style={{ textAlign: 'left' }}>
                                                         <div style={{ fontWeight: 'bold', color: 'var(--text)' }}>{u.nome || 'Sem Nome'}</div>
                                                         <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{u.email}</div>
                                                     </td>
@@ -195,17 +191,34 @@ export default function AdminPanel({ session, acesso }) {
                                                             {u.perfilNome || 'Sem Cargo'}
                                                         </span>
                                                     </td>
-                                                    <td style={{ textAlign: 'center' }}>
-                                                        {u.permissoes?.includes('admin') && <span title="Admin" style={{ margin: '0 2px' }}>👑</span>}
-                                                        {u.permissoes?.includes('grade') && <span title="Grade" style={{ margin: '0 2px' }}>📅</span>}
-                                                        {u.permissoes?.includes('emprestimos') && <span title="Empréstimos" style={{ margin: '0 2px' }}>📦</span>}
-                                                        {u.permissoes?.includes('avisos') && <span title="Avisos" style={{ margin: '0 2px' }}>📢</span>}
-                                                        {u.permissoes?.includes('equipe') && <span title="Equipe" style={{ margin: '0 2px' }}>👥</span>}
-                                                        {(!u.permissoes || u.permissoes.length === 0) && <span style={{ color: 'var(--muted)', fontSize: '12px' }}>Nenhum</span>}
+                                                    <td style={{ textAlign: 'left' }}>
+                                                        {u.permissoes && u.permissoes.length > 0 ? (
+                                                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                                {u.permissoes.map(perm => {
+                                                                    const mod = modulosSistema.find(m => m.id === perm);
+                                                                    const isGlobal = perm === 'admin';
+                                                                    return (
+                                                                        <span key={perm} style={{
+                                                                            background: isGlobal ? 'rgba(34, 197, 94, 0.1)' : 'var(--bg)',
+                                                                            color: isGlobal ? '#22c55e' : 'var(--muted)',
+                                                                            border: `1px solid ${isGlobal ? 'rgba(34, 197, 94, 0.3)' : 'var(--border)'}`,
+                                                                            padding: '2px 6px',
+                                                                            borderRadius: '4px',
+                                                                            fontSize: '11px',
+                                                                            fontWeight: isGlobal ? 'bold' : 'normal'
+                                                                        }}>
+                                                                            {mod ? mod.nome : perm}
+                                                                        </span>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        ) : (
+                                                            <span style={{ color: 'var(--muted)', fontSize: '12px' }}>Sem acessos configurados</span>
+                                                        )}
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>
                                                         {u.id === meuIdId ? (
-                                                            <span style={{ color: 'var(--muted)', fontSize: '12px', fontWeight: 'bold' }}>Seu Acesso</span>
+                                                            <span style={{ color: 'var(--muted)', fontSize: '12px', fontWeight: 'bold' }}>Seu Perfil</span>
                                                         ) : (
                                                             <button
                                                                 className="exp-btn"
@@ -230,7 +243,7 @@ export default function AdminPanel({ session, acesso }) {
                                         <h3>Cargos Organizacionais</h3>
                                         <p style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>Cargos servem apenas para identificação da função do funcionário.</p>
                                     </div>
-                                    <button className="btn-primary" style={{ background: '#22c55e', height: 'fit-content' }} onClick={() => setModal({ aberto: true, tipo: 'novo_perfil', dados: { nome: '' } })}>+ Novo Cargo</button>
+                                    <button className="btn-primary" style={{ background: '#22c55e', height: 'fit-content' }} onClick={() => setModal({ aberto: true, tipo: 'novo_perfil', dados: { nome: '' } })}>Novo Cargo</button>
                                 </div>
                                 <table className="heat-tbl" style={{ width: '100%' }}>
                                     <thead>
@@ -253,7 +266,7 @@ export default function AdminPanel({ session, acesso }) {
                             <div className="bar-card">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                                     <h3>Unidades (Tenants)</h3>
-                                    <button className="btn-primary" style={{ background: '#3b82f6' }} onClick={() => setModal({ aberto: true, tipo: 'novo_predio', dados: { nome: '' } })}>+ Novo Prédio</button>
+                                    <button className="btn-primary" style={{ background: '#3b82f6' }} onClick={() => setModal({ aberto: true, tipo: 'novo_predio', dados: { nome: '' } })}>Novo Prédio</button>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                     {prediosOrdenados.map(p => (
@@ -325,7 +338,7 @@ export default function AdminPanel({ session, acesso }) {
                                     <div style={{ marginTop: '10px', background: 'var(--panel2)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                                         <label style={{ display: 'block', fontSize: '12px', color: 'var(--text)', marginBottom: '12px', fontWeight: 'bold' }}>Módulos Habilitados (Permissões)</label>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                            {MODULOS_SISTEMA.map(mod => {
+                                            {modulosSistema.map(mod => {
                                                 const isChecked = modal.dados?.permissoes?.includes(mod.id);
                                                 return (
                                                     <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', color: isChecked ? (mod.id === 'admin' ? '#22c55e' : '#3b82f6') : 'var(--text)', fontWeight: mod.id === 'admin' && isChecked ? 'bold' : 'normal' }}>
