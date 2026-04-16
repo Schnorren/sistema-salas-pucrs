@@ -149,6 +149,7 @@ class GradeService {
 
         return salasLivres.filter(s => s.quantidadeLivres > 0);
     }
+    
     async gerarEPublicarIndexEstatico(predio_id) {
         try {
             console.log(`[Cache] Gerando Super Index Estático para o prédio: ${predio_id}`);
@@ -242,11 +243,40 @@ class GradeService {
     }
 
     async _enviarParaPythonComRetry(buffer, filename) {
-        const PYTHON_API_URL = process.env.PYTHON_API_URL;
-        const formData = new FormData();
-        formData.append('file', new Blob([buffer], { type: 'application/pdf' }), filename);
-        const response = await fetch(PYTHON_API_URL, { method: 'POST', body: formData });
-        if (!response.ok) throw new Error("Erro Python");
+        const PYTHON_API_URL = process.env.VITE_PYTHON_API_URL || process.env.PYTHON_API_URL;
+        
+        if (!PYTHON_API_URL) {
+            throw new Error("A URL da API Python não está definida nas variáveis de ambiente do backend.");
+        }
+
+        const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+        let body = `--${boundary}\r\n`;
+        body += `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`;
+        body += `Content-Type: application/pdf\r\n\r\n`;
+
+        const footer = `\r\n--${boundary}--\r\n`;
+
+        const multipartBody = Buffer.concat([
+            Buffer.from(body, 'utf8'),
+            buffer,
+            Buffer.from(footer, 'utf8')
+        ]);
+
+        const response = await fetch(PYTHON_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': multipartBody.length
+            },
+            body: multipartBody
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("❌ Erro do Python (RAW):", errorText);
+            throw new Error(`Erro na extração PDF: ${response.status} - ${response.statusText}`);
+        }
+        
         return await response.json();
     }
 
