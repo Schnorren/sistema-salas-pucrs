@@ -23,6 +23,10 @@ async function handler(req, res) {
                 const dados = await service.listarUsuarios();
                 return res.status(200).json(dados);
             }
+            if (endpoint === 'modulos') {
+                const dados = await service.listarModulos();
+                return res.status(200).json(dados);
+            }
         } catch (error) {
             return res.status(400).json({ error: error.message });
         }
@@ -30,7 +34,6 @@ async function handler(req, res) {
 
     if (req.method === 'POST') {
         try {
-
             if (endpoint === 'perfis') {
                 const { nome } = req.body;
                 if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });

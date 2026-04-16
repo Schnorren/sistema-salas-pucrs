@@ -43,6 +43,16 @@ class AdminService {
         return data;
     }
 
+    async listarModulos() {
+        const { data, error } = await supabase
+            .from('sistema_modulos')
+            .select('id, nome, descricao')
+            .order('nome', { ascending: true });
+
+        if (error) throw new Error(`Erro ao buscar módulos: ${error.message}`);
+        return data;
+    }
+
     async listarUsuarios() {
         const { data: authData, error: authError } = await supabase.auth.admin.listUsers();
         if (authError) throw new Error(`Erro Auth: ${authError.message}`);

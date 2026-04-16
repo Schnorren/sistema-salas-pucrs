@@ -136,12 +136,14 @@ export default function Dashboard({ session }) {
   const canViewAvisos = (acesso.permissoes?.includes('avisos') || isAdmin) && hasPredioContext;
   const canViewEmprestimos = (acesso.permissoes?.includes('emprestimos') || isAdmin) && hasPredioContext;
 
+  const canViewOperacional = (acesso.permissoes?.includes('grade') || isAdmin) && hasPredioContext;
+  const canViewRelatorios = (acesso.permissoes?.includes('relatorios') || isAdmin) && hasPredioContext;
+  const canEditGrade = (acesso.permissoes?.includes('edicao_grade') || isAdmin) && hasPredioContext;
+  const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin) && hasPredioContext;
+
+  const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
+
   const isGestaoActive = ['free', 'heat', 'reports', 'upload', 'equipe', 'reports_emprestimos'].includes(activeTab);
-
-  const canViewRelatorios = (acesso.permissoes?.includes('grade') || isAdmin);
-  const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin);
-
-  const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos;
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
@@ -240,6 +242,42 @@ export default function Dashboard({ session }) {
                 zIndex: 50, minWidth: '220px', overflow: 'hidden'
               }}>
 
+                {canViewOperacional && (
+                  <>
+                    <div
+                      onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
+                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'free' ? '#fff' : '#cbd5e1', background: activeTab === 'free' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                      onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
+                      onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
+                    >🚪 Salas Livres</div>
+
+                    <div
+                      onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
+                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'heat' ? '#fff' : '#cbd5e1', background: activeTab === 'heat' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                      onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
+                      onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
+                    >🔥 Ocupação Semanal</div>
+                  </>
+                )}
+
+                {canViewRelatorios && (
+                  <div
+                    onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
+                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                    onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
+                    onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
+                  >📊 Histórico de Aulas (BI)</div>
+                )}
+
+                {canEditGrade && (
+                  <div
+                    onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
+                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                    onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
+                    onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
+                  >🔄 Atualizar Grade CSV/PDF</div>
+                )}
+
                 {canViewEquipe && (
                   <div
                     onClick={() => { setActiveTab('equipe'); setShowAdminMenu(false); }}
@@ -249,36 +287,7 @@ export default function Dashboard({ session }) {
                   >👥 Gestão de Equipe</div>
                 )}
 
-                {canViewRelatorios && (
-                  <>
-                    <div
-                      onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'free' ? '#fff' : '#cbd5e1', background: activeTab === 'free' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                      onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
-                    >🚪 Salas Livres</div>
-                    <div
-                      onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'heat' ? '#fff' : '#cbd5e1', background: activeTab === 'heat' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                      onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
-                    >🔥 Ocupação Semanal</div>
-                    <div
-                      onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                      onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
-                    >📊 Histórico de Aulas</div>
-                    <div
-                      onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                      onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
-                    >🔄 Atualizar Grade CSV</div>
-                  </>
-                )}
-
-                {canViewEmprestimos && (
+                {(canViewEmprestimos || canViewRelatorios) && (
                   <div
                     onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}
                     style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports_emprestimos' ? '#fff' : '#cbd5e1', background: activeTab === 'reports_emprestimos' ? '#2563eb' : 'transparent' }}
