@@ -1,47 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { usePredio } from '../contexts/PredioContext';
+import { useQuery } from '@tanstack/react-query';
 
-const getHojeLocal = () => {
+const getInicioHojeLocal = () => {
     const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 10);
+    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 10) + 'T00:00';
+};
+
+const getAgoraLocal = () => {
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
 };
 
 export default function RelatoriosEmprestimos({ session, acesso }) {
     const { predioAtivo } = usePredio();
-    const [dados, setDados] = useState(null);
-    const [loading, setLoading] = useState(true);
 
-    const [dataInicio, setDataInicio] = useState(getHojeLocal());
-    const [dataFim, setDataFim] = useState(getHojeLocal());
+    const [dataInicio, setDataInicio] = useState(getInicioHojeLocal());
+    const [dataFim, setDataFim] = useState(getAgoraLocal());
 
-    useEffect(() => {
-        const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
-        if (!currentPredioId) return;
+    const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
 
-        setLoading(true);
+    const { data: dados, isLoading: loading, isError } = useQuery({
+        queryKey: ['relatorios_emprestimos', currentPredioId, dataInicio, dataFim],
+        queryFn: async () => {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?inicio=${dataInicio}&fim=${dataFim}`, {
+                headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'x-predio-id': currentPredioId
+                }
+            });
+            if (!res.ok) throw new Error(`Erro do servidor: ${res.status}`);
+            return res.json();
+        },
+        enabled: !!currentPredioId && !!dataInicio && !!dataFim,
+        staleTime: 1000 * 60 * 2
+    });
 
-        const carregar = async () => {
-            try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?inicio=${dataInicio}&fim=${dataFim}`, {
-                    headers: {
-                        'Authorization': `Bearer ${session?.access_token}`,
-                        'x-predio-id': currentPredioId
-                    }
-                });
+    const calcularDuracaoTotal = (inicioIso, fimIso) => {
+        if (!inicioIso || !fimIso) return '--';
+        const diffMs = new Date(fimIso) - new Date(inicioIso);
+        const diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 60) return `${diffMin} min`;
+        return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+    };
 
-                if (!res.ok) throw new Error(`Erro do servidor: ${res.status}`);
-                const json = await res.json();
-                setDados(json);
-            } catch (err) {
-                console.error("Erro ao carregar relatórios", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        carregar();
-    }, [session, acesso, predioAtivo, dataInicio, dataFim]);
-
+    if (isError) return <div style={{ padding: '40px', color: '#ef4444' }}>Erro ao carregar relatórios. Tente novamente.</div>;
     if (loading && !dados) return <div style={{ padding: '40px', color: 'var(--muted)' }}>Analisando dados do período...</div>;
 
     return (
@@ -54,9 +58,9 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>DATA INÍCIO</label>
+                        <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>INÍCIO (DATA E HORA)</label>
                         <input
-                            type="date"
+                            type="datetime-local"
                             value={dataInicio}
                             onChange={e => setDataInicio(e.target.value)}
                             style={dateInputStyle}
@@ -64,9 +68,9 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                     </div>
                     <span style={{ color: 'var(--muted)', marginTop: '16px' }}>—</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>DATA FIM</label>
+                        <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8' }}>FIM (DATA E HORA)</label>
                         <input
-                            type="date"
+                            type="datetime-local"
                             value={dataFim}
                             onChange={e => setDataFim(e.target.value)}
                             style={dateInputStyle}
@@ -75,7 +79,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 </div>
             </div>
 
-            {loading && <div style={{ color: '#fbbf24', fontSize: '13px', fontWeight: 'bold' }}>Atualizando gráficos...</div>}
+            {loading && <div style={{ color: '#fbbf24', fontSize: '13px', fontWeight: 'bold' }}>Atualizando análises...</div>}
 
             {(!dados || !dados.resumo) ? (
                 <div style={{ padding: '40px', color: '#ef4444' }}>Nenhum dado encontrado para este período.</div>
@@ -166,6 +170,77 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                                         <Area type="monotone" name="Empréstimos" dataKey="quantidade" stroke="#10b981" fillOpacity={1} fill="url(#colorHora)" strokeWidth={4} />
                                     </AreaChart>
                                 </ResponsiveContainer>
+                            )}
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', alignItems: 'start' }}>
+
+                        <div style={chartContainerStyle}>
+                            <h3 style={titleStyle}>📄 Registro Detalhado de Retiradas</h3>
+                            {dados.tabelaHistorico && dados.tabelaHistorico.length === 0 ? <div style={emptyDataStyle}>Sem registros no período.</div> : (
+                                <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                                    <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                                        <thead style={{ position: 'sticky', top: 0, background: 'var(--panel2)' }}>
+                                            <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                                                <th style={{ padding: '12px' }}>Aluno</th>
+                                                <th style={{ padding: '12px' }}>Item</th>
+                                                <th style={{ padding: '12px' }}>Retirada</th>
+                                                <th style={{ padding: '12px' }}>Duração</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {dados.tabelaHistorico?.map(h => (
+                                                <tr key={h.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <strong style={{ color: '#fff' }}>{h.nomeAluno}</strong><br />
+                                                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>{h.matricula}</span>
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px', color: '#fbbf24', fontWeight: 'bold' }}>{h.nomeItem}</td>
+                                                    <td style={{ padding: '10px 12px', color: '#cbd5e1' }}>
+                                                        {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        {h.dataDevolucao ? (
+                                                            <span style={{ color: '#94a3b8' }}>{calcularDuracaoTotal(h.dataRetirada, h.dataDevolucao)}</span>
+                                                        ) : (
+                                                            <span style={{ color: '#f59e0b', fontSize: '11px', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>Pendente</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={chartContainerStyle}>
+                            <h3 style={titleStyle}>👥 Tabela de Alunos Únicos</h3>
+                            {dados.tabelaAlunosUnicos && dados.tabelaAlunosUnicos.length === 0 ? <div style={emptyDataStyle}>Sem registros no período.</div> : (
+                                <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                                    <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                                        <thead style={{ position: 'sticky', top: 0, background: 'var(--panel2)' }}>
+                                            <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                                                <th style={{ padding: '12px' }}>Aluno</th>
+                                                <th style={{ padding: '12px', textAlign: 'center' }}>Qtd. Retiradas</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {dados.tabelaAlunosUnicos?.map(a => (
+                                                <tr key={a.matricula} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <td style={{ padding: '10px 12px' }}>
+                                                        <strong style={{ color: '#fff' }}>{a.nome}</strong><br />
+                                                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>{a.matricula}</span>
+                                                    </td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 'bold', color: '#10b981' }}>
+                                                        {a.total_retiradas}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
                         </div>
 
