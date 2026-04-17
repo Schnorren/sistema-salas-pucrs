@@ -525,3 +525,324 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
     overflow-y: auto;
   }
 }
+
+/* ============================================================================
+   ESTILOS DO MURAL DE EMPRÉSTIMOS
+   ============================================================================ */
+
+.mural-container {
+  padding: 24px;
+  height: 100%;
+  display: flex;
+  gap: 24px;
+  color: var(--text);
+}
+
+/* --- WIZARD (PAINEL ESQUERDO) --- */
+.wizard-panel {
+  width: 450px;
+  background: var(--panel);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wizard-header {
+  padding: 20px;
+  color: #fff;
+  text-align: center;
+  transition: background 0.3s ease;
+}
+.wizard-header h3 { margin: 0; font-size: 18px; }
+.wizard-header.step-1 { background: var(--blue); }
+.wizard-header.step-2 { background: var(--green); }
+.wizard-header.step-3 { background: var(--purple); }
+.wizard-header.step-4 { background: var(--amber); }
+
+.wizard-content {
+  padding: 24px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.btn-cancelar-flow {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: bold;
+  z-index: 10;
+}
+
+/* Inputs do Wizard */
+.input-bipar {
+  width: 100%;
+  padding: 16px;
+  font-size: 20px;
+  text-align: center;
+  border-radius: var(--radius);
+  outline: none;
+  font-family: var(--sans);
+  color: var(--text);
+}
+.input-bipar::placeholder { color: var(--muted); }
+
+.input-bipar.matricula {
+  background: var(--blue-b);
+  border: 2px dashed var(--blue);
+  color: var(--blue);
+}
+.input-bipar.item {
+  background: var(--green-b);
+  border: 2px dashed var(--green);
+  color: var(--green);
+}
+.input-bipar.nome {
+  background: var(--purple-b);
+  border: 2px solid var(--purple);
+  color: var(--purple);
+  font-size: 16px;
+}
+
+/* Aluno Analisado (Card superior steps 2, 3 e 4) */
+.card-aluno-identificado {
+  margin-bottom: 24px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  padding: 16px;
+  border-radius: var(--radius);
+}
+.card-aluno-identificado.destaque-devolucao {
+  background: var(--amber-b);
+  border-color: rgba(150,82,10,.3);
+  padding: 30px;
+  text-align: center;
+  width: 100%;
+}
+
+/* Categorias e Itens Mini */
+.categorias-scroll {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 5px;
+}
+.btn-categoria {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: bold;
+  white-space: nowrap;
+  background: var(--panel2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.btn-categoria.ativa {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+
+.item-card-mini {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.item-card-mini:hover { background: var(--blue-b); border-color: rgba(26, 78, 150, 0.3); }
+.item-card-mini .nome { font-size: 14px; font-weight: bold; color: var(--text); }
+.item-card-mini .cod { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+.item-card-mini.manutencao {
+  background: var(--amber-b);
+  border: 1px dashed var(--amber);
+  cursor: default;
+}
+.item-card-mini.manutencao .nome { color: var(--amber); }
+
+.btn-icon-action {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.btn-icon-action:hover { opacity: 1; }
+
+.btn-liberar {
+  background: transparent;
+  color: var(--green);
+  border: 1px solid rgba(30, 107, 64, 0.3);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+
+/* --- PAINEL DE REGISTROS (DIREITO) --- */
+.registros-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.abas-container {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+}
+.aba-btn {
+  flex: 1;
+  padding: 16px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.aba-btn.ativa {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+  background: var(--panel);
+}
+
+.registros-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.grid-emprestimos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.emprestimo-card {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--amber);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.emp-aluno { font-size: 16px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; text-transform: capitalize; }
+.emp-mat { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.emp-item { font-size: 15px; font-weight: 600; color: var(--amber); }
+.emp-cod { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+.emp-footer { font-size: 11px; color: var(--muted); margin: 12px 0 16px 0; padding-top: 12px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); }
+
+.tag-tempo {
+  background: var(--amber-b);
+  color: var(--amber);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.btn-devolver {
+  width: 100%;
+  padding: 10px;
+  background: var(--red-b);
+  color: var(--red);
+  border: 1px solid rgba(160, 40, 40, 0.2);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  font-family: var(--sans);
+  transition: background 0.2s, color 0.2s;
+}
+.btn-devolver:hover {
+  background: var(--red);
+  color: #fff;
+}
+
+.btn-action-primary {
+  width: 100%;
+  padding: 16px;
+  background: var(--purple);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 15px;
+  font-family: var(--sans);
+}
+.btn-action-primary.large {
+  background: var(--amber);
+  font-size: 16px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* Tabela de Histórico */
+.table-historico {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.table-historico th {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.table-historico td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border2);
+  color: var(--text);
+}
+.table-historico tr:hover td { background: var(--panel2); }
+
+.th-aluno-nome { font-weight: 600; font-size: 14px; color: var(--text); }
+.th-aluno-mat { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.th-item { color: var(--amber); font-weight: 600; }
+.th-data { font-family: var(--mono); font-size: 12px; display: flex; align-items: center; gap: 6px; color: var(--text2); }
+.th-data-up { color: var(--green); font-weight: bold; }
+.th-data-down { color: var(--red); font-weight: bold; }
+
+.tag-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.tag-status.concluido { background: var(--panel2); color: var(--text2); border: 1px solid var(--border); }
+.tag-status.pendente { background: var(--amber-b); color: var(--amber); }
+.tag-status.em-uso { background: var(--green-b); color: var(--green); }
