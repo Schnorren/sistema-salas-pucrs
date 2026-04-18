@@ -147,11 +147,19 @@ function HistoricalReportsCore({ session, acesso }) {
         const percGeral = totalPossivelGeral > 0 ? ((baseFiltrada.length / totalPossivelGeral) * 100).toFixed(1) : '0.0';
 
         const roomStats = {};
+        let maxAulas = 0;
+        let salaMaisDemandada = '-';
+
         activeRooms.forEach(room => {
             const aulasDaSala = baseFiltrada.filter(item => item.sala === room).length;
             const possivelPorSala = activeDays.size * activePers.size;
             const percSala = possivelPorSala > 0 ? ((aulasDaSala / possivelPorSala) * 100).toFixed(1) : '0.0';
             roomStats[room] = { count: aulasDaSala, perc: percSala };
+
+            if (aulasDaSala > maxAulas && aulasDaSala > 0) {
+                maxAulas = aulasDaSala;
+                salaMaisDemandada = room;
+            }
         });
 
         const curvaMap = {};
@@ -191,6 +199,7 @@ function HistoricalReportsCore({ session, acesso }) {
             totalFiltrado: baseFiltrada.length,
             percentual: Number(percGeral),
             roomStats,
+            salaMaisDemandada,
             dinamico: { curvaHorario, turnos, heatmap }
         };
     }, [semanaAtiva, activeDays, activePers, activeRooms]);
@@ -351,9 +360,9 @@ function HistoricalReportsCore({ session, acesso }) {
                                 <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 'bold' }}>Alocações nos Filtros Ativos</div>
                             </div>
                             <div style={{ background: 'var(--surface)', border: `1px solid var(--border)`, borderTop: `4px solid ${COLORS[2]}`, borderRadius: '10px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                                <h3 style={{ margin: '0 0 15px 0', fontSize: '16px', color: 'var(--text)' }}>Salas Encontradas</h3>
-                                <div style={{ fontSize: '32px', fontWeight: '800', color: COLORS[2] }}>{reportData.data.kpis.totalSalas || 0}</div>
-                                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 'bold' }}>Sala mais demandada: {formatRoomName(reportData.data.kpis.salaMaisUsada) || '-'}</div>
+                                <h3 style={{ margin: '0 0 15px 0', fontSize: '16px', color: 'var(--text)' }}>Salas Analisadas</h3>
+                                <div style={{ fontSize: '32px', fontWeight: '800', color: COLORS[2] }}>{activeRooms.size}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 'bold' }}>Sala mais demandada: {reportData.salaMaisDemandada}</div>
                             </div>
                         </div>
 

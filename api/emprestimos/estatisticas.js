@@ -1,6 +1,14 @@
 import supabase from '../../backend_core/config/supabase.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 
+const formatarDataComFuso = (str) => {
+    if (!str) return new Date();
+    if (str.length === 16 && !str.includes('Z')) {
+        return new Date(`${str}:00-03:00`);
+    }
+    return new Date(str);
+};
+
 async function handler(req, res) {
     if (req.method !== 'GET') return res.status(405).end();
 
@@ -11,8 +19,8 @@ async function handler(req, res) {
         const inicioStr = req.query.inicio;
         const fimStr = req.query.fim;
 
-        const dataInicio = inicioStr ? new Date(inicioStr) : new Date();
-        const dataFim = fimStr ? new Date(fimStr) : new Date();
+        const dataInicio = formatarDataComFuso(inicioStr);
+        const dataFim = formatarDataComFuso(fimStr);
 
         const { data: registros, error } = await supabase
             .from('emprestimos_registro')
