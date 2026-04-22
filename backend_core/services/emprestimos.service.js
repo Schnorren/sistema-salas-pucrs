@@ -37,8 +37,7 @@ class EmprestimosService {
                 id, matricula_aluno, nome_aluno, data_retirada, data_devolucao, resp_retirada, resp_devolucao,
                 item:emprestimo_itens (nome_item, patrimonio, categoria:emprestimo_categorias(predio_id))
             `)
-            .eq('status', 'CONCLUIDO')
-            .order('data_devolucao', { ascending: false })
+            .order('data_retirada', { ascending: false })
             .limit(50);
 
         if (error) throw error;
@@ -46,6 +45,7 @@ class EmprestimosService {
         return data.filter(e => e.item?.categoria?.predio_id === predioId).map(e => ({
             id: e.id,
             nomeItem: e.item.nome_item,
+            patrimonio: e.item.patrimonio,
             matricula: e.matricula_aluno,
             nomeAluno: e.nome_aluno,
             dataRetirada: e.data_retirada,
@@ -81,23 +81,13 @@ class EmprestimosService {
             throw new Error("Dados obrigatórios faltando.");
         }
 
-        const item = await repository.getItem(itemId);
-
-        if (!item) throw new Error("Item não encontrado.");
-        if (item.status !== 'DISPONIVEL') throw new Error("Este item não está disponível para empréstimo.");
-        if (item.categoria.predio_id !== predioId) throw new Error("Acesso negado. Este item pertence a outro prédio.");
-
-        await repository.upsertAlunoCache(matricula, nomeAluno);
-
-        const payload = {
+        return await repository.criarRetiradaRpc({
             item_id: itemId,
             matricula_aluno: matricula,
             nome_aluno: nomeAluno,
             documento_retido: documento || null,
             resp_retirada: respRetirada
-        };
-
-        return await repository.criarRetirada(payload);
+        });
     }
 
     async registrarDevolucao({ emprestimoId, respDevolucao }) {
