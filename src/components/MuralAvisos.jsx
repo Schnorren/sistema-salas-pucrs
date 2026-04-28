@@ -23,7 +23,7 @@ const prioStyle = {
 export default function MuralAvisos({ session, acesso }) {
     const userEmail = session?.user?.email || 'Sistema';
     const { predioAtivo } = usePredio();
-    const { showConfirm } = useUI();
+    const { showConfirm, toast } = useUI();
 
     const {
         avisos, loading, error, criarAviso, concluirAviso, excluirAviso, adicionarComentario
@@ -38,30 +38,49 @@ export default function MuralAvisos({ session, acesso }) {
     const avisosGerais = avisos?.gerais || [];
 
     const handleSalvarNovo = async (dados) => {
-        const sucesso = await criarAviso(dados);
-        if (sucesso) setIsModalNovoAvisoOpen(false);
+        try {
+            await criarAviso(dados);
+            setIsModalNovoAvisoOpen(false);
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível salvar o registro.');
+        }
     };
 
     const handleConcluirChaveDireto = async (id) => {
-        await concluirAviso(id, "Chave retirada na secretaria (Baixa Expressa)");
+        try {
+            await concluirAviso(id, "Chave retirada na secretaria (Baixa Expressa)");
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível concluir o registro.');
+        }
     };
 
     const handleConfirmarConclusaoGeral = async (obs) => {
         if (!avisoSelecionadoParaConcluir) return;
-        const sucesso = await concluirAviso(avisoSelecionadoParaConcluir.id, obs);
-        if (sucesso) setAvisoSelecionadoParaConcluir(null);
+        try {
+            await concluirAviso(avisoSelecionadoParaConcluir.id, obs);
+            setAvisoSelecionadoParaConcluir(null);
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível concluir o registro.');
+        }
     };
 
     const handleSalvarNota = async (nota) => {
         if (!avisoSelecionadoParaComentar) return;
-        const sucesso = await adicionarComentario(avisoSelecionadoParaComentar.id, avisoSelecionadoParaComentar.descricao, nota, userEmail);
-        if (sucesso) setAvisoSelecionadoParaComentar(null);
-    }
+        try {
+            await adicionarComentario(avisoSelecionadoParaComentar.id, avisoSelecionadoParaComentar.descricao, nota, userEmail);
+            setAvisoSelecionadoParaComentar(null);
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível salvar o comentário.');
+        }
+    };
 
     const handleExcluir = async (id) => {
         const confirmado = await showConfirm('Tem certeza que deseja apagar este registro permanentemente?', 'Apagar Registro');
-        if (confirmado) {
+        if (!confirmado) return;
+        try {
             await excluirAviso(id);
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível deletar o registro.');
         }
     };
 
