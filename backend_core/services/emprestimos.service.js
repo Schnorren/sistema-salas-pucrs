@@ -85,13 +85,18 @@ class EmprestimosService {
             throw new Error("Dados obrigatórios faltando.");
         }
 
-        return await repository.criarRetiradaRpc({
+        const resultado = await repository.criarRetiradaRpc({
             item_id: itemId,
             matricula_aluno: matricula,
             nome_aluno: nomeAluno,
             documento_retido: documento || null,
             resp_retirada: respRetirada
         });
+
+        // Atualiza o cache de alunos em background — não bloqueia a resposta
+        repository.upsertAlunoCache(matricula, nomeAluno).catch(() => {});
+
+        return resultado;
     }
 
     async registrarDevolucao({ emprestimoId, respDevolucao }) {
