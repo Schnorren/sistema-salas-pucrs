@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { usePredio } from '../contexts/PredioContext';
+import { supabase } from '../supabase';
 
 async function parseResponse(res) {
     const json = await res.json().catch(() => ({}));
@@ -30,6 +32,20 @@ export const useAvisos = (session, acesso) => {
     });
 
     const invalidar = () => queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
+
+    // Realtime — qualquer alteração na tabela avisos atualiza o mural automaticamente
+    useEffect(() => {
+        if (!predioId) return;
+
+        const channel = supabase
+            .channel(`avisos_${predioId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'avisos', filter: `predio_id=eq.${predioId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['avisos', predioId] });
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [predioId, queryClient]);
 
     const criarMutation = useMutation({
         mutationFn: async (dadosAviso) => {
