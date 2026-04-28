@@ -5,6 +5,7 @@ import ModalConcluirAviso from './ModalConcluirAviso';
 import ModalHistoricoAvisos from './ModalHistoricoAvisos';
 import ModalComentarAviso from './ModalComentarAviso';
 import { usePredio } from '../contexts/PredioContext';
+import { useUI } from '../contexts/UIContext';
 
 const pillStyle = {
     fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
@@ -22,6 +23,7 @@ const prioStyle = {
 export default function MuralAvisos({ session, acesso }) {
     const userEmail = session?.user?.email || 'Sistema';
     const { predioAtivo } = usePredio();
+    const { showConfirm } = useUI();
 
     const {
         avisos, loading, error, criarAviso, concluirAviso, excluirAviso, adicionarComentario
@@ -57,7 +59,8 @@ export default function MuralAvisos({ session, acesso }) {
     }
 
     const handleExcluir = async (id) => {
-        if (window.confirm("Tem certeza que deseja apagar este registro permanentemente?")) {
+        const confirmado = await showConfirm('Tem certeza que deseja apagar este registro permanentemente?', 'Apagar Registro');
+        if (confirmado) {
             await excluirAviso(id);
         }
     };

@@ -21,15 +21,15 @@ const formatarAula = (nomeBruto) => {
   return partes.length > 1 ? { codigo: partes[0], nome: partes.slice(1).join(' - ') } : { codigo: '', nome: nomeBruto };
 };
 
-export default function Timeline({ session, acesso }) {
+export default function Timeline({ session, acesso, initialDay, initialFiltro }) {
   const { predioAtivo } = usePredio();
-  const { toast } = useUI();
+  const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
-  const [filtro, setFiltro] = useState('');
+  const [day, setDay] = useState(initialDay || DAYS_PT[new Date().getDay()] || 'Segunda');
+  const [filtro, setFiltro] = useState(initialFiltro || '');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
   const [tick, setTick] = useState(0);
   const inputRef = useRef(null);
@@ -37,6 +37,11 @@ export default function Timeline({ session, acesso }) {
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
   const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '' });
+
+  useEffect(() => {
+    if (initialDay) setDay(initialDay);
+    if (initialFiltro) setFiltro(initialFiltro);
+  }, [initialDay, initialFiltro]);
 
   const { data: trocasAtivas = {} } = useQuery({
     queryKey: ['trocas_sala', predioAtual],
@@ -152,7 +157,7 @@ export default function Timeline({ session, acesso }) {
     });
   }, [dataProcessed, filtro]);
 
-  const handleCellClick = (slot, linhaSlots, salaAtual) => {
+  const handleCellClick = async (slot, linhaSlots, salaAtual) => {
     if (!slot.ocupado) return;
 
     const aulaUniqueKey = `${slot.disciplinaId}-${slot.nome}-${salaAtual}`;
@@ -165,7 +170,7 @@ export default function Timeline({ session, acesso }) {
     const registroExistente = trocasAtivas[aulaUniqueKey];
 
     if (!registroExistente) {
-        const confirma = window.confirm('Deseja registrar uma alteração de sala para esta aula?');
+        const confirma = await showConfirm('Deseja registrar uma alteração de sala para esta aula?', 'Registrar Troca de Sala');
         if (!confirma) return;
     }
 
