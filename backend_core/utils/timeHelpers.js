@@ -18,6 +18,12 @@ export const PERIODS = [
   { code: 'P', lb: '21:45', start: [21, 45], end: [22, 30] },
 ];
 
+// Array de horários de início dos períodos PUCRS (para comparação de relógio)
+export const PERIOD_TIMES = PERIODS.map(p => p.lb);
+
+// Array de { code, lb } — útil para selects e cabeçalhos
+export const PERIOD_OPTIONS = PERIODS.map(p => ({ code: p.code, lb: p.lb }));
+
 const pad = (n) => String(n).padStart(2, '0');
 
 export const extractPeriodCode = (s) => (s || '').split(' ')[0];
