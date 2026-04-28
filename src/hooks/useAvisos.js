@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePredio } from '../contexts/PredioContext';
 
 async function parseResponse(res) {
@@ -8,85 +8,78 @@ async function parseResponse(res) {
 }
 
 export const useAvisos = (session, acesso) => {
-    const [avisos, setAvisos] = useState({ chaves: [], gerais: [] });
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
+    const queryClient = useQueryClient();
     const { predioAtivo } = usePredio();
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    const predioId = predioAtivo || acesso?.predioId || '';
 
-    const getHeaders = useCallback(() => ({
+    const getHeaders = () => ({
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
-        'x-predio-id': predioAtivo || acesso?.predioId || ''
-    }), [session, acesso, predioAtivo]);
+        'Authorization': `Bearer ${token}`,
+        'x-predio-id': predioId
+    });
 
-    const fetchAvisosAtivos = useCallback(async () => {
-        if (!predioAtivo && !acesso?.predioId) return;
-
-        setLoading(true);
-        try {
+    const { data: avisos = { chaves: [], gerais: [] }, isLoading: loading, error } = useQuery({
+        queryKey: ['avisos', predioId, userId],
+        queryFn: async () => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, { headers: getHeaders() });
-            const data = await parseResponse(res);
-            setAvisos(data);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    }, [getHeaders, predioAtivo, acesso]);
+            return parseResponse(res);
+        },
+        enabled: !!predioId && !!userId
+    });
 
-    useEffect(() => {
-        fetchAvisosAtivos();
-    }, [fetchAvisosAtivos, predioAtivo]);
+    const invalidar = () => queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
 
-    // Todas as mutações relançam o erro para o componente tratar via toast
-    const criarAviso = async (dadosAviso) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify(dadosAviso)
-        });
-        await parseResponse(res);
-        await fetchAvisosAtivos();
-    };
+    const criarMutation = useMutation({
+        mutationFn: async (dadosAviso) => {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, {
+                method: 'POST', headers: getHeaders(), body: JSON.stringify(dadosAviso)
+            });
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
-    const concluirAviso = async (id, observacao) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/concluir`, {
-            method: 'PUT',
-            headers: getHeaders(),
-            body: JSON.stringify({ obs: observacao })
-        });
-        await parseResponse(res);
-        await fetchAvisosAtivos();
-    };
+    const concluirMutation = useMutation({
+        mutationFn: async ({ id, observacao }) => {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/concluir`, {
+                method: 'PUT', headers: getHeaders(), body: JSON.stringify({ obs: observacao })
+            });
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
-    const adicionarComentario = async (id, descricao_atual, nota, userEmail) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/comentar`, {
-            method: 'PATCH',
-            headers: getHeaders(),
-            body: JSON.stringify({ descricao_atual, nota, user_email: userEmail })
-        });
-        await parseResponse(res);
-        await fetchAvisosAtivos();
-    };
+    const comentarMutation = useMutation({
+        mutationFn: async ({ id, descricao_atual, nota, userEmail }) => {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/comentar`, {
+                method: 'PATCH', headers: getHeaders(),
+                body: JSON.stringify({ descricao_atual, nota, user_email: userEmail })
+            });
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
-    const excluirAviso = async (id) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}`, {
-            method: 'DELETE',
-            headers: getHeaders()
-        });
-        await parseResponse(res);
-        await fetchAvisosAtivos();
-    };
+    const excluirMutation = useMutation({
+        mutationFn: async (id) => {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}`, {
+                method: 'DELETE', headers: getHeaders()
+            });
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
     return {
         avisos,
         loading,
-        error,
-        fetchAvisosAtivos,
-        criarAviso,
-        concluirAviso,
-        excluirAviso,
-        adicionarComentario
+        error: error?.message || null,
+        // Mutações relançam erro — o componente trata via toast
+        criarAviso:         (dados) => criarMutation.mutateAsync(dados),
+        concluirAviso:      (id, observacao) => concluirMutation.mutateAsync({ id, observacao }),
+        adicionarComentario:(id, descricao_atual, nota, userEmail) => comentarMutation.mutateAsync({ id, descricao_atual, nota, userEmail }),
+        excluirAviso:       (id) => excluirMutation.mutateAsync(id),
     };
 };
