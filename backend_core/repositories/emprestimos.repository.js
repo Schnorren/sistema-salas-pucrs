@@ -13,13 +13,13 @@ class EmprestimosRepository {
     }
 
     async getItensDisponiveis(categoriaId) {
-        console.log(`🔎 Buscando itens para a categoria: ${categoriaId}`);
         const { data, error } = await supabase
             .from('emprestimo_itens')
             .select('*')
             .eq('categoria_id', categoriaId)
-            .in('status', ['DISPONIVEL', 'MANUTENCAO'])
-        console.log(`📦 Itens encontrados:`, data);
+            .in('status', ['DISPONIVEL', 'MANUTENCAO']);
+
+        if (error) throw error;
         return data || [];
     }
 

@@ -2,8 +2,6 @@ import service from '../../backend_core/services/emprestimos.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 
 async function handler(req, res) {
-    console.log('🚨 REQUISIÇÃO BATEU NO INDEX.JS. URL:', req.url);
-
     const temPermissao = req.user?.permissoes?.includes('emprestimos') || req.user?.permissoes?.includes('admin');
     if (!temPermissao) {
         return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Empréstimos.' });
@@ -51,11 +49,9 @@ async function handler(req, res) {
     if (req.method === 'GET' && caminho1 === 'aluno' && caminho2) {
         try {
             const matricula = caminho2;
-            console.log(`🔍 [API] Consultando matrícula: ${matricula} no prédio: ${predioId}`);
             const dados = await service.consultarMatricula(matricula, predioId);
             return res.status(200).json(dados);
         } catch (error) {
-            console.error('❌ [API Error - Aluno]:', error.message);
             return res.status(400).json({ error: error.message });
         }
     }
