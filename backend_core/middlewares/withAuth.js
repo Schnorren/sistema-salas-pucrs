@@ -86,7 +86,6 @@ export const withAuth = (handler, moduloRequisitado = null) => {
             return await handler(req, res);
 
         } catch (err) {
-            console.log("🚫 [AuthGuard Rejeitado]:", err.message);
             return res.status(401).json({ error: err.message });
         }
     };
