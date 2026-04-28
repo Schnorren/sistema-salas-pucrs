@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useUI } from '../contexts/UIContext';
 
 export default function AdminPanel({ session, acesso }) {
+    const { toast } = useUI();
     const [aba, setAba] = useState('usuarios');
     const [perfis, setPerfis] = useState([]);
     const [predios, setPredios] = useState([]);
@@ -13,7 +15,7 @@ export default function AdminPanel({ session, acesso }) {
     const [formLoading, setFormLoading] = useState(false);
 
     const token = session?.access_token;
-    const meuIdId = session?.user?.id;
+    const meuId = session?.user?.id;
 
     const isAdmin = acesso?.permissoes?.includes('admin');
 
@@ -94,7 +96,7 @@ export default function AdminPanel({ session, acesso }) {
             carregarDados();
 
         } catch (err) {
-            alert(`Erro: ${err.message}`);
+            toast.error(err.message || 'Erro ao salvar. Tente novamente.');
         } finally {
             setFormLoading(false);
         }
@@ -217,7 +219,7 @@ export default function AdminPanel({ session, acesso }) {
                                                         )}
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>
-                                                        {u.id === meuIdId ? (
+                                                        {u.id === meuId ? (
                                                             <span style={{ color: 'var(--muted)', fontSize: '12px', fontWeight: 'bold' }}>Seu Perfil</span>
                                                         ) : (
                                                             <button

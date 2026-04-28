@@ -75,8 +75,8 @@ export default function GestaoEquipe({ session, acesso }) {
     };
 
     const handleSalvar = async () => {
-        if (!emailBusca) return alert("Preencha o e-mail do funcionário.");
-        if (!cargoSelecionado) return alert("Selecione um cargo para o funcionário.");
+        if (!emailBusca) return toast.error("Preencha o e-mail do funcionário.");
+        if (!cargoSelecionado) return toast.error("Selecione um cargo para o funcionário.");
 
         const payload = {
             nome: nomeBusca.trim(),
