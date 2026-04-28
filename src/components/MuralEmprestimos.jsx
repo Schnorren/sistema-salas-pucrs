@@ -132,17 +132,26 @@ const EmprestimoWizard = ({
         executarRetirada(itemSelecionado, nomeAluno.trim());
     };
 
-    const executarRetirada = (item, nome) => {
-        resetFlow();
-        registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: alunoAnalisado.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
-        toast.success(`Empréstimo de "${item.nome_item}" registrado!`);
+    const executarRetirada = async (item, nome) => {
+        const alunoAtual = alunoAnalisado;
+        try {
+            await registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: alunoAtual.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
+            resetFlow();
+            toast.success(`Empréstimo de "${item.nome_item}" registrado!`);
+        } catch (err) {
+            toast.error(`Erro ao registrar empréstimo: ${err.message || 'Tente novamente.'}`);
+        }
     };
 
     const handleConfirmarDevolucao = async () => {
         const idParaDevolver = alunoAnalisado.emprestimoAtivo.id;
-        resetFlow();
-        await registrarDevolucao(idParaDevolver);
-        toast.success('Devolução registrada com sucesso!');
+        try {
+            await registrarDevolucao(idParaDevolver);
+            resetFlow();
+            toast.success('Devolução registrada com sucesso!');
+        } catch (err) {
+            toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
+        }
     };
 
     const handleEnviarManutencao = async (item) => {
