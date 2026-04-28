@@ -35,14 +35,18 @@ class EmprestimosService {
             .from('emprestimos_registro')
             .select(`
                 id, matricula_aluno, nome_aluno, data_retirada, data_devolucao, resp_retirada, resp_devolucao,
-                item:emprestimo_itens (nome_item, patrimonio, categoria:emprestimo_categorias(predio_id))
+                item:emprestimo_itens!inner (
+                    nome_item, patrimonio,
+                    categoria:emprestimo_categorias!inner (predio_id)
+                )
             `)
+            .eq('item.categoria.predio_id', predioId)
             .order('data_retirada', { ascending: false })
             .limit(50);
 
         if (error) throw error;
 
-        return data.filter(e => e.item?.categoria?.predio_id === predioId).map(e => ({
+        return data.map(e => ({
             id: e.id,
             nomeItem: e.item.nome_item,
             patrimonio: e.item.patrimonio,

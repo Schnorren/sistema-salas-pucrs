@@ -41,16 +41,16 @@ class EmprestimosRepository {
             .from('emprestimos_registro')
             .select(`
                 *,
-                item:emprestimo_itens (
+                item:emprestimo_itens!inner (
                     id, nome_item, patrimonio,
-                    categoria:emprestimo_categorias (predio_id)
+                    categoria:emprestimo_categorias!inner (predio_id)
                 )
             `)
-            .eq('status', 'ATIVO');
+            .eq('status', 'ATIVO')
+            .eq('item.categoria.predio_id', predioId);
 
         if (error) throw error;
-
-        return data.filter(e => e.item?.categoria?.predio_id === predioId);
+        return data;
     }
 
     async getItem(itemId) {
