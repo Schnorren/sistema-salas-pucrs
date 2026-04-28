@@ -36,7 +36,7 @@ const TempoDecorrido = ({ dataIso }) => {
 const EmprestimoWizard = ({
     categorias, itensDisponiveis, emprestimosAtivos,
     consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
-    categoriaSel, setCategoriaSel
+    categoriaSel, setCategoriaSel, loadingWizard
 }) => {
     const { toast, showPrompt, showConfirm } = useUI();
     const [step, setStep] = useState(1);
@@ -300,7 +300,7 @@ const EmprestimoWizard = ({
 };
 
 
-const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loading, registrarDevolucao }) => {
+const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loadingHistorico, registrarDevolucao }) => {
     const { toast, showConfirm } = useUI();
 
     const handleDevolucaoDireta = async (emprestimoId, nomeItem) => {
@@ -321,7 +321,7 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
             </div>
 
             <div className="registros-content">
-                {loading && emprestimosOrdenados.length === 0 && historico.length === 0 ? (
+                {loadingHistorico && emprestimosOrdenados.length === 0 && historico.length === 0 ? (
                     <div className="empty-st">Carregando dados...</div>
                 ) : abaAtiva === 'ativos' ? (
                     emprestimosOrdenados.length === 0 ? (
@@ -419,13 +419,14 @@ export default function MuralEmprestimos({ session }) {
                 {...hookData}
                 categoriaSel={categoriaSel}
                 setCategoriaSel={setCategoriaSel}
+                loadingWizard={hookData.loadingWizard}
             />
             <PainelRegistros 
                 abaAtiva={abaAtiva}
                 setAbaAtiva={setAbaAtiva}
                 emprestimosAtivos={hookData.emprestimosAtivos}
                 historico={hookData.historico}
-                loading={hookData.loading}
+                loadingHistorico={hookData.loadingHistorico}
                 registrarDevolucao={hookData.registrarDevolucao}
             />
         </div>
