@@ -24,21 +24,22 @@ export default function AdminPanel({ session, acesso }) {
         setLoading(true);
         try {
             const headers = { 'Authorization': `Bearer ${token}` };
+            const base = import.meta.env.VITE_API_URL;
 
-            const resModulos = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/modulos`, { headers });
-            if (resModulos.ok) setModulosSistema(await resModulos.json());
+            const [resModulos, resPerfis, resPredios, resUsuarios] = await Promise.all([
+                fetch(`${base}/api/admin/modulos`,  { headers }),
+                fetch(`${base}/api/admin/perfis`,   { headers }),
+                fetch(`${base}/api/admin/predios`,  { headers }),
+                fetch(`${base}/api/admin/usuarios`, { headers }),
+            ]);
 
-            const resPerfis = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/perfis`, { headers });
-            if (resPerfis.ok) setPerfis(await resPerfis.json());
-
-            const resPredios = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/predios`, { headers });
-            if (resPredios.ok) setPredios(await resPredios.json());
-
-            const resUsuarios = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/usuarios`, { headers });
+            if (resModulos.ok)  setModulosSistema(await resModulos.json());
+            if (resPerfis.ok)   setPerfis(await resPerfis.json());
+            if (resPredios.ok)  setPredios(await resPredios.json());
             if (resUsuarios.ok) setUsuarios(await resUsuarios.json());
 
         } catch (err) {
-            console.error("Erro ao carregar painel admin:", err);
+            toast.error('Erro ao carregar dados do painel administrativo.');
         } finally {
             setLoading(false);
         }
