@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Component } from 'react';
 import Topbar from './Topbar';
 import UploadCSV from './UploadPDF';
 import NextClasses from './NextClasses';
@@ -13,6 +13,26 @@ import AdminPanel from './AdminPanel';
 import GestaoEquipe from './GestaoEquipe';
 import MeuPerfil from './MeuPerfil';
 import RelatoriosEmprestimos from './RelatoriosEmprestimos';
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '40px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '13px' }}>
+          <strong>Erro ao carregar o componente:</strong><br /><br />
+          {this.state.error?.message}<br /><br />
+          <pre style={{ whiteSpace: 'pre-wrap', opacity: 0.7 }}>{this.state.error?.stack}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: '20px', padding: '8px 16px', cursor: 'pointer' }}>
+            Tentar novamente
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
@@ -92,7 +112,7 @@ export default function Dashboard({ session }) {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'map': return <LiveMap session={session} acesso={acesso} />;
-      case 'tl': return <Timeline session={session} acesso={acesso} initialDay={timelineSearch.day} initialFiltro={timelineSearch.filtro} />;
+      case 'tl': return <ErrorBoundary key="tl"><Timeline session={session} acesso={acesso} initialDay={timelineSearch.day} initialFiltro={timelineSearch.filtro} /></ErrorBoundary>;
       case 'next': return <NextClasses session={session} acesso={acesso} />;
       case 'avisos': return <MuralAvisos session={session} acesso={acesso} />;
       case 'emprestimos': return <MuralEmprestimos session={session} acesso={acesso} />;
