@@ -28,18 +28,22 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(initialDay || DAYS_PT[new Date().getDay()] || 'Segunda');
+  const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
+
+  const [day, setDay] = useState(initialDay || getDiaAtual());
   const [filtro, setFiltro] = useState(initialFiltro || '');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
   const [tick, setTick] = useState(0);
+  const [autoMode, setAutoMode] = useState(!initialDay); // false se veio de busca
   const inputRef = useRef(null);
+  const periodoAtualRef = useRef(null); // ref para o cabeçalho do período atual
 
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
   const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '' });
 
   useEffect(() => {
-    if (initialDay) setDay(initialDay);
+    if (initialDay) { setDay(initialDay); setAutoMode(false); }
     if (initialFiltro) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
@@ -97,14 +101,41 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     return () => { supabase.removeChannel(channel); };
   }, [predioAtual, queryClient]);
 
+  // Relógio: atualiza o highlight do período a cada minuto.
+  // Em modo automático: também corrige o dia (virada de meia-noite)
+  // e rola para o período atual sempre que o período muda.
   useEffect(() => {
-    const intervaloRelogio = setInterval(() => {
+    const verificar = () => {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-      if (PERIOD_TIMES.includes(horaStr)) setTick(t => t + 1);
-    }, 60000);
+
+      if (PERIOD_TIMES.includes(horaStr)) {
+        setTick(t => t + 1);
+
+        // Atualiza o dia automaticamente (cobre virada de meia-noite)
+        if (autoMode) {
+          setDay(getDiaAtual());
+        }
+
+        // Scroll suave para o período atual após a atualização do DOM
+        setTimeout(() => {
+          periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }, 100);
+      }
+    };
+
+    const intervaloRelogio = setInterval(verificar, 60000);
     return () => clearInterval(intervaloRelogio);
-  }, []);
+  }, [autoMode]);
+
+  // Scroll inicial para o período atual quando a aba carrega
+  useEffect(() => {
+    if (!loading && autoMode) {
+      setTimeout(() => {
+        periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }, 300);
+    }
+  }, [loading, autoMode]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
@@ -307,9 +338,23 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label>Dia:</label>
-          <select value={day} onChange={e => setDay(e.target.value)}>
+          <select value={day} onChange={e => { setDay(e.target.value); setAutoMode(false); }}>
             {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
+          <button
+            onClick={() => { setAutoMode(true); setDay(getDiaAtual()); setTimeout(() => periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }), 100); }}
+            title="Voltar para o dia e período atual automaticamente"
+            style={{
+              padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', border: '1px solid',
+              background: autoMode ? 'rgba(34,197,94,0.15)' : 'var(--panel2)',
+              borderColor: autoMode ? 'rgba(34,197,94,0.4)' : 'var(--border)',
+              color: autoMode ? '#22c55e' : 'var(--muted)',
+              display: 'flex', alignItems: 'center', gap: '5px'
+            }}
+          >
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: autoMode ? '#22c55e' : 'var(--muted)', display: 'inline-block', animation: autoMode ? 'pulse 2s infinite' : 'none' }} />
+            Ao vivo
+          </button>
         </div>
 
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
@@ -335,7 +380,11 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
             <div className="tl-rl">Sala</div>
             <div className="tl-pers">
               {dataProcessed.periodosCabecalho.map(p => (
-                <div key={p.code} className={`tl-phd ${p.isAgora ? 'now' : ''}`}>
+                <div
+                  key={p.code}
+                  ref={p.isAgora ? periodoAtualRef : null}
+                  className={`tl-phd ${p.isAgora ? 'now' : ''}`}
+                >
                   {p.code}<br />
                   <span style={{ fontSize: '0.65rem', fontWeight: 'normal', opacity: 0.8 }}>
                     {p.label} - {PERIOD_END_TIMES[p.code] || ''}
