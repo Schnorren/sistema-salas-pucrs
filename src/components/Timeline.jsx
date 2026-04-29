@@ -30,6 +30,12 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
 
   const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
 
+  // Data do dia no formato YYYY-MM-DD — usada como chave de validade da troca
+  const getDataHoje = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const [day, setDay] = useState(initialDay || getDiaAtual());
   const [filtro, setFiltro] = useState(initialFiltro || '');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
@@ -50,7 +56,12 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   const { data: trocasAtivas = {} } = useQuery({
     queryKey: ['trocas_sala', predioAtual],
     queryFn: async () => {
-        const { data, error } = await supabase.from('trocas_sala').select('*').eq('predio_id', predioAtual);
+        const hoje = getDataHoje();
+        const { data, error } = await supabase
+            .from('trocas_sala')
+            .select('*')
+            .eq('predio_id', predioAtual)
+            .eq('data_aula', hoje);
         if (error) throw error;
         const map = {};
         data.forEach(t => { map[t.aula_unique_key] = t; });
@@ -64,13 +75,14 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
             aula_unique_key: payload.aulaUniqueKey,
+            data_aula: getDataHoje(),
             predio_destino: formTroca.predio,
             sala_destino: formTroca.sala,
             motivo: formTroca.motivo,
             nome_aula_editado: formTroca.nomeAulaEditado,
             periodos_str: payload.periodosStr,
             horario_str: payload.horarioStr
-        }, { onConflict: 'aula_unique_key' });
+        }, { onConflict: 'aula_unique_key,data_aula' });
         if (error) throw error;
     },
     onSuccess: () => {
@@ -82,7 +94,11 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
 
   const removerTrocaMutation = useMutation({
     mutationFn: async (aulaUniqueKey) => {
-        const { error } = await supabase.from('trocas_sala').delete().eq('aula_unique_key', aulaUniqueKey);
+        const { error } = await supabase
+            .from('trocas_sala')
+            .delete()
+            .eq('aula_unique_key', aulaUniqueKey)
+            .eq('data_aula', getDataHoje());
         if (error) throw error;
     },
     onSuccess: () => {
@@ -127,6 +143,12 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     const intervaloRelogio = setInterval(verificar, 60000);
     return () => clearInterval(intervaloRelogio);
   }, [autoMode]);
+
+  // Limpeza automática de trocas de dias anteriores — roda uma vez por sessão em background
+  useEffect(() => {
+    if (!predioAtual) return;
+    supabase.rpc('limpar_trocas_antigas').catch(() => {});
+  }, [predioAtual]);
 
   // Scroll inicial para o período atual quando a aba carrega
   useEffect(() => {
