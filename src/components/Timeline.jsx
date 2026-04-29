@@ -147,7 +147,10 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   // Limpeza automática de trocas de dias anteriores — roda uma vez por sessão em background
   useEffect(() => {
     if (!predioAtual) return;
-    supabase.rpc('limpar_trocas_antigas').catch(() => {});
+    const limpar = async () => {
+      try { await supabase.rpc('limpar_trocas_antigas'); } catch (_) {}
+    };
+    limpar();
   }, [predioAtual]);
 
   // Scroll inicial para o período atual quando a aba carrega
