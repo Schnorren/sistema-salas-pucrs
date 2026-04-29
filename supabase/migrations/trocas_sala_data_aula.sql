@@ -29,3 +29,8 @@ SECURITY DEFINER
 AS $$
     DELETE FROM trocas_sala WHERE data_aula < CURRENT_DATE;
 $$;
+
+-- 7. Colunas opcionais para impressão do cartaz
+ALTER TABLE trocas_sala
+    ADD COLUMN IF NOT EXISTS professor TEXT,
+    ADD COLUMN IF NOT EXISTS cod_cred  TEXT;

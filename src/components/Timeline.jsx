@@ -46,7 +46,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
 
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
-  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '' });
+  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '' });
 
   useEffect(() => {
     if (initialDay) { setDay(initialDay); setAutoMode(false); }
@@ -80,6 +80,8 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
             sala_destino: formTroca.sala,
             motivo: formTroca.motivo,
             nome_aula_editado: formTroca.nomeAulaEditado,
+            professor: formTroca.professor || null,
+            cod_cred: formTroca.codCred || null,
             periodos_str: payload.periodosStr,
             horario_str: payload.horarioStr
         }, { onConflict: 'aula_unique_key,data_aula' });
@@ -232,7 +234,9 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
         predio: registroExistente?.predio_destino || '',
         sala: registroExistente?.sala_destino || '',
         motivo: registroExistente?.motivo || '',
-        nomeAulaEditado: registroExistente?.nome_aula_editado || slot.nome
+        nomeAulaEditado: registroExistente?.nome_aula_editado || slot.nome,
+        professor: registroExistente?.professor || '',
+        codCred: registroExistente?.cod_cred || '',
     });
     setModalAvisoOpen(true);
   };
@@ -243,42 +247,172 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   };
 
   const handleImprimirCartaz = () => {
-    const nomeAula = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
-    
+    const nomeAula    = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
+    const codCred     = formTroca.codCred?.trim();
+    const professor   = formTroca.professor?.trim();
+    const predioDestino = formTroca.predio || predioAtual;
+    const salaDestino   = formTroca.sala;
+    const periodos      = aulaSelecionadaParaTroca.periodosStr;
+    const horario       = aulaSelecionadaParaTroca.horarioStr;
+
+    // Linha em inglês — só inclui os campos que foram preenchidos
+    const partesEN = [];
+    partesEN.push(`Class: ${nomeAula}`);
+    if (codCred)   partesEN.push(`Code/Credits: ${codCred}`);
+    if (professor) partesEN.push(`Instructor: ${professor}`);
+    partesEN.push(`has been moved to Building ${predioDestino}, Room ${salaDestino}`);
+    partesEN.push(`Periods: ${periodos} (${horario.replace('às', 'to')})`);
+    const linhaEN = partesEN.join(' · ');
+
+    // Blocos opcionais — só renderiza se preenchido
+    const blocoCodCred   = codCred   ? `<div class="info-row"><span class="lbl">COD/CRED</span><span class="val">${codCred}</span></div>` : '';
+    const blocoProfessor = professor ? `<div class="info-row"><span class="lbl">PROFESSOR</span><span class="val">${professor}</span></div>` : '';
+
     const printWindow = window.open('', '', 'width=900,height=700');
     printWindow.document.write(`
-      <html>
+      <!DOCTYPE html>
+      <html lang="pt-BR">
         <head>
+          <meta charset="UTF-8">
           <title>Aviso de Troca de Sala</title>
           <style>
-            body { font-family: 'Arial', sans-serif; text-align: center; padding: 40px; margin: 0; color: #1e293b; }
-            .container { border: 10px solid #ef4444; border-radius: 20px; padding: 60px 40px; height: calc(100vh - 120px); box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
-            h1 { font-size: 80px; color: #ef4444; margin: 0; text-transform: uppercase; letter-spacing: -2px; }
-            .aula-lbl { font-size: 35px; color: #64748b; margin-top: 30px; letter-spacing: 2px; }
-            .aula-nome { font-size: 45px; font-weight: bold; margin: 15px 0 40px 0; color: #334155; text-transform: uppercase; }
-            .info-box { background: #f8fafc; border: 4px dashed #cbd5e1; border-radius: 16px; padding: 40px; margin: 0; }
-            .label { font-size: 25px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
-            .destaque { font-size: 80px; font-weight: 900; color: #0f172a; margin: 0; line-height: 1; }
-            .periodos { margin-top: 30px; font-size: 22px; color: #fff; background: #64748b; display: inline-block; padding: 10px 20px; border-radius: 12px; font-weight: bold; }
-            @media print { .container { border: 10px solid #000; } h1 { color: #000; } }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+              font-family: 'Arial', sans-serif;
+              background: #fff;
+              color: #0f172a;
+              height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 30px;
+            }
+            .container {
+              border: 8px solid #dc2626;
+              border-radius: 16px;
+              padding: 40px 50px;
+              width: 100%;
+              max-width: 780px;
+              display: flex;
+              flex-direction: column;
+              gap: 18px;
+            }
+            .atencao {
+              font-size: 64px;
+              font-weight: 900;
+              color: #dc2626;
+              text-transform: uppercase;
+              letter-spacing: -1px;
+              line-height: 1;
+              text-align: center;
+            }
+            .divider {
+              border: none;
+              border-top: 2px solid #e2e8f0;
+            }
+            .info-row {
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+            }
+            .lbl {
+              font-size: 11px;
+              font-weight: 700;
+              color: #64748b;
+              letter-spacing: 1.5px;
+              text-transform: uppercase;
+            }
+            .val {
+              font-size: 28px;
+              font-weight: 700;
+              color: #0f172a;
+              text-transform: uppercase;
+              line-height: 1.2;
+            }
+            .destaque-box {
+              background: #fef2f2;
+              border: 3px dashed #fca5a5;
+              border-radius: 12px;
+              padding: 24px 30px;
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+            }
+            .destaque-label {
+              font-size: 14px;
+              font-weight: 700;
+              color: #dc2626;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+            }
+            .destaque-val {
+              font-size: 72px;
+              font-weight: 900;
+              color: #0f172a;
+              line-height: 1;
+            }
+            .destaque-sub {
+              font-size: 26px;
+              font-weight: 600;
+              color: #475569;
+            }
+            .periodos-badge {
+              display: inline-block;
+              background: #0f172a;
+              color: #fff;
+              font-size: 18px;
+              font-weight: 700;
+              padding: 8px 20px;
+              border-radius: 8px;
+              letter-spacing: 0.5px;
+            }
+            .linha-en {
+              font-size: 11px;
+              color: #94a3b8;
+              text-align: center;
+              font-style: italic;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 14px;
+              line-height: 1.6;
+            }
+            @media print {
+              body { padding: 20px; }
+              .container { border-color: #000; }
+              .atencao { color: #000; }
+              .destaque-box { background: #f8f8f8; border-color: #999; }
+              .destaque-label { color: #000; }
+            }
           </style>
         </head>
         <body>
           <div class="container">
-            <h1>Atenção</h1>
-            
-            <div class="aula-lbl">AULA</div>
-            <div class="aula-nome">${nomeAula}</div>
-            
-            <div class="info-box">
-              <div class="label">Foi transferida para a sala</div>
-              <div class="destaque">${formTroca.sala || '______'}</div>
-              <div class="label" style="margin-top: 20px; font-size: 35px;">Prédio ${formTroca.predio || predioAtual}</div>
+
+            <div class="atencao">⚠ Atenção</div>
+
+            <hr class="divider">
+
+            <div class="info-row">
+              <span class="lbl">AULA</span>
+              <span class="val">${nomeAula}</span>
             </div>
-            
+
+            ${blocoCodCred}
+            ${blocoProfessor}
+
+            <hr class="divider">
+
+            <div class="destaque-box">
+              <div class="destaque-label">Foi transferida para</div>
+              <div class="destaque-val">${salaDestino || '______'}</div>
+              <div class="destaque-sub">Prédio ${predioDestino}</div>
+            </div>
+
             <div>
-              <div class="periodos">PERÍODOS: ${aulaSelecionadaParaTroca.periodosStr} (${aulaSelecionadaParaTroca.horarioStr})</div>
+              <span class="periodos-badge">PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}</span>
             </div>
+
+            <div class="linha-en">${linhaEN}</div>
+
           </div>
           <script>
             window.onload = () => { window.print(); window.close(); }
@@ -317,6 +451,17 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
                         <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
                             <span>De: Sala {aulaSelecionadaParaTroca.salaAtual}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontWeight: 'bold' }}>Períodos {aulaSelecionadaParaTroca.periodosStr}</span>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                        <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>COD/CRED <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(opcional)</span></label>
+                            <input type="text" placeholder="Ex: 34221-04" value={formTroca.codCred} onChange={e => setFormTroca({...formTroca, codCred: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
+                        </div>
+                        <div style={{ flex: 2 }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>PROFESSOR <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(opcional)</span></label>
+                            <input type="text" placeholder="Ex: João da Silva" value={formTroca.professor} onChange={e => setFormTroca({...formTroca, professor: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
                         </div>
                     </div>
 
