@@ -19,6 +19,15 @@ const getDataHoje = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Extrai código/crédito e nome limpo do padrão "97316-04/1 - BRANDED CONTENT"
+const parsearNomeAula = (nomeBruto) => {
+  if (!nomeBruto) return { codCred: '', nomeAula: nomeBruto || '' };
+  // Padrão: sequência alfanumérica com hífens/barras, seguida de " - ", seguida do nome
+  const match = nomeBruto.match(/^([A-Z0-9]{3,}[-/][A-Z0-9/]+)\s+-\s+(.+)$/i);
+  if (match) return { codCred: match[1].trim(), nomeAula: match[2].trim() };
+  return { codCred: '', nomeAula: nomeBruto };
+};
+
 const normalizeText = (text) => text ? text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
 
 const formatarAula = (nomeBruto) => {
@@ -238,13 +247,17 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     }
 
     setAulaSelecionadaParaTroca({ ...slot, salaAtual, aulaUniqueKey, periodosStr, horarioStr });
+
+    // Auto-preenchimento: extrai cod/cred e nome limpo do padrão "97316-04/1 - NOME DA AULA"
+    const { codCred: codAutoDetectado, nomeAula: nomeAutoDetectado } = parsearNomeAula(slot.nome);
+
     setFormTroca({
         predio: registroExistente?.predio_destino || '',
         sala: registroExistente?.sala_destino || '',
         motivo: registroExistente?.motivo || '',
-        nomeAulaEditado: registroExistente?.nome_aula_editado || slot.nome,
+        nomeAulaEditado: registroExistente?.nome_aula_editado || nomeAutoDetectado,
         professor: registroExistente?.professor || '',
-        codCred: registroExistente?.cod_cred || '',
+        codCred: registroExistente?.cod_cred || codAutoDetectado,
     });
     setModalAvisoOpen(true);
   };
@@ -255,28 +268,35 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   };
 
   const handleImprimirCartaz = () => {
-    const nomeAula    = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
-    const codCred     = formTroca.codCred?.trim();
-    const professor   = formTroca.professor?.trim();
+    const nomeAula      = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
+    const codCred       = formTroca.codCred?.trim();
+    const professor     = formTroca.professor?.trim();
     const predioDestino = formTroca.predio || predioAtual;
     const salaDestino   = formTroca.sala;
     const periodos      = aulaSelecionadaParaTroca.periodosStr;
     const horario       = aulaSelecionadaParaTroca.horarioStr;
 
-    // Linha em inglês — só inclui os campos que foram preenchidos
-    const partesEN = [];
-    partesEN.push(`Class: ${nomeAula}`);
+    // Linha em inglês — só inclui os campos preenchidos
+    const partesEN = [`Class: ${nomeAula}`];
     if (codCred)   partesEN.push(`Code/Credits: ${codCred}`);
     if (professor) partesEN.push(`Instructor: ${professor}`);
-    partesEN.push(`has been moved to Building ${predioDestino}, Room ${salaDestino}`);
-    partesEN.push(`Periods: ${periodos} (${horario.replace('às', 'to')})`);
+    partesEN.push(`has been moved to Room ${salaDestino}, Building ${predioDestino}`);
+    partesEN.push(`Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
     const linhaEN = partesEN.join(' · ');
 
-    // Blocos opcionais — só renderiza se preenchido
-    const blocoCodCred   = codCred   ? `<div class="info-row"><span class="lbl">COD/CRED</span><span class="val">${codCred}</span></div>` : '';
-    const blocoProfessor = professor ? `<div class="info-row"><span class="lbl">PROFESSOR</span><span class="val">${professor}</span></div>` : '';
+    const blocoCodCred   = codCred   ? `
+      <div class="field">
+        <div class="field-label">COD / CRED</div>
+        <div class="field-value small">${codCred}</div>
+      </div>` : '';
 
-    const printWindow = window.open('', '', 'width=900,height=700');
+    const blocoProfessor = professor ? `
+      <div class="field">
+        <div class="field-label">PROFESSOR</div>
+        <div class="field-value">${professor}</div>
+      </div>` : '';
+
+    const printWindow = window.open('', '', 'width=794,height=1123');
     printWindow.document.write(`
       <!DOCTYPE html>
       <html lang="pt-BR">
@@ -284,142 +304,257 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
           <meta charset="UTF-8">
           <title>Aviso de Troca de Sala</title>
           <style>
+            @page { size: A4 portrait; margin: 0; }
             * { box-sizing: border-box; margin: 0; padding: 0; }
+
             body {
               font-family: 'Arial', sans-serif;
+              width: 210mm;
+              min-height: 297mm;
               background: #fff;
               color: #0f172a;
-              height: 100vh;
+              display: flex;
+              align-items: stretch;
+            }
+
+            .page {
+              width: 100%;
+              min-height: 297mm;
+              display: flex;
+              flex-direction: column;
+            }
+
+            /* Cabeçalho PUCRS */
+            .header {
+              background: #003DA5;
+              padding: 20px 36px;
+              display: flex;
+              align-items: center;
+              gap: 18px;
+            }
+
+            .logo-circle {
+              width: 64px;
+              height: 64px;
+              background: #fff;
+              border-radius: 50%;
               display: flex;
               align-items: center;
               justify-content: center;
-              padding: 30px;
-            }
-            .container {
-              border: 8px solid #dc2626;
-              border-radius: 16px;
-              padding: 40px 50px;
-              width: 100%;
-              max-width: 780px;
-              display: flex;
-              flex-direction: column;
-              gap: 18px;
-            }
-            .atencao {
-              font-size: 64px;
+              flex-shrink: 0;
+              font-size: 10px;
               font-weight: 900;
-              color: #dc2626;
-              text-transform: uppercase;
-              letter-spacing: -1px;
-              line-height: 1;
+              color: #003DA5;
+              letter-spacing: -0.5px;
               text-align: center;
+              line-height: 1.1;
+              padding: 6px;
             }
-            .divider {
-              border: none;
-              border-top: 2px solid #e2e8f0;
+
+            .header-text { color: #fff; }
+            .header-title { font-size: 20px; font-weight: 900; letter-spacing: 0.5px; }
+            .header-sub { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+
+            /* Faixa vermelha de atenção */
+            .atencao-bar {
+              background: #DC2626;
+              padding: 18px 36px;
+              display: flex;
+              align-items: center;
+              gap: 14px;
             }
-            .info-row {
+            .atencao-icon { font-size: 36px; line-height: 1; }
+            .atencao-text {
+              font-size: 36px;
+              font-weight: 900;
+              color: #fff;
+              letter-spacing: 2px;
+              text-transform: uppercase;
+            }
+
+            /* Corpo */
+            .body {
+              flex: 1;
+              padding: 32px 36px;
               display: flex;
               flex-direction: column;
-              gap: 2px;
+              gap: 24px;
             }
-            .lbl {
-              font-size: 11px;
+
+            /* Seção da aula */
+            .aula-section {
+              background: #F8FAFC;
+              border: 2px solid #E2E8F0;
+              border-left: 6px solid #003DA5;
+              border-radius: 8px;
+              padding: 20px 24px;
+              display: flex;
+              flex-direction: column;
+              gap: 14px;
+            }
+
+            .field-label {
+              font-size: 10px;
               font-weight: 700;
-              color: #64748b;
+              color: #64748B;
               letter-spacing: 1.5px;
               text-transform: uppercase;
+              margin-bottom: 3px;
             }
-            .val {
-              font-size: 28px;
-              font-weight: 700;
-              color: #0f172a;
+
+            .field-value {
+              font-size: 26px;
+              font-weight: 800;
+              color: #0F172A;
               text-transform: uppercase;
               line-height: 1.2;
             }
-            .destaque-box {
-              background: #fef2f2;
-              border: 3px dashed #fca5a5;
+
+            .field-value.small { font-size: 18px; }
+
+            .divider {
+              border: none;
+              border-top: 1px solid #E2E8F0;
+            }
+
+            /* Caixa destino — centralizada, destaque total */
+            .destino-section {
+              background: linear-gradient(135deg, #DC2626 0%, #9B1C1C 100%);
               border-radius: 12px;
-              padding: 24px 30px;
+              padding: 36px 24px;
               display: flex;
               flex-direction: column;
+              align-items: center;
               gap: 10px;
+              text-align: center;
             }
-            .destaque-label {
-              font-size: 14px;
+
+            .destino-label {
+              font-size: 13px;
               font-weight: 700;
-              color: #dc2626;
+              color: rgba(255,255,255,0.8);
+              letter-spacing: 2px;
               text-transform: uppercase;
-              letter-spacing: 1px;
             }
-            .destaque-val {
-              font-size: 72px;
+
+            .destino-sala {
+              font-size: 110px;
               font-weight: 900;
-              color: #0f172a;
-              line-height: 1;
-            }
-            .destaque-sub {
-              font-size: 26px;
-              font-weight: 600;
-              color: #475569;
-            }
-            .periodos-badge {
-              display: inline-block;
-              background: #0f172a;
               color: #fff;
-              font-size: 18px;
-              font-weight: 700;
-              padding: 8px 20px;
-              border-radius: 8px;
-              letter-spacing: 0.5px;
+              line-height: 1;
+              letter-spacing: -4px;
             }
-            .linha-en {
-              font-size: 11px;
-              color: #94a3b8;
+
+            .destino-predio {
+              font-size: 22px;
+              font-weight: 600;
+              color: rgba(255,255,255,0.9);
+              background: rgba(0,0,0,0.2);
+              padding: 6px 20px;
+              border-radius: 20px;
+              margin-top: 4px;
+            }
+
+            /* Badge de períodos */
+            .periodos-section {
+              display: flex;
+              justify-content: center;
+            }
+
+            .periodos-badge {
+              background: #003DA5;
+              color: #fff;
+              font-size: 17px;
+              font-weight: 700;
+              padding: 12px 28px;
+              border-radius: 50px;
+              letter-spacing: 0.5px;
+              text-align: center;
+            }
+
+            /* Linha em inglês */
+            .en-line {
+              font-size: 10px;
+              color: #94A3B8;
               text-align: center;
               font-style: italic;
-              border-top: 1px solid #e2e8f0;
-              padding-top: 14px;
               line-height: 1.6;
+              padding: 0 20px;
             }
+
+            /* Rodapé */
+            .footer {
+              background: #F1F5F9;
+              border-top: 2px solid #E2E8F0;
+              padding: 12px 36px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+
+            .footer-left { font-size: 10px; color: #64748B; }
+            .footer-right { font-size: 10px; color: #94A3B8; font-style: italic; }
+
             @media print {
-              body { padding: 20px; }
-              .container { border-color: #000; }
-              .atencao { color: #000; }
-              .destaque-box { background: #f8f8f8; border-color: #999; }
-              .destaque-label { color: #000; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             }
           </style>
         </head>
         <body>
-          <div class="container">
+          <div class="page">
 
-            <div class="atencao">⚠ Atenção</div>
-
-            <hr class="divider">
-
-            <div class="info-row">
-              <span class="lbl">AULA</span>
-              <span class="val">${nomeAula}</span>
+            <!-- Cabeçalho PUCRS -->
+            <div class="header">
+              <div class="logo-circle">PUC<br>RS</div>
+              <div class="header-text">
+                <div class="header-title">PUCRS</div>
+                <div class="header-sub">Pontifícia Universidade Católica do Rio Grande do Sul</div>
+              </div>
             </div>
 
-            ${blocoCodCred}
-            ${blocoProfessor}
-
-            <hr class="divider">
-
-            <div class="destaque-box">
-              <div class="destaque-label">Foi transferida para</div>
-              <div class="destaque-val">${salaDestino || '______'}</div>
-              <div class="destaque-sub">Prédio ${predioDestino}</div>
+            <!-- Faixa de atenção -->
+            <div class="atencao-bar">
+              <div class="atencao-icon">⚠</div>
+              <div class="atencao-text">Atenção — Aviso de Troca de Sala</div>
             </div>
 
-            <div>
-              <span class="periodos-badge">PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}</span>
+            <!-- Corpo -->
+            <div class="body">
+
+              <!-- Dados da aula -->
+              <div class="aula-section">
+                <div class="field">
+                  <div class="field-label">Aula</div>
+                  <div class="field-value">${nomeAula}</div>
+                </div>
+                ${blocoCodCred ? `<hr class="divider">${blocoCodCred}` : ''}
+                ${blocoProfessor ? `<hr class="divider">${blocoProfessor}` : ''}
+              </div>
+
+              <!-- Destino — centralizado e em destaque -->
+              <div class="destino-section">
+                <div class="destino-label">Foi transferida para a sala</div>
+                <div class="destino-sala">${salaDestino || '???'}</div>
+                <div class="destino-predio">Prédio ${predioDestino}</div>
+              </div>
+
+              <!-- Períodos -->
+              <div class="periodos-section">
+                <div class="periodos-badge">
+                  PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
+                </div>
+              </div>
+
+              <!-- Linha em inglês -->
+              <div class="en-line">${linhaEN}</div>
+
             </div>
 
-            <div class="linha-en">${linhaEN}</div>
+            <!-- Rodapé -->
+            <div class="footer">
+              <div class="footer-left">Secretaria Acadêmica — PUCRS</div>
+              <div class="footer-right">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+            </div>
 
           </div>
           <script>
