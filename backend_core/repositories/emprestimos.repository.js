@@ -13,13 +13,13 @@ class EmprestimosRepository {
     }
 
     async getItensDisponiveis(categoriaId) {
-        console.log(`🔎 Buscando itens para a categoria: ${categoriaId}`);
         const { data, error } = await supabase
             .from('emprestimo_itens')
             .select('*')
             .eq('categoria_id', categoriaId)
-            .in('status', ['DISPONIVEL', 'MANUTENCAO'])
-        console.log(`📦 Itens encontrados:`, data);
+            .in('status', ['DISPONIVEL', 'MANUTENCAO']);
+
+        if (error) throw error;
         return data || [];
     }
 
@@ -41,16 +41,16 @@ class EmprestimosRepository {
             .from('emprestimos_registro')
             .select(`
                 *,
-                item:emprestimo_itens (
+                item:emprestimo_itens!inner (
                     id, nome_item, patrimonio,
-                    categoria:emprestimo_categorias (predio_id)
+                    categoria:emprestimo_categorias!inner (predio_id)
                 )
             `)
-            .eq('status', 'ATIVO');
+            .eq('status', 'ATIVO')
+            .eq('item.categoria.predio_id', predioId);
 
         if (error) throw error;
-
-        return data.filter(e => e.item?.categoria?.predio_id === predioId);
+        return data;
     }
 
     async getItem(itemId) {
@@ -97,26 +97,15 @@ class EmprestimosRepository {
         return data;
     }
 
-    async concluirDevolucao(emprestimoId, itemId, emailResponsavel) {
-        const { error: errItem } = await supabase
-            .from('emprestimo_itens')
-            .update({ status: 'DISPONIVEL' })
-            .eq('id', itemId);
+    async concluirDevolucao(emprestimoId, _itemId, emailResponsavel) {
+        // Usa RPC atômica — item e registro são atualizados na mesma transação.
+        // Se qualquer update falhar, o Postgres reverte tudo.
+        const { data, error } = await supabase.rpc('concluir_devolucao', {
+            p_emprestimo_id: emprestimoId,
+            p_resp_devolucao: emailResponsavel
+        });
 
-        if (errItem) throw errItem;
-
-        const { data, error: errReg } = await supabase
-            .from('emprestimos_registro')
-            .update({
-                status: 'CONCLUIDO',
-                data_devolucao: new Date().toISOString(),
-                resp_devolucao: emailResponsavel
-            })
-            .eq('id', emprestimoId)
-            .select()
-            .single();
-
-        if (errReg) throw errReg;
+        if (error) throw new Error(error.message || 'Erro ao concluir devolução.');
         return data;
     }
 

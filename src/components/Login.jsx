@@ -5,12 +5,14 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [erro, setErro] = useState('')
 
   const handleLogin = async (e) => {
     e.preventDefault()
+    setErro('')
     setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) alert(error.message)
+    if (error) setErro(error.message)
     setLoading(false)
   }
 
@@ -35,6 +37,7 @@ export default function Login() {
             style={{ padding: '10px', borderRadius: '4px', border: '1px solid #c4bdb3' }}
             required
           />
+          {erro && <p style={{ color: '#ef4444', fontSize: '13px', margin: '0 0 12px', textAlign: 'center' }}>{erro}</p>}
           <button type="submit" disabled={loading} style={{ background: '#1c2b4a', color: '#fff', padding: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
             {loading ? 'Entrando...' : 'Entrar no Sistema'}
           </button>

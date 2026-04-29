@@ -34,6 +34,14 @@ async function handler(req, res) {
 
     if (req.method === 'POST') {
         try {
+            if (endpoint === 'predios') {
+                const { nome } = req.body;
+                if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });
+
+                const novo = await service.criarPredio(nome);
+                return res.status(201).json(novo);
+            }
+
             if (endpoint === 'perfis') {
                 const { nome } = req.body;
                 if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });

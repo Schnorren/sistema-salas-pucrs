@@ -80,16 +80,19 @@ export default function Dashboard({ session }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const [timelineSearch, setTimelineSearch] = useState({ day: null, filtro: '' });
+
   const handleSelectResult = (result) => {
     setShowDropdown(false);
     setSearchQuery('');
+    setTimelineSearch({ day: result.dia_semana, filtro: result.sala });
     setActiveTab('tl');
   };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'map': return <LiveMap session={session} acesso={acesso} />;
-      case 'tl': return <Timeline session={session} acesso={acesso} />;
+      case 'tl': return <Timeline session={session} acesso={acesso} initialDay={timelineSearch.day} initialFiltro={timelineSearch.filtro} />;
       case 'next': return <NextClasses session={session} acesso={acesso} />;
       case 'avisos': return <MuralAvisos session={session} acesso={acesso} />;
       case 'emprestimos': return <MuralEmprestimos session={session} acesso={acesso} />;

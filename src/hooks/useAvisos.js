@@ -1,114 +1,101 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { usePredio } from '../contexts/PredioContext';
+import { supabase } from '../supabase';
+
+async function parseResponse(res) {
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+    return json;
+}
 
 export const useAvisos = (session, acesso) => {
-    const [avisos, setAvisos] = useState({ chaves: [], gerais: [] });
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
+    const queryClient = useQueryClient();
     const { predioAtivo } = usePredio();
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    const predioId = predioAtivo || acesso?.predioId || '';
 
-    const getHeaders = useCallback(() => ({
+    const getHeaders = () => ({
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
-        'x-predio-id': predioAtivo || acesso?.predioId || ''
-    }), [session, acesso, predioAtivo]);
+        'Authorization': `Bearer ${token}`,
+        'x-predio-id': predioId
+    });
 
-    const fetchAvisosAtivos = useCallback(async () => {
-        if (!predioAtivo && !acesso?.predioId) return;
-
-        setLoading(true);
-        try {
+    const { data: avisos = { chaves: [], gerais: [] }, isLoading: loading, error } = useQuery({
+        queryKey: ['avisos', predioId, userId],
+        queryFn: async () => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, { headers: getHeaders() });
-            if (!res.ok) throw new Error("Erro ao buscar avisos");
-            const data = await res.json();
-            setAvisos(data);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    }, [getHeaders, predioAtivo, acesso]);
+            return parseResponse(res);
+        },
+        enabled: !!predioId && !!userId
+    });
 
+    const invalidar = () => queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
+
+    // Realtime — qualquer alteração na tabela avisos atualiza o mural automaticamente
     useEffect(() => {
-        fetchAvisosAtivos();
-    }, [fetchAvisosAtivos, predioAtivo]);
+        if (!predioId) return;
 
-    const criarAviso = async (dadosAviso) => {
-        try {
+        const channel = supabase
+            .channel(`avisos_${predioId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'avisos', filter: `predio_id=eq.${predioId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['avisos', predioId] });
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [predioId, queryClient]);
+
+    const criarMutation = useMutation({
+        mutationFn: async (dadosAviso) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(dadosAviso)
+                method: 'POST', headers: getHeaders(), body: JSON.stringify(dadosAviso)
             });
-            if (!res.ok) throw new Error("Erro ao criar aviso");
-            await fetchAvisosAtivos();
-            return true;
-        } catch (err) {
-            console.error("Erro criarAviso:", err);
-            alert("Não foi possível salvar o registro.");
-            return false;
-        }
-    };
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
-    const concluirAviso = async (id, observacao) => {
-        try {
+    const concluirMutation = useMutation({
+        mutationFn: async ({ id, observacao }) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/concluir`, {
-                method: 'PATCH',
-                headers: getHeaders(),
-                body: JSON.stringify({ obs: observacao })
+                method: 'PUT', headers: getHeaders(), body: JSON.stringify({ obs: observacao })
             });
-            if (!res.ok) throw new Error("Erro ao concluir aviso");
-            await fetchAvisosAtivos();
-            return true;
-        } catch (err) {
-            console.error("Erro concluirAviso:", err);
-            alert("Não foi possível concluir o registro.");
-            return false;
-        }
-    };
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
-    const adicionarComentario = async (id, descricao_atual, nota, userEmail) => {
-        try {
+    const comentarMutation = useMutation({
+        mutationFn: async ({ id, descricao_atual, nota, userEmail }) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/comentar`, {
-                method: 'PATCH',
-                headers: getHeaders(),
+                method: 'PATCH', headers: getHeaders(),
                 body: JSON.stringify({ descricao_atual, nota, user_email: userEmail })
             });
-            if (!res.ok) throw new Error("Erro ao comentar aviso");
-            await fetchAvisosAtivos();
-            return true;
-        } catch (err) {
-            console.error("Erro adicionarComentario:", err);
-            alert("Não foi possível salvar o comentário.");
-            return false;
-        }
-    };
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
-    const excluirAviso = async (id) => {
-        try {
+    const excluirMutation = useMutation({
+        mutationFn: async (id) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}`, {
-                method: 'DELETE',
-                headers: getHeaders()
+                method: 'DELETE', headers: getHeaders()
             });
-            if (!res.ok) throw new Error("Erro ao deletar aviso");
-            await fetchAvisosAtivos();
-            return true;
-        } catch (err) {
-            console.error("Erro excluirAviso:", err);
-            alert("Não foi possível deletar o registro.");
-            return false;
-        }
-    };
+            return parseResponse(res);
+        },
+        onSuccess: invalidar
+    });
 
     return {
         avisos,
         loading,
-        error,
-        fetchAvisosAtivos,
-        criarAviso,
-        concluirAviso,
-        excluirAviso,
-        adicionarComentario
+        error: error?.message || null,
+        // Mutações relançam erro — o componente trata via toast
+        criarAviso:         (dados) => criarMutation.mutateAsync(dados),
+        concluirAviso:      (id, observacao) => concluirMutation.mutateAsync({ id, observacao }),
+        adicionarComentario:(id, descricao_atual, nota, userEmail) => comentarMutation.mutateAsync({ id, descricao_atual, nota, userEmail }),
+        excluirAviso:       (id) => excluirMutation.mutateAsync(id),
     };
 };

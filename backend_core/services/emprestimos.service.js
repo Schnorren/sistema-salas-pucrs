@@ -35,14 +35,18 @@ class EmprestimosService {
             .from('emprestimos_registro')
             .select(`
                 id, matricula_aluno, nome_aluno, data_retirada, data_devolucao, resp_retirada, resp_devolucao,
-                item:emprestimo_itens (nome_item, patrimonio, categoria:emprestimo_categorias(predio_id))
+                item:emprestimo_itens!inner (
+                    nome_item, patrimonio,
+                    categoria:emprestimo_categorias!inner (predio_id)
+                )
             `)
+            .eq('item.categoria.predio_id', predioId)
             .order('data_retirada', { ascending: false })
             .limit(50);
 
         if (error) throw error;
 
-        return data.filter(e => e.item?.categoria?.predio_id === predioId).map(e => ({
+        return data.map(e => ({
             id: e.id,
             nomeItem: e.item.nome_item,
             patrimonio: e.item.patrimonio,
@@ -81,13 +85,18 @@ class EmprestimosService {
             throw new Error("Dados obrigatórios faltando.");
         }
 
-        return await repository.criarRetiradaRpc({
+        const resultado = await repository.criarRetiradaRpc({
             item_id: itemId,
             matricula_aluno: matricula,
             nome_aluno: nomeAluno,
             documento_retido: documento || null,
             resp_retirada: respRetirada
         });
+
+        // Atualiza o cache de alunos em background — não bloqueia a resposta
+        repository.upsertAlunoCache(matricula, nomeAluno).catch(() => {});
+
+        return resultado;
     }
 
     async registrarDevolucao({ emprestimoId, respDevolucao }) {

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useEquipe } from '../hooks/useEquipe';
+import { useUI } from '../contexts/UIContext';
 
 export default function GestaoEquipe({ session, acesso }) {
     const { predioAtivo } = usePredio();
+    const { toast, showConfirm } = useUI();
     
     const { 
         equipe, perfis, modulos, loading, 
@@ -73,8 +75,8 @@ export default function GestaoEquipe({ session, acesso }) {
     };
 
     const handleSalvar = async () => {
-        if (!emailBusca) return alert("Preencha o e-mail do funcionário.");
-        if (!cargoSelecionado) return alert("Selecione um cargo para o funcionário.");
+        if (!emailBusca) return toast.error("Preencha o e-mail do funcionário.");
+        if (!cargoSelecionado) return toast.error("Selecione um cargo para o funcionário.");
 
         const payload = {
             nome: nomeBusca.trim(),
@@ -86,18 +88,18 @@ export default function GestaoEquipe({ session, acesso }) {
         if (modoEdicao) {
             const res = await atualizarMembro(payload);
             if (res.success) {
-                alert("Permissões atualizadas com sucesso!");
+                toast.success("Permissões atualizadas com sucesso!");
                 resetarFormulario();
-            } else alert("Erro ao atualizar: " + res.error);
+            } else toast.error("Erro ao atualizar: " + res.error);
         } else {
-            const confirmacao = window.confirm(`Deseja enviar um convite de acesso para ${payload.email}?`);
+            const confirmacao = await showConfirm(`Deseja enviar um convite de acesso para ${payload.email}?`, 'Confirmar Convite');
             if (!confirmacao) return;
 
             const res = await convidarMembro(payload);
             if (res.success) {
-                alert("Convite enviado com sucesso! O usuário aparecerá na lista.");
+                toast.success("Convite enviado com sucesso! O usuário aparecerá na lista.");
                 resetarFormulario();
-            } else alert("Erro ao convidar: " + res.error);
+            } else toast.error("Erro ao convidar: " + res.error);
         }
     };
     

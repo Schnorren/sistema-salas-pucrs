@@ -2,9 +2,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '../supabase';
 
+// Lê o corpo do erro da resposta HTTP e lança com a mensagem correta do servidor
+async function parseResponse(res) {
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+    return json;
+}
+
 export const useEmprestimos = (session, predioId, categoriaId) => {
     const queryClient = useQueryClient();
     const token = session?.access_token;
+    const userId = session?.user?.id;
 
     const getHeaders = () => ({
         'Content-Type': 'application/json',
@@ -12,61 +20,62 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
         'x-predio-id': predioId || ''
     });
 
+    // userId na queryKey evita colisão de cache entre usuários de prédios diferentes
     const { data: categorias = [], isLoading: loadCat } = useQuery({
-        queryKey: ['categorias', predioId],
+        queryKey: ['categorias', predioId, userId],
         queryFn: async () => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/categorias`, { headers: getHeaders() });
-            if (!res.ok) throw new Error('Erro ao carregar categorias');
-            return res.json();
+            return parseResponse(res);
         },
-        enabled: !!predioId
+        enabled: !!predioId && !!userId
     });
 
     const { data: itensDisponiveis = [], isLoading: loadItens } = useQuery({
-        queryKey: ['itens', predioId, categoriaId],
+        queryKey: ['itens', predioId, categoriaId, userId],
         queryFn: async () => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/categorias/${categoriaId}/itens`, { headers: getHeaders() });
-            if (!res.ok) throw new Error('Erro ao carregar itens');
-            return res.json();
+            return parseResponse(res);
         },
-        enabled: !!predioId && !!categoriaId
+        enabled: !!predioId && !!categoriaId && !!userId
     });
 
+    // loadAtivos e loadHist são independentes — o wizard não bloqueia enquanto o histórico carrega
     const { data: emprestimosAtivos = [], isLoading: loadAtivos } = useQuery({
-        queryKey: ['emprestimosAtivos', predioId],
+        queryKey: ['emprestimosAtivos', predioId, userId],
         queryFn: async () => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/ativos`, { headers: getHeaders() });
-            if (!res.ok) throw new Error('Erro ao carregar ativos');
-            return res.json();
+            return parseResponse(res);
         },
-        enabled: !!predioId
+        enabled: !!predioId && !!userId
     });
 
     const { data: historico = [], isLoading: loadHist } = useQuery({
-        queryKey: ['historico', predioId],
+        queryKey: ['historico', predioId, userId],
         queryFn: async () => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/historico`, { headers: getHeaders() });
-            if (!res.ok) throw new Error('Erro ao carregar historico');
-            return res.json();
+            return parseResponse(res);
         },
-        enabled: !!predioId
+        enabled: !!predioId && !!userId
     });
 
-    const loading = loadCat || loadItens || loadAtivos || loadHist;
-
+    // Granular: wizard pronto quando categorias e ativos carregaram; histórico pode chegar depois
+    const loadingWizard = loadCat || loadAtivos;
+    const loadingHistorico = loadHist;
+    const loadingItens = loadItens;
+    // Compatibilidade com código existente que usa `loading`
+    const loading = loadingWizard || loadingHistorico;
 
     const retirarMutation = useMutation({
         mutationFn: async (dados) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/retirar`, {
                 method: 'POST', headers: getHeaders(), body: JSON.stringify(dados)
             });
-            if (!res.ok) throw new Error('Falha no Servidor');
-            return res.json();
+            return parseResponse(res);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId] });
-            queryClient.invalidateQueries({ queryKey: ['historico', predioId] });
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId] });
+            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId, userId] });
+            queryClient.invalidateQueries({ queryKey: ['historico', predioId, userId] });
+            queryClient.invalidateQueries({ queryKey: ['itens', predioId, categoriaId, userId] });
         }
     });
 
@@ -75,13 +84,12 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/devolver/${emprestimoId}`, {
                 method: 'POST', headers: getHeaders()
             });
-            if (!res.ok) throw new Error('Falha no Servidor');
-            return res.json();
+            return parseResponse(res);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId] });
-            queryClient.invalidateQueries({ queryKey: ['historico', predioId] });
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId] });
+            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId, userId] });
+            queryClient.invalidateQueries({ queryKey: ['historico', predioId, userId] });
+            queryClient.invalidateQueries({ queryKey: ['itens', predioId, categoriaId, userId] });
         }
     });
 
@@ -90,20 +98,18 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/itens/${itemId}/manutencao`, {
                 method: 'PUT', headers: getHeaders(), body: JSON.stringify({ status, observacoes: observacao })
             });
-            if (!res.ok) throw new Error('Falha ao atualizar status do item');
-            return res.json();
+            return parseResponse(res);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId] });
+            queryClient.invalidateQueries({ queryKey: ['itens', predioId, categoriaId, userId] });
         }
     });
 
     const consultarAluno = async (matricula) => {
         try {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/aluno/${matricula}`, { headers: getHeaders() });
-            if (!res.ok) throw new Error('Falha ao consultar aluno');
-            return await res.json();
-        } catch (err) {
+            return await parseResponse(res);
+        } catch {
             return null;
         }
     };
@@ -132,6 +138,9 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
         emprestimosAtivos,
         historico,
         loading,
+        loadingWizard,
+        loadingHistorico,
+        loadingItens,
         consultarAluno,
         registrarRetirada: (dados) => retirarMutation.mutateAsync(dados),
         registrarDevolucao: (id) => devolverMutation.mutateAsync(id),

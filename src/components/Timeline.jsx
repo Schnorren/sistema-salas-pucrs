@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase'; 
@@ -10,7 +10,7 @@ import { useUI } from '../contexts/UIContext';
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-const horariosPUCRS = ["08:00", "08:45", "09:45", "10:30", "11:30", "12:15", "14:00", "14:45", "15:45", "16:30", "17:30", "18:15", "19:15", "20:00", "21:00", "21:45"];
+
 const PERIOD_END_TIMES = { 'A': '08:45', 'B': '09:30', 'C': '10:30', 'D': '11:15', 'E': '12:15', 'E1': '13:00', 'F': '14:45', 'G': '15:30', 'H': '16:30', 'I': '17:15', 'J': '18:15', 'K': '19:00', 'L': '20:00', 'M': '20:45', 'N': '21:45', 'P': '22:30' };
 
 const normalizeText = (text) => text ? text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
@@ -21,15 +21,15 @@ const formatarAula = (nomeBruto) => {
   return partes.length > 1 ? { codigo: partes[0], nome: partes.slice(1).join(' - ') } : { codigo: '', nome: nomeBruto };
 };
 
-export default function Timeline({ session, acesso }) {
+export default function Timeline({ session, acesso, initialDay, initialFiltro }) {
   const { predioAtivo } = usePredio();
-  const { toast } = useUI();
+  const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
-  const [filtro, setFiltro] = useState('');
+  const [day, setDay] = useState(initialDay || DAYS_PT[new Date().getDay()] || 'Segunda');
+  const [filtro, setFiltro] = useState(initialFiltro || '');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
   const [tick, setTick] = useState(0);
   const inputRef = useRef(null);
@@ -37,6 +37,11 @@ export default function Timeline({ session, acesso }) {
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
   const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '' });
+
+  useEffect(() => {
+    if (initialDay) setDay(initialDay);
+    if (initialFiltro) setFiltro(initialFiltro);
+  }, [initialDay, initialFiltro]);
 
   const { data: trocasAtivas = {} } = useQuery({
     queryKey: ['trocas_sala', predioAtual],
@@ -96,7 +101,7 @@ export default function Timeline({ session, acesso }) {
     const intervaloRelogio = setInterval(() => {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-      if (horariosPUCRS.includes(horaStr)) setTick(t => t + 1);
+      if (PERIOD_TIMES.includes(horaStr)) setTick(t => t + 1);
     }, 60000);
     return () => clearInterval(intervaloRelogio);
   }, []);
@@ -152,7 +157,7 @@ export default function Timeline({ session, acesso }) {
     });
   }, [dataProcessed, filtro]);
 
-  const handleCellClick = (slot, linhaSlots, salaAtual) => {
+  const handleCellClick = async (slot, linhaSlots, salaAtual) => {
     if (!slot.ocupado) return;
 
     const aulaUniqueKey = `${slot.disciplinaId}-${slot.nome}-${salaAtual}`;
@@ -165,7 +170,7 @@ export default function Timeline({ session, acesso }) {
     const registroExistente = trocasAtivas[aulaUniqueKey];
 
     if (!registroExistente) {
-        const confirma = window.confirm('Deseja registrar uma alteração de sala para esta aula?');
+        const confirma = await showConfirm('Deseja registrar uma alteração de sala para esta aula?', 'Registrar Troca de Sala');
         if (!confirma) return;
     }
 

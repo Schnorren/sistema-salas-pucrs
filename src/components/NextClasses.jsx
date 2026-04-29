@@ -1,25 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-
-const PERIOD_OPTIONS = [
-  { code: 'A', lb: '08:00' }, { code: 'B', lb: '08:45' }, { code: 'C', lb: '09:45' },
-  { code: 'D', lb: '10:30' }, { code: 'E', lb: '11:30' }, { code: 'E1', lb: '12:15' },
-  { code: 'F', lb: '14:00' }, { code: 'G', lb: '14:45' }, { code: 'H', lb: '15:45' },
-  { code: 'I', lb: '16:30' }, { code: 'J', line: '17:30' }, { code: 'K', lb: '18:15' },
-  { code: 'L', lb: '19:15' }, { code: 'M', lb: '20:00' }, { code: 'N', lb: '21:00' },
-  { code: 'P', lb: '21:45' }
-];
-
-const horariosPUCRS = [
-  "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
-  "14:00", "14:45", "15:45", "16:30", "17:30", "18:15",
-  "19:15", "20:00", "21:00", "21:45"
-];
 
 const normalizeText = (text) => {
   if (!text) return '';
@@ -44,7 +29,7 @@ export default function NextClasses({ session, acesso }) {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
 
-      if (horariosPUCRS.includes(horaStr)) {
+      if (PERIOD_TIMES.includes(horaStr)) {
         setTick(t => t + 1);
       }
     }, 60000);

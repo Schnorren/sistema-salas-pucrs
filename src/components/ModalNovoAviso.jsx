@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useUI } from '../contexts/UIContext';
 
 const inputStyle = {
     width: '100%', padding: '10px 14px',
@@ -14,6 +15,7 @@ const labelStyle = {
 };
 
 export default function ModalNovoAviso({ onClose, onSave }) {
+    const { toast } = useUI();
     const [tipo, setTipo] = useState('CHAVE');
     const [formData, setFormData] = useState({});
     const periodosDisponiveis = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
@@ -32,7 +34,7 @@ export default function ModalNovoAviso({ onClose, onSave }) {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (tipo === 'CHAVE' && (!formData.periodo || formData.periodo.length === 0)) {
-            alert("Selecione pelo menos um período.");
+            toast.error("Selecione pelo menos um período.");
             return;
         }
         onSave({ ...formData, tipo });

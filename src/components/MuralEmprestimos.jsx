@@ -36,7 +36,7 @@ const TempoDecorrido = ({ dataIso }) => {
 const EmprestimoWizard = ({
     categorias, itensDisponiveis, emprestimosAtivos,
     consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
-    categoriaSel, setCategoriaSel
+    categoriaSel, setCategoriaSel, loadingWizard
 }) => {
     const { toast, showPrompt, showConfirm } = useUI();
     const [step, setStep] = useState(1);
@@ -132,17 +132,26 @@ const EmprestimoWizard = ({
         executarRetirada(itemSelecionado, nomeAluno.trim());
     };
 
-    const executarRetirada = (item, nome) => {
-        resetFlow();
-        registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: alunoAnalisado.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
-        toast.success(`Empréstimo de "${item.nome_item}" registrado!`);
+    const executarRetirada = async (item, nome) => {
+        const alunoAtual = alunoAnalisado;
+        try {
+            await registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: alunoAtual.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
+            resetFlow();
+            toast.success(`Empréstimo de "${item.nome_item}" registrado!`);
+        } catch (err) {
+            toast.error(`Erro ao registrar empréstimo: ${err.message || 'Tente novamente.'}`);
+        }
     };
 
     const handleConfirmarDevolucao = async () => {
         const idParaDevolver = alunoAnalisado.emprestimoAtivo.id;
-        resetFlow();
-        await registrarDevolucao(idParaDevolver);
-        toast.success('Devolução registrada com sucesso!');
+        try {
+            await registrarDevolucao(idParaDevolver);
+            resetFlow();
+            toast.success('Devolução registrada com sucesso!');
+        } catch (err) {
+            toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
+        }
     };
 
     const handleEnviarManutencao = async (item) => {
@@ -291,7 +300,7 @@ const EmprestimoWizard = ({
 };
 
 
-const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loading, registrarDevolucao }) => {
+const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loadingHistorico, registrarDevolucao }) => {
     const { toast, showConfirm } = useUI();
 
     const handleDevolucaoDireta = async (emprestimoId, nomeItem) => {
@@ -312,7 +321,7 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
             </div>
 
             <div className="registros-content">
-                {loading && emprestimosOrdenados.length === 0 && historico.length === 0 ? (
+                {loadingHistorico && emprestimosOrdenados.length === 0 && historico.length === 0 ? (
                     <div className="empty-st">Carregando dados...</div>
                 ) : abaAtiva === 'ativos' ? (
                     emprestimosOrdenados.length === 0 ? (
@@ -410,13 +419,14 @@ export default function MuralEmprestimos({ session }) {
                 {...hookData}
                 categoriaSel={categoriaSel}
                 setCategoriaSel={setCategoriaSel}
+                loadingWizard={hookData.loadingWizard}
             />
             <PainelRegistros 
                 abaAtiva={abaAtiva}
                 setAbaAtiva={setAbaAtiva}
                 emprestimosAtivos={hookData.emprestimosAtivos}
                 historico={hookData.historico}
-                loading={hookData.loading}
+                loadingHistorico={hookData.loadingHistorico}
                 registrarDevolucao={hookData.registrarDevolucao}
             />
         </div>

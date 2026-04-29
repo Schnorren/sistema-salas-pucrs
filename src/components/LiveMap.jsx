@@ -1,16 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const PERIOD_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
-const horariosPUCRS = [
-  "08:00", "08:45", "09:45", "10:30", "11:30", "12:15",
-  "14:00", "14:45", "15:45", "16:30", "17:30", "18:15",
-  "19:15", "20:00", "21:00", "21:45"
-];
 
 export default function LiveMap({ session, acesso }) {
   const { predioAtivo } = usePredio();
@@ -28,7 +22,7 @@ export default function LiveMap({ session, acesso }) {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
 
-      if (horariosPUCRS.includes(horaStr)) {
+      if (PERIOD_TIMES.includes(horaStr)) {
         setTick(t => t + 1);
       }
     }, 60000);
@@ -121,7 +115,7 @@ export default function LiveMap({ session, acesso }) {
           <div className="ms-lbl">Período</div>
           <select className="ms-sel" value={per} onChange={e => setPer(e.target.value)}>
             <option value="auto">⟳ Automático ({dataProcessed.periodoAtual || '--'})</option>
-            {PERIOD_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+            {PERIOD_OPTIONS.map(p => <option key={p.code} value={p.code}>{p.code}</option>)}
           </select>
         </div>
 
