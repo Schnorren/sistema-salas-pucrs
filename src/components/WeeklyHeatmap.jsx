@@ -34,13 +34,14 @@ export default function WeeklyHeatmap({ session, acesso }) {
         ocupacaoBase
     };
   }, [rawGradeData]);
+  // Reseta os filtros apenas quando o prédio muda — não a cada render do processedData
   useEffect(() => {
     if (processedData) {
       setActiveDays(new Set(processedData.diasDisponiveis));
       setActiveRooms(new Set(processedData.salasDisponiveis));
       setActivePers(new Set(processedData.periodosDisponiveis));
     }
-  }, [predioAtual, processedData?.salasDisponiveis.length]); 
+  }, [predioAtual]); // eslint-disable-line react-hooks/exhaustive-deps
   const stats = useMemo(() => {
     if (!processedData) return null;
 
