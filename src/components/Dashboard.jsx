@@ -78,7 +78,7 @@ export default function Dashboard({ session }) {
         setSearchResults(data);
         setShowDropdown(true);
       } catch (err) {
-        console.error("Erro ao realizar busca global:", err);
+        // busca silencia erros — não interrompe o fluxo do usuário
       } finally {
         setIsSearching(false);
       }
@@ -125,7 +125,7 @@ export default function Dashboard({ session }) {
       case 'upload':
         return (
           <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-            <UploadCSV session={session} acesso={acesso} onUploadSuccess={() => console.log('Grade sincronizada com sucesso!')} />
+            <UploadCSV session={session} acesso={acesso} onUploadSuccess={() => {}} />
           </div>
         );
       case 'admin': return <AdminPanel session={session} acesso={acesso} />;
