@@ -94,10 +94,13 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
         }, { onConflict: 'aula_unique_key,data_aula' });
         if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, __, context) => {
         queryClient.invalidateQueries(['trocas_sala', predioAtual]);
-        toast.success('Troca de sala registrada com sucesso!');
-        setModalAvisoOpen(false);
+        // Fecha o modal apenas se não veio de um print (context.fromPrint)
+        if (!context?.fromPrint) {
+            toast.success('Troca de sala registrada com sucesso!');
+            setModalAvisoOpen(false);
+        }
     }
   });
 
@@ -267,7 +270,18 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     salvarTrocaMutation.mutate(aulaSelecionadaParaTroca);
   };
 
-  const handleImprimirCartaz = () => {
+  const handleImprimirCartaz = async () => {
+    // Garante que a troca está salva antes de imprimir
+    const jaSalvo = !!trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
+    if (!jaSalvo) {
+        try {
+            await salvarTrocaMutation.mutateAsync(aulaSelecionadaParaTroca, { context: { fromPrint: true } });
+        } catch {
+            toast.error('Não foi possível salvar a troca antes de imprimir. Verifique os campos obrigatórios.');
+            return;
+        }
+    }
+
     const nomeAula      = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
     const codCred       = formTroca.codCred?.trim();
     const professor     = formTroca.professor?.trim();
