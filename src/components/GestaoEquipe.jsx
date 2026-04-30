@@ -8,7 +8,7 @@ export default function GestaoEquipe({ session, acesso }) {
     const { toast, showConfirm } = useUI();
     
     const { 
-        equipe, perfis, modulos, loading, 
+        equipe, perfis, modulos, loading, error,
         carregarDados, atualizarMembro, convidarMembro 
     } = useEquipe(session, predioAtivo || acesso?.predioId);
     
@@ -281,7 +281,7 @@ export default function GestaoEquipe({ session, acesso }) {
                     </select>
                 </div>
 
-                {loading && equipe.length === 0 ? <p style={{ color: 'var(--muted)' }}>Buscando dados no servidor...</p> : (
+                {loading && equipe.length === 0 ? <p style={{ color: 'var(--muted)' }}>Buscando dados no servidor...</p> : error ? <p style={{ color: 'var(--red)' }}>⚠️ Erro ao carregar equipe: {error}</p> : (
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                             <thead>
