@@ -6,12 +6,14 @@ import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getCurrentPeriod, extractPeriodC
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
+const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
+
 export default function LiveMap({ session, acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
+  const [day, setDay] = useState(getDiaAtual());
   const [per, setPer] = useState('auto');
   const [, setTick] = useState(0);
 
@@ -24,6 +26,11 @@ export default function LiveMap({ session, acesso }) {
 
       if (PERIOD_TIMES.includes(horaStr)) {
         setTick(t => t + 1);
+        // Atualiza o dia automaticamente — cobre virada de meia-noite
+        setDay(prev => {
+          const hoje = getDiaAtual();
+          return prev !== hoje ? hoje : prev;
+        });
       }
     }, 60000);
 
