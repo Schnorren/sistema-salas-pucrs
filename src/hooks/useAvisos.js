@@ -40,12 +40,13 @@ export const useAvisos = (session, acesso) => {
         const channel = supabase
             .channel(`avisos_${predioId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'avisos', filter: `predio_id=eq.${predioId}` }, () => {
-                queryClient.invalidateQueries({ queryKey: ['avisos', predioId] });
+                // Invalida com queryKey completa (predioId + userId) para bater exatamente com a query registrada
+                queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
             })
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, [predioId, queryClient]);
+    }, [predioId, userId, queryClient]);
 
     const criarMutation = useMutation({
         mutationFn: async (dadosAviso) => {
