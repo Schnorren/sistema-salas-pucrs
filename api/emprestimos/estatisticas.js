@@ -4,6 +4,13 @@ import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 async function handler(req, res) {
     if (req.method !== 'GET') return res.status(405).end();
 
+    const temPermissao = req.user?.permissoes?.includes('emprestimos')
+        || req.user?.permissoes?.includes('relatorios')
+        || req.user?.permissoes?.includes('admin');
+    if (!temPermissao) {
+        return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Empréstimos ou Relatórios.' });
+    }
+
     const predioId = req.headers['x-predio-id'];
     if (!predioId) return res.status(400).json({ error: 'Prédio não informado' });
 

@@ -2,6 +2,12 @@ import service from '../../backend_core/services/grade.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 
 async function handler(req, res) {
+    const temPermissao = req.user?.permissoes?.includes('grade')
+        || req.user?.permissoes?.includes('admin');
+    if (!temPermissao) {
+        return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Grade.' });
+    }
+
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
     const endpoint = urlParts.length > 2 ? urlParts[2] : null;
 
