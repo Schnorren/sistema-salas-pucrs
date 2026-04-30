@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient, useCallback } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 
 async function parseResponse(res) {
     const json = await res.json().catch(() => ({}));
