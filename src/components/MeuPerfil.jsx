@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
+import { supabase } from '../supabase';
 export default function MeuPerfil({ session, onClose }) {
     const [nome, setNome] = useState('');
     const [senha, setSenha] = useState('');

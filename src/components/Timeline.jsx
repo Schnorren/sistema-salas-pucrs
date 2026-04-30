@@ -10,8 +10,23 @@ import { useUI } from '../contexts/UIContext';
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-
 const PERIOD_END_TIMES = { 'A': '08:45', 'B': '09:30', 'C': '10:30', 'D': '11:15', 'E': '12:15', 'E1': '13:00', 'F': '14:45', 'G': '15:30', 'H': '16:30', 'I': '17:15', 'J': '18:15', 'K': '19:00', 'L': '20:00', 'M': '20:45', 'N': '21:45', 'P': '22:30' };
+
+// Fora do componente — funções puras sem dependência de estado
+const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
+const getDataHoje = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+// Extrai código/crédito e nome limpo do padrão "97316-04/1 - BRANDED CONTENT"
+const parsearNomeAula = (nomeBruto) => {
+  if (!nomeBruto) return { codCred: '', nomeAula: nomeBruto || '' };
+  // Padrão: sequência alfanumérica com hífens/barras, seguida de " - ", seguida do nome
+  const match = nomeBruto.match(/^([A-Z0-9]{3,}[-/][A-Z0-9/]+)\s+-\s+(.+)$/i);
+  if (match) return { codCred: match[1].trim(), nomeAula: match[2].trim() };
+  return { codCred: '', nomeAula: nomeBruto };
+};
 
 const normalizeText = (text) => text ? text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
 
@@ -28,25 +43,32 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(initialDay || DAYS_PT[new Date().getDay()] || 'Segunda');
+  const [day, setDay] = useState(initialDay || getDiaAtual());
   const [filtro, setFiltro] = useState(initialFiltro || '');
   const [hoveredAulaId, setHoveredAulaId] = useState(null);
   const [tick, setTick] = useState(0);
+  const [autoMode, setAutoMode] = useState(!initialDay); // false se veio de busca
   const inputRef = useRef(null);
+  const periodoAtualRef = useRef(null); // ref para o cabeçalho do período atual
 
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
-  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '' });
+  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '' });
 
   useEffect(() => {
-    if (initialDay) setDay(initialDay);
+    if (initialDay) { setDay(initialDay); setAutoMode(false); }
     if (initialFiltro) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
   const { data: trocasAtivas = {} } = useQuery({
     queryKey: ['trocas_sala', predioAtual],
     queryFn: async () => {
-        const { data, error } = await supabase.from('trocas_sala').select('*').eq('predio_id', predioAtual);
+        const hoje = getDataHoje();
+        const { data, error } = await supabase
+            .from('trocas_sala')
+            .select('*')
+            .eq('predio_id', predioAtual)
+            .eq('data_aula', hoje);
         if (error) throw error;
         const map = {};
         data.forEach(t => { map[t.aula_unique_key] = t; });
@@ -60,25 +82,35 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
             aula_unique_key: payload.aulaUniqueKey,
+            data_aula: getDataHoje(),
             predio_destino: formTroca.predio,
             sala_destino: formTroca.sala,
             motivo: formTroca.motivo,
             nome_aula_editado: formTroca.nomeAulaEditado,
+            professor: formTroca.professor || null,
+            cod_cred: formTroca.codCred || null,
             periodos_str: payload.periodosStr,
             horario_str: payload.horarioStr
-        }, { onConflict: 'aula_unique_key' });
+        }, { onConflict: 'aula_unique_key,data_aula' });
         if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_, __, context) => {
         queryClient.invalidateQueries(['trocas_sala', predioAtual]);
-        toast.success('Troca de sala registrada com sucesso!');
-        setModalAvisoOpen(false);
+        // Fecha o modal apenas se não veio de um print (context.fromPrint)
+        if (!context?.fromPrint) {
+            toast.success('Troca de sala registrada com sucesso!');
+            setModalAvisoOpen(false);
+        }
     }
   });
 
   const removerTrocaMutation = useMutation({
     mutationFn: async (aulaUniqueKey) => {
-        const { error } = await supabase.from('trocas_sala').delete().eq('aula_unique_key', aulaUniqueKey);
+        const { error } = await supabase
+            .from('trocas_sala')
+            .delete()
+            .eq('aula_unique_key', aulaUniqueKey)
+            .eq('data_aula', getDataHoje());
         if (error) throw error;
     },
     onSuccess: () => {
@@ -97,14 +129,50 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     return () => { supabase.removeChannel(channel); };
   }, [predioAtual, queryClient]);
 
+  // Relógio: atualiza o highlight do período a cada minuto.
+  // Em modo automático: também corrige o dia (virada de meia-noite)
+  // e rola para o período atual sempre que o período muda.
   useEffect(() => {
-    const intervaloRelogio = setInterval(() => {
+    const verificar = () => {
       const agora = new Date();
       const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-      if (PERIOD_TIMES.includes(horaStr)) setTick(t => t + 1);
-    }, 60000);
+
+      if (PERIOD_TIMES.includes(horaStr)) {
+        setTick(t => t + 1);
+
+        // Atualiza o dia automaticamente (cobre virada de meia-noite)
+        if (autoMode) {
+          setDay(getDiaAtual());
+        }
+
+        // Scroll suave para o período atual após a atualização do DOM
+        setTimeout(() => {
+          periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }, 100);
+      }
+    };
+
+    const intervaloRelogio = setInterval(verificar, 60000);
     return () => clearInterval(intervaloRelogio);
-  }, []);
+  }, [autoMode]);
+
+  // Limpeza automática de trocas de dias anteriores — roda uma vez por sessão em background
+  useEffect(() => {
+    if (!predioAtual) return;
+    const limpar = async () => {
+      try { await supabase.rpc('limpar_trocas_antigas'); } catch (_) {}
+    };
+    limpar();
+  }, [predioAtual]);
+
+  // Scroll inicial para o período atual quando a aba carrega
+  useEffect(() => {
+    if (!loading && autoMode) {
+      setTimeout(() => {
+        periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }, 300);
+    }
+  }, [loading, autoMode]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
@@ -117,33 +185,40 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   }, [modalAvisoOpen]);
 
   const dataProcessed = useMemo(() => {
-    if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return null;
-    const salasDb = rawGradeData.salas;
-    const gradeBruta = rawGradeData.grade;
-    const periodoAtual = getCurrentPeriod();
-    const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
-    const periodosCabecalho = PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual }));
-    const sortedSalas = [...salasDb].sort((a, b) => a.numero.localeCompare(b.numero, undefined, { numeric: true }));
+    try {
+      if (!rawGradeData) return null;
+      const salasDb = rawGradeData.salas;
+      const gradeBruta = rawGradeData.grade;
+      if (!salasDb || !gradeBruta || !Array.isArray(salasDb) || !Array.isArray(gradeBruta)) return null;
 
-    const timeline = sortedSalas.map(salaRef => {
-      const slots = PERIODS.map(p => {
-        const aulaNoSlot = aulasDoDia.find(d => {
-          const numSala = d.salas?.numero || d.sala;
-          return numSala === salaRef.numero && extractPeriodCode(d.periodo) === p.code;
+      const periodoAtual = getCurrentPeriod();
+      const aulasDoDia = gradeBruta.filter(d => d?.dia_semana?.toLowerCase().includes(day.toLowerCase()));
+      const periodosCabecalho = PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual }));
+      const sortedSalas = [...salasDb].sort((a, b) => (a.numero || '').localeCompare(b.numero || '', undefined, { numeric: true }));
+
+      const timeline = sortedSalas.map(salaRef => {
+        const slots = PERIODS.map(p => {
+          const aulaNoSlot = aulasDoDia.find(d => {
+            const numSala = d?.salas?.numero || d?.sala;
+            return numSala === salaRef.numero && extractPeriodCode(d?.periodo) === p.code;
+          });
+
+          return {
+            periodo: p.code, horario: p.lb, isAgora: p.code === periodoAtual,
+            ocupado: !!aulaNoSlot,
+            nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome || '') : null,
+            tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
+            disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula || '') : null
+          };
         });
-
-        return {
-          periodo: p.code, horario: p.lb, isAgora: p.code === periodoAtual,
-          ocupado: !!aulaNoSlot,
-          nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
-          tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
-          disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula) : null
-        };
+        return { sala: salaRef.numero, temAulaAgora: slots.some(s => s.isAgora && s.ocupado), slots };
       });
-      return { sala: salaRef.numero, temAulaAgora: slots.some(s => s.isAgora && s.ocupado), slots };
-    });
 
-    return { periodosCabecalho, timeline };
+      return { periodosCabecalho, timeline };
+    } catch (err) {
+      console.error('Erro ao processar grade:', err);
+      return null;
+    }
   }, [rawGradeData, day, tick]);
 
   const filteredTimeline = useMemo(() => {
@@ -175,11 +250,17 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     }
 
     setAulaSelecionadaParaTroca({ ...slot, salaAtual, aulaUniqueKey, periodosStr, horarioStr });
+
+    // Auto-preenchimento: extrai cod/cred e nome limpo do padrão "97316-04/1 - NOME DA AULA"
+    const { codCred: codAutoDetectado, nomeAula: nomeAutoDetectado } = parsearNomeAula(slot.nome);
+
     setFormTroca({
         predio: registroExistente?.predio_destino || '',
         sala: registroExistente?.sala_destino || '',
         motivo: registroExistente?.motivo || '',
-        nomeAulaEditado: registroExistente?.nome_aula_editado || slot.nome
+        nomeAulaEditado: registroExistente?.nome_aula_editado || nomeAutoDetectado,
+        professor: registroExistente?.professor || '',
+        codCred: registroExistente?.cod_cred || codAutoDetectado,
     });
     setModalAvisoOpen(true);
   };
@@ -189,43 +270,306 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
     salvarTrocaMutation.mutate(aulaSelecionadaParaTroca);
   };
 
-  const handleImprimirCartaz = () => {
-    const nomeAula = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
-    
-    const printWindow = window.open('', '', 'width=900,height=700');
+  const handleImprimirCartaz = async () => {
+    // Garante que a troca está salva antes de imprimir
+    const jaSalvo = !!trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
+    if (!jaSalvo) {
+        try {
+            await salvarTrocaMutation.mutateAsync(aulaSelecionadaParaTroca, { context: { fromPrint: true } });
+        } catch {
+            toast.error('Não foi possível salvar a troca antes de imprimir. Verifique os campos obrigatórios.');
+            return;
+        }
+    }
+
+    const nomeAula      = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
+    const codCred       = formTroca.codCred?.trim();
+    const professor     = formTroca.professor?.trim();
+    const predioDestino = formTroca.predio || predioAtual;
+    const salaDestino   = formTroca.sala;
+    const periodos      = aulaSelecionadaParaTroca.periodosStr;
+    const horario       = aulaSelecionadaParaTroca.horarioStr;
+
+    // Linha em inglês — só inclui os campos preenchidos
+    const partesEN = [`Class: ${nomeAula}`];
+    if (codCred)   partesEN.push(`Code/Credits: ${codCred}`);
+    if (professor) partesEN.push(`Instructor: ${professor}`);
+    partesEN.push(`has been moved to Room ${salaDestino}, Building ${predioDestino}`);
+    partesEN.push(`Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
+    const linhaEN = partesEN.join(' · ');
+
+    const blocoCodCred   = codCred   ? `
+      <div class="field">
+        <div class="field-label">COD / CRED</div>
+        <div class="field-value small">${codCred}</div>
+      </div>` : '';
+
+    const blocoProfessor = professor ? `
+      <div class="field">
+        <div class="field-label">PROFESSOR</div>
+        <div class="field-value">${professor}</div>
+      </div>` : '';
+
+    const printWindow = window.open('', '', 'width=794,height=1123');
     printWindow.document.write(`
-      <html>
+      <!DOCTYPE html>
+      <html lang="pt-BR">
         <head>
+          <meta charset="UTF-8">
           <title>Aviso de Troca de Sala</title>
           <style>
-            body { font-family: 'Arial', sans-serif; text-align: center; padding: 40px; margin: 0; color: #1e293b; }
-            .container { border: 10px solid #ef4444; border-radius: 20px; padding: 60px 40px; height: calc(100vh - 120px); box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
-            h1 { font-size: 80px; color: #ef4444; margin: 0; text-transform: uppercase; letter-spacing: -2px; }
-            .aula-lbl { font-size: 35px; color: #64748b; margin-top: 30px; letter-spacing: 2px; }
-            .aula-nome { font-size: 45px; font-weight: bold; margin: 15px 0 40px 0; color: #334155; text-transform: uppercase; }
-            .info-box { background: #f8fafc; border: 4px dashed #cbd5e1; border-radius: 16px; padding: 40px; margin: 0; }
-            .label { font-size: 25px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
-            .destaque { font-size: 80px; font-weight: 900; color: #0f172a; margin: 0; line-height: 1; }
-            .periodos { margin-top: 30px; font-size: 22px; color: #fff; background: #64748b; display: inline-block; padding: 10px 20px; border-radius: 12px; font-weight: bold; }
-            @media print { .container { border: 10px solid #000; } h1 { color: #000; } }
+            @page { size: A4 portrait; margin: 0; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+
+            body {
+              font-family: 'Arial', sans-serif;
+              width: 210mm;
+              min-height: 297mm;
+              background: #fff;
+              color: #0f172a;
+              display: flex;
+              align-items: stretch;
+            }
+
+            .page {
+              width: 100%;
+              min-height: 297mm;
+              display: flex;
+              flex-direction: column;
+            }
+
+            /* Cabeçalho PUCRS */
+            .header {
+              background: #003DA5;
+              padding: 20px 36px;
+              display: flex;
+              align-items: center;
+              gap: 18px;
+            }
+
+            .logo-circle {
+              width: 64px;
+              height: 64px;
+              background: #fff;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+              font-size: 10px;
+              font-weight: 900;
+              color: #003DA5;
+              letter-spacing: -0.5px;
+              text-align: center;
+              line-height: 1.1;
+              padding: 6px;
+            }
+
+            .header-text { color: #fff; }
+            .header-title { font-size: 20px; font-weight: 900; letter-spacing: 0.5px; }
+            .header-sub { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+
+            /* Faixa vermelha de atenção */
+            .atencao-bar {
+              background: #DC2626;
+              padding: 18px 36px;
+              display: flex;
+              align-items: center;
+              gap: 14px;
+            }
+            .atencao-icon { font-size: 36px; line-height: 1; }
+            .atencao-text {
+              font-size: 36px;
+              font-weight: 900;
+              color: #fff;
+              letter-spacing: 2px;
+              text-transform: uppercase;
+            }
+
+            /* Corpo */
+            .body {
+              flex: 1;
+              padding: 32px 36px;
+              display: flex;
+              flex-direction: column;
+              gap: 24px;
+            }
+
+            /* Seção da aula */
+            .aula-section {
+              background: #F8FAFC;
+              border: 2px solid #E2E8F0;
+              border-left: 6px solid #003DA5;
+              border-radius: 8px;
+              padding: 20px 24px;
+              display: flex;
+              flex-direction: column;
+              gap: 14px;
+            }
+
+            .field-label {
+              font-size: 10px;
+              font-weight: 700;
+              color: #64748B;
+              letter-spacing: 1.5px;
+              text-transform: uppercase;
+              margin-bottom: 3px;
+            }
+
+            .field-value {
+              font-size: 26px;
+              font-weight: 800;
+              color: #0F172A;
+              text-transform: uppercase;
+              line-height: 1.2;
+            }
+
+            .field-value.small { font-size: 18px; }
+
+            .divider {
+              border: none;
+              border-top: 1px solid #E2E8F0;
+            }
+
+            /* Caixa destino — centralizada, destaque total */
+            .destino-section {
+              background: linear-gradient(135deg, #DC2626 0%, #9B1C1C 100%);
+              border-radius: 12px;
+              padding: 36px 24px;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 10px;
+              text-align: center;
+            }
+
+            .destino-label {
+              font-size: 13px;
+              font-weight: 700;
+              color: rgba(255,255,255,0.8);
+              letter-spacing: 2px;
+              text-transform: uppercase;
+            }
+
+            .destino-sala {
+              font-size: 110px;
+              font-weight: 900;
+              color: #fff;
+              line-height: 1;
+              letter-spacing: -4px;
+            }
+
+            .destino-predio {
+              font-size: 22px;
+              font-weight: 600;
+              color: rgba(255,255,255,0.9);
+              background: rgba(0,0,0,0.2);
+              padding: 6px 20px;
+              border-radius: 20px;
+              margin-top: 4px;
+            }
+
+            /* Badge de períodos */
+            .periodos-section {
+              display: flex;
+              justify-content: center;
+            }
+
+            .periodos-badge {
+              background: #003DA5;
+              color: #fff;
+              font-size: 17px;
+              font-weight: 700;
+              padding: 12px 28px;
+              border-radius: 50px;
+              letter-spacing: 0.5px;
+              text-align: center;
+            }
+
+            /* Linha em inglês */
+            .en-line {
+              font-size: 10px;
+              color: #94A3B8;
+              text-align: center;
+              font-style: italic;
+              line-height: 1.6;
+              padding: 0 20px;
+            }
+
+            /* Rodapé */
+            .footer {
+              background: #F1F5F9;
+              border-top: 2px solid #E2E8F0;
+              padding: 12px 36px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+
+            .footer-left { font-size: 10px; color: #64748B; }
+            .footer-right { font-size: 10px; color: #94A3B8; font-style: italic; }
+
+            @media print {
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
           </style>
         </head>
         <body>
-          <div class="container">
-            <h1>Atenção</h1>
-            
-            <div class="aula-lbl">AULA</div>
-            <div class="aula-nome">${nomeAula}</div>
-            
-            <div class="info-box">
-              <div class="label">Foi transferida para a sala</div>
-              <div class="destaque">${formTroca.sala || '______'}</div>
-              <div class="label" style="margin-top: 20px; font-size: 35px;">Prédio ${formTroca.predio || predioAtual}</div>
+          <div class="page">
+
+            <!-- Cabeçalho PUCRS -->
+            <div class="header">
+              <div class="logo-circle">PUC<br>RS</div>
+              <div class="header-text">
+                <div class="header-title">PUCRS</div>
+                <div class="header-sub">Pontifícia Universidade Católica do Rio Grande do Sul</div>
+              </div>
             </div>
-            
-            <div>
-              <div class="periodos">PERÍODOS: ${aulaSelecionadaParaTroca.periodosStr} (${aulaSelecionadaParaTroca.horarioStr})</div>
+
+            <!-- Faixa de atenção -->
+            <div class="atencao-bar">
+              <div class="atencao-icon">⚠</div>
+              <div class="atencao-text">Atenção — Aviso de Troca de Sala</div>
             </div>
+
+            <!-- Corpo -->
+            <div class="body">
+
+              <!-- Dados da aula -->
+              <div class="aula-section">
+                <div class="field">
+                  <div class="field-label">Aula</div>
+                  <div class="field-value">${nomeAula}</div>
+                </div>
+                ${blocoCodCred ? `<hr class="divider">${blocoCodCred}` : ''}
+                ${blocoProfessor ? `<hr class="divider">${blocoProfessor}` : ''}
+              </div>
+
+              <!-- Destino — centralizado e em destaque -->
+              <div class="destino-section">
+                <div class="destino-label">Foi transferida para a sala</div>
+                <div class="destino-sala">${salaDestino || '???'}</div>
+                <div class="destino-predio">Prédio ${predioDestino}</div>
+              </div>
+
+              <!-- Períodos -->
+              <div class="periodos-section">
+                <div class="periodos-badge">
+                  PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
+                </div>
+              </div>
+
+              <!-- Linha em inglês -->
+              <div class="en-line">${linhaEN}</div>
+
+            </div>
+
+            <!-- Rodapé -->
+            <div class="footer">
+              <div class="footer-left">Secretaria Acadêmica — PUCRS</div>
+              <div class="footer-right">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+            </div>
+
           </div>
           <script>
             window.onload = () => { window.print(); window.close(); }
@@ -237,7 +581,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   };
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
-  if (loading) return <div className="empty-st">Carregando matriz de horários da CDN...</div>;
+  if (loading || (!rawGradeData && !error)) return <div className="empty-st">Carregando matriz de horários...</div>;
   if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ Erro: {error}</div>;
   if (!dataProcessed) return <div className="empty-st">Nenhuma matriz encontrada para este prédio.</div>;
 
@@ -264,6 +608,17 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
                         <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
                             <span>De: Sala {aulaSelecionadaParaTroca.salaAtual}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontWeight: 'bold' }}>Períodos {aulaSelecionadaParaTroca.periodosStr}</span>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                        <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>COD/CRED <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(opcional)</span></label>
+                            <input type="text" placeholder="Ex: 34221-04" value={formTroca.codCred} onChange={e => setFormTroca({...formTroca, codCred: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
+                        </div>
+                        <div style={{ flex: 2 }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>PROFESSOR <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(opcional)</span></label>
+                            <input type="text" placeholder="Ex: João da Silva" value={formTroca.professor} onChange={e => setFormTroca({...formTroca, professor: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
                         </div>
                     </div>
 
@@ -307,9 +662,23 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label>Dia:</label>
-          <select value={day} onChange={e => setDay(e.target.value)}>
+          <select value={day} onChange={e => { setDay(e.target.value); setAutoMode(false); }}>
             {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
+          <button
+            onClick={() => { setAutoMode(true); setDay(getDiaAtual()); setTimeout(() => periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }), 100); }}
+            title="Voltar para o dia e período atual automaticamente"
+            style={{
+              padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', border: '1px solid',
+              background: autoMode ? 'rgba(34,197,94,0.15)' : 'var(--panel2)',
+              borderColor: autoMode ? 'rgba(34,197,94,0.4)' : 'var(--border)',
+              color: autoMode ? '#22c55e' : 'var(--muted)',
+              display: 'flex', alignItems: 'center', gap: '5px'
+            }}
+          >
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: autoMode ? '#22c55e' : 'var(--muted)', display: 'inline-block', animation: autoMode ? 'pulse 2s infinite' : 'none' }} />
+            Ao vivo
+          </button>
         </div>
 
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
@@ -335,7 +704,11 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
             <div className="tl-rl">Sala</div>
             <div className="tl-pers">
               {dataProcessed.periodosCabecalho.map(p => (
-                <div key={p.code} className={`tl-phd ${p.isAgora ? 'now' : ''}`}>
+                <div
+                  key={p.code}
+                  ref={p.isAgora ? periodoAtualRef : null}
+                  className={`tl-phd ${p.isAgora ? 'now' : ''}`}
+                >
                   {p.code}<br />
                   <span style={{ fontSize: '0.65rem', fontWeight: 'normal', opacity: 0.8 }}>
                     {p.label} - {PERIOD_END_TIMES[p.code] || ''}

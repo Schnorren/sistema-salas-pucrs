@@ -86,20 +86,23 @@ export default function GestaoEquipe({ session, acesso }) {
         };
 
         if (modoEdicao) {
-            const res = await atualizarMembro(payload);
-            if (res.success) {
+            try {
+                await atualizarMembro(payload);
                 toast.success("Permissões atualizadas com sucesso!");
                 resetarFormulario();
-            } else toast.error("Erro ao atualizar: " + res.error);
+            } catch (err) {
+                toast.error("Erro ao atualizar: " + err.message);
+            }
         } else {
             const confirmacao = await showConfirm(`Deseja enviar um convite de acesso para ${payload.email}?`, 'Confirmar Convite');
             if (!confirmacao) return;
-
-            const res = await convidarMembro(payload);
-            if (res.success) {
+            try {
+                await convidarMembro(payload);
                 toast.success("Convite enviado com sucesso! O usuário aparecerá na lista.");
                 resetarFormulario();
-            } else toast.error("Erro ao convidar: " + res.error);
+            } catch (err) {
+                toast.error("Erro ao convidar: " + err.message);
+            }
         }
     };
     

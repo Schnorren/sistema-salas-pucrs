@@ -1,90 +1,91 @@
-import { useState, useCallback } from 'react';
-const cacheStorage = {
-    equipe: {},
-    perfis: {},
-    modulos: {}
-};
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+async function parseResponse(res) {
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+    return json;
+}
 
 export const useEquipe = (session, predioId) => {
-    const [equipe, setEquipe] = useState(cacheStorage.equipe[predioId] || []);
-    const [perfis, setPerfis] = useState(cacheStorage.perfis[predioId] || []);
-    const [modulos, setModulos] = useState(cacheStorage.modulos[predioId] || []);
-    const [loading, setLoading] = useState(false);
+    const queryClient = useQueryClient();
+    const token = session?.access_token;
+    const userId = session?.user?.id;
 
-    const getHeaders = useCallback(() => ({
+    const getHeaders = () => ({
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
+        'Authorization': `Bearer ${token}`,
         'x-predio-id': predioId || ''
-    }), [session, predioId]);
+    });
 
-    const carregarDados = useCallback(async (forcarAtualizacao = false) => {
-        if (!predioId) return;
-        if (!forcarAtualizacao && cacheStorage.equipe[predioId]) {
-            return;
-        }
+    const base = import.meta.env.VITE_API_URL;
 
-        setLoading(true);
-        try {
-            const [resEquipe, resPerfis, resModulos] = await Promise.all([
-                fetch(`${import.meta.env.VITE_API_URL}/api/equipe`, { headers: getHeaders() }),
-                fetch(`${import.meta.env.VITE_API_URL}/api/equipe/perfis`, { headers: getHeaders() }),
-                fetch(`${import.meta.env.VITE_API_URL}/api/equipe/modulos`, { headers: getHeaders() })
-            ]);
+    const { data: equipe = [], isLoading: loadEquipe, error: errorEquipe } = useQuery({
+        queryKey: ['equipe', predioId, userId],
+        queryFn: async () => {
+            const res = await fetch(`${base}/api/equipe`, { headers: getHeaders() });
+            return parseResponse(res);
+        },
+        enabled: !!predioId && !!userId
+    });
 
-            if (resEquipe.ok && resPerfis.ok && resModulos.ok) {
-                const dataEquipe = await resEquipe.json();
-                const dataPerfis = await resPerfis.json();
-                const dataModulos = await resModulos.json();
-                cacheStorage.equipe[predioId] = dataEquipe;
-                cacheStorage.perfis[predioId] = dataPerfis;
-                cacheStorage.modulos[predioId] = dataModulos;
-                setEquipe(dataEquipe);
-                setPerfis(dataPerfis);
-                setModulos(dataModulos);
-            }
-        } catch (err) {
-            console.error("Erro fatal ao carregar equipe:", err);
-        } finally {
-            setLoading(false);
-        }
-    }, [predioId, getHeaders]);
+    const { data: perfis = [], isLoading: loadPerfis } = useQuery({
+        queryKey: ['equipe_perfis', predioId, userId],
+        queryFn: async () => {
+            const res = await fetch(`${base}/api/equipe/perfis`, { headers: getHeaders() });
+            return parseResponse(res);
+        },
+        enabled: !!predioId && !!userId,
+        staleTime: 5 * 60 * 1000 // perfis mudam raramente — cache de 5min
+    });
 
-    const atualizarMembro = async (dados) => {
-        try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/equipe/membro`, {
+    const { data: modulos = [], isLoading: loadModulos } = useQuery({
+        queryKey: ['equipe_modulos', predioId, userId],
+        queryFn: async () => {
+            const res = await fetch(`${base}/api/equipe/modulos`, { headers: getHeaders() });
+            return parseResponse(res);
+        },
+        enabled: !!predioId && !!userId,
+        staleTime: 10 * 60 * 1000 // módulos raramente mudam — cache de 10min
+    });
+
+    const loading = loadEquipe || loadPerfis || loadModulos;
+    const error = errorEquipe?.message || null;
+
+    const invalidarEquipe = () => queryClient.invalidateQueries({ queryKey: ['equipe', predioId] });
+
+    const atualizarMutation = useMutation({
+        mutationFn: async (dados) => {
+            const res = await fetch(`${base}/api/equipe/membro`, {
                 method: 'PUT',
                 headers: getHeaders(),
                 body: JSON.stringify(dados)
             });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error);
+            return parseResponse(res);
+        },
+        onSuccess: invalidarEquipe
+    });
 
-            await carregarDados(true);
-            return { success: true };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
-    };
-
-    const convidarMembro = async (dados) => {
-        try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/equipe/convidar`, {
+    const convidarMutation = useMutation({
+        mutationFn: async (dados) => {
+            const res = await fetch(`${base}/api/equipe/convidar`, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(dados)
             });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error);
-
-            await carregarDados(true);
-            return { success: true };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
-    };
+            return parseResponse(res);
+        },
+        onSuccess: invalidarEquipe
+    });
 
     return {
-        equipe, perfis, modulos, loading,
-        carregarDados, atualizarMembro, convidarMembro
+        equipe,
+        perfis,
+        modulos,
+        loading,
+        error,
+        carregarDados: () => invalidarEquipe(),
+        // Mutações relançam erro — o componente trata via toast
+        atualizarMembro: (dados) => atualizarMutation.mutateAsync(dados),
+        convidarMembro:  (dados) => convidarMutation.mutateAsync(dados),
     };
 };

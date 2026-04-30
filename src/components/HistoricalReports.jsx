@@ -8,7 +8,7 @@ import { usePredio } from '../contexts/PredioContext';
 
 const COLORS = ['#3b82f6', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#06b6d4', '#ec4899'];
 const DAYS_OPTIONS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const PERIOD_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
+import { PERIOD_OPTIONS } from '../../backend_core/utils/timeHelpers';
 
 class LocalErrorBoundary extends Component {
     constructor(props) { super(props); this.state = { hasError: false, errorMsg: '' }; }
@@ -40,7 +40,7 @@ function HistoricalReportsCore({ session, acesso }) {
     const [sortOrder, setSortOrder] = useState('alpha');
 
     const [activeDays, setActiveDays] = useState(new Set(DAYS_OPTIONS));
-    const [activePers, setActivePers] = useState(new Set(PERIOD_OPTIONS));
+    const [activePers, setActivePers] = useState(new Set(PERIOD_OPTIONS.map(p => p.code)));
     const [activeRooms, setActiveRooms] = useState(new Set());
 
     const formatRoomName = (rawName) => {
@@ -166,9 +166,9 @@ function HistoricalReportsCore({ session, acesso }) {
         baseFiltrada.forEach(item => {
             curvaMap[item.periodo] = (curvaMap[item.periodo] || 0) + 1;
         });
-        const curvaHorario = PERIOD_OPTIONS.filter(p => activePers.has(p)).map(p => ({
-            horario: p,
-            salasOcupadas: curvaMap[p] || 0
+        const curvaHorario = PERIOD_OPTIONS.filter(p => activePers.has(p.code)).map(p => ({
+            horario: p.code,
+            salasOcupadas: curvaMap[p.code] || 0
         }));
 
         let manha = 0, tarde = 0, noite = 0;
@@ -186,7 +186,7 @@ function HistoricalReportsCore({ session, acesso }) {
         const heatmap = [];
         DAYS_OPTIONS.forEach(d => {
             const row = { dia: d };
-            PERIOD_OPTIONS.forEach(p => row[p] = 0);
+            PERIOD_OPTIONS.forEach(p => row[p.code] = 0);
             heatmap.push(row);
         });
         baseFiltrada.forEach(item => {
@@ -274,9 +274,9 @@ function HistoricalReportsCore({ session, acesso }) {
                         <label className="ms-lbl">Janela de Períodos</label>
                         <div className="day-flt" style={{ flexWrap: 'wrap', maxHeight: '80px', overflowY: 'auto' }}>
                             {PERIOD_OPTIONS.map(p => (
-                                <label key={p} className={`dcb ${activePers.has(p) ? 'on' : ''}`}>
-                                    <input type="checkbox" checked={activePers.has(p)} onChange={() => toggleFilter(activePers, p, setActivePers)} />
-                                    {p}
+                                <label key={p.code} className={`dcb ${activePers.has(p.code) ? 'on' : ''}`}>
+                                    <input type="checkbox" checked={activePers.has(p.code)} onChange={() => toggleFilter(activePers, p.code, setActivePers)} />
+                                    {p.code}
                                 </label>
                             ))}
                         </div>
@@ -420,20 +420,20 @@ function HistoricalReportsCore({ session, acesso }) {
                                 </thead>
                                 <tbody>
                                     {PERIOD_OPTIONS.map(p => {
-                                        if (!activePers.has(p)) return null;
+                                        if (!activePers.has(p.code)) return null;
                                         const totalSalas = activeRooms.size || 1;
                                         return (
-                                            <tr key={`tr-${p}`}>
-                                                <td style={{ padding: '10px', color: 'var(--muted)', fontWeight: 'bold', borderBottom: '1px solid var(--border)' }}>{p}</td>
+                                            <tr key={`tr-${p.code}`}>
+                                                <td style={{ padding: '10px', color: 'var(--muted)', fontWeight: 'bold', borderBottom: '1px solid var(--border)' }}>{p.code}</td>
                                                 {DAYS_OPTIONS.map(d => {
                                                     if (!activeDays.has(d)) return null;
 
                                                     const diaData = reportData.dinamico.heatmap.find(h => h.dia === d);
-                                                    const qtdSalasOcupadas = diaData ? (diaData[p] || 0) : 0;
+                                                    const qtdSalasOcupadas = diaData ? (diaData[p.code] || 0) : 0;
                                                     const intensity = Math.min(qtdSalasOcupadas / totalSalas, 1);
 
                                                     return (
-                                                        <td key={`td-${p}-${d}`} style={{
+                                                        <td key={`td-${p.code}-${d}`} style={{
                                                             padding: '10px', textAlign: 'center', borderBottom: '1px solid var(--border)',
                                                             background: `rgba(59, 130, 246, ${intensity * 0.8})`
                                                         }}>

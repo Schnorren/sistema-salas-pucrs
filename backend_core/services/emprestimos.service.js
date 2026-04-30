@@ -124,7 +124,6 @@ class EmprestimosService {
             .eq('id', itemId);
 
         if (error) {
-            console.error("Erro ao atualizar status do item no banco:", error);
             throw new Error("Erro ao atualizar status do item.");
         }
 

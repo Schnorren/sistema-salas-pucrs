@@ -12,11 +12,9 @@ class GradeService {
         const cacheKey = predio_id ? String(predio_id) : 'GLOBAL';
 
         if (gradeCacheMap[cacheKey] && gradeCacheMap[cacheKey].length > 0) {
-            console.log(`- Usando cache para o prédio: ${cacheKey}`);
             return gradeCacheMap[cacheKey];
         }
 
-        console.log(`- Cache vazio ou inválido. Buscando no DB para o prédio: ${cacheKey}`);
         const data = await gradeRepository.buscarGradeCompleta(predio_id);
 
         gradeCacheMap[cacheKey] = Array.isArray(data) ? data : [];
@@ -114,7 +112,6 @@ class GradeService {
                 andares: andares.filter(a => a.salas.length > 0)
             };
         } catch (error) {
-            console.error("❌ [API Error - Planta ao Vivo]:", error);
             throw error;
         }
     }
@@ -152,7 +149,6 @@ class GradeService {
     
     async gerarEPublicarIndexEstatico(predio_id) {
         try {
-            console.log(`[Cache] Gerando Super Index Estático para o prédio: ${predio_id}`);
             const [gradeBruta, salasDb] = await Promise.all([
                 gradeRepository.buscarGradeCompleta(predio_id),
                 gradeRepository.buscarSalas(predio_id)
@@ -166,7 +162,7 @@ class GradeService {
 
             const jsonString = JSON.stringify(superIndex);
             const fileName = `grade_predio_${predio_id}.json`;
-            const { data, error } = await supabase
+            const { error } = await supabase
                 .storage
                 .from('grades')
                 .upload(fileName, jsonString, {
@@ -175,10 +171,8 @@ class GradeService {
                 });
 
             if (error) throw error;
-            console.log(`✅ [Cache] Super Index publicado com sucesso: ${fileName}`);
             return true;
         } catch (error) {
-            console.error("❌ [Cache] Erro ao publicar index estático:", error.message);
             return false;
         }
     }
@@ -273,8 +267,7 @@ class GradeService {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error("❌ Erro do Python (RAW):", errorText);
-            throw new Error(`Erro na extração PDF: ${response.status} - ${response.statusText}`);
+            throw new Error(`Erro na extração PDF: ${response.status} - ${errorText || response.statusText}`);
         }
         
         return await response.json();

@@ -17,17 +17,18 @@ export default function SeletorPredio({ acesso }) {
                 .from('predios')
                 .select('id, nome')
                 .order('nome');
-                
+
             if (data && !error) {
                 setListaPredios(data);
-                if (!predioAtivo && data.length > 0) {
-                    setPredioAtivo(data[0].id);
-                }
+                // Só define o prédio padrão uma vez — não inclui predioAtivo nas deps
+                // para evitar loop: setPredioAtivo → predioAtivo muda → effect roda → setPredioAtivo...
+                setPredioAtivo(prev => prev || (data.length > 0 ? data[0].id : null));
             }
         };
 
         fetchPredios();
-    }, [acesso, predioAtivo, setPredioAtivo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [acesso]); // predioAtivo e setPredioAtivo intencionalmente excluídos para evitar loop
 
     if (!acesso.isGlobal) {
         return <span className="seletor-estatico"> · {acesso.predioNome}</span>;
