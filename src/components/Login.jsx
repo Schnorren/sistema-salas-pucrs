@@ -19,7 +19,7 @@ export default function Login() {
   return (
     <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0ede8' }}>
       <div style={{ background: '#fff', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' }}>
-        <h2 style={{ textAlign: 'center', color: '#1c2b4a', marginBottom: '24px' }}>PUCRS · Prédio 15</h2>
+        <h2 style={{ textAlign: 'center', color: '#1c2b4a', marginBottom: '24px' }}>PUCRS · Sistema de Salas</h2>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <input 
             type="email" 
