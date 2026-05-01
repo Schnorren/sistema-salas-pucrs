@@ -109,9 +109,18 @@ export default function Dashboard({ session }) {
   const predioId = predioAtivo || acesso?.predioId || '';
   const userId = session?.user?.id;
 
-  // Badges — lê do cache do TanStack Query sem fetch adicional
-  const avisosCache = queryClient.getQueryData(['avisos', predioId, userId]);
-  const trocasCache = queryClient.getQueryData(['trocas_sala', predioId]);
+  // Badges — usa useQuery com staleTime infinito para leitura reativa do cache
+  // sem disparar novo fetch (os dados já são mantidos pelos hooks MuralAvisos e Timeline)
+  const { data: avisosCache } = useQuery({
+    queryKey: ['avisos', predioId, userId],
+    enabled: false, // nunca faz fetch — só lê o que já está no cache
+    staleTime: Infinity,
+  });
+  const { data: trocasCache } = useQuery({
+    queryKey: ['trocas_sala', predioId],
+    enabled: false,
+    staleTime: Infinity,
+  });
   const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
   const totalTrocasHoje = trocasCache ? Object.keys(trocasCache).length : 0;
 
