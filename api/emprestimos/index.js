@@ -102,7 +102,6 @@ async function handler(req, res) {
             
             return res.status(200).json({ success: true, message: "Status do item atualizado." });
         } catch (error) {
-            console.error("❌ [API Error - Manutenção]:", error.message);
             return res.status(400).json({ error: error.message });
         }
     }

@@ -90,7 +90,6 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
 
             toast.success('PDF exportado com sucesso!');
         } catch (error) {
-            console.error('Erro ao gerar PDF:', error);
             toast.error('Ocorreu um erro ao gerar o PDF.');
         } finally {
             setGerandoPdf(false);

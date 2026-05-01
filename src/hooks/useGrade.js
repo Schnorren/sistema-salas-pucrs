@@ -30,7 +30,6 @@ export const useGrade = (predioId) => {
             setDados(json);
             setError(null);
         } catch (err) {
-            console.error("Erro ao baixar grade estática:", err);
             setError(err.message);
         } finally {
             setLoading(false);

@@ -214,7 +214,6 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
 
       return { periodosCabecalho, timeline };
     } catch (err) {
-      console.error('Erro ao processar grade:', err);
       return null;
     }
   }, [rawGradeData, day, tick]);

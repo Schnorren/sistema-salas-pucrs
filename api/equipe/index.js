@@ -54,7 +54,6 @@ async function handler(req, res) {
             if (error) throw error;
             return res.status(200).json(data);
         } catch (error) {
-            console.error("❌ [API Equipe - Módulos]:", error.message);
             return res.status(400).json({ error: error.message });
         }
     }

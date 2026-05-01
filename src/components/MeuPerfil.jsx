@@ -45,7 +45,6 @@ export default function MeuPerfil({ session, onClose }) {
             }, 1200);
 
         } catch (error) {
-            console.error("Erro ao atualizar perfil:", error);
             setMensagem({ tipo: 'erro', texto: error.message || 'Erro ao atualizar os dados.' });
             setLoading(false);
         }
