@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_END_TIMES, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, PERIOD_END_TIMES, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -13,7 +13,21 @@ export default function FreeRooms({ session, acesso }) {
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(DAYS_PT[new Date().getDay()] || 'Segunda');
+  const [day, setDay] = useState(getDiaAtual());
+
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      const agora = new Date();
+      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
+      if (PERIOD_TIMES.includes(horaStr)) {
+        setDay(prev => {
+          const hoje = getDiaAtual();
+          return prev !== hoje ? hoje : prev;
+        });
+      }
+    }, 60000);
+    return () => clearInterval(intervalo);
+  }, []);
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return [];
 
