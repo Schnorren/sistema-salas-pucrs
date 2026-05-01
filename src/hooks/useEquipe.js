@@ -81,6 +81,18 @@ export const useEquipe = (session, predioId) => {
         onSuccess: invalidarEquipe
     });
 
+    const removerMutation = useMutation({
+        mutationFn: async (email) => {
+            const res = await fetch(`${base}/api/equipe/membro`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+                body: JSON.stringify({ email })
+            });
+            return parseResponse(res);
+        },
+        onSuccess: invalidarEquipe
+    });
+
     return {
         equipe,
         perfis,
@@ -91,5 +103,6 @@ export const useEquipe = (session, predioId) => {
         // Mutações relançam erro — o componente trata via toast
         atualizarMembro: (dados) => atualizarMutation.mutateAsync(dados),
         convidarMembro:  (dados) => convidarMutation.mutateAsync(dados),
+        removerMembro:   (email) => removerMutation.mutateAsync(email),
     };
 };
