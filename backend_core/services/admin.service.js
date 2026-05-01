@@ -54,8 +54,21 @@ class AdminService {
     }
 
     async listarUsuarios() {
-        const { data: authData, error: authError } = await supabase.auth.admin.listUsers();
-        if (authError) throw new Error(`Erro Auth: ${authError.message}`);
+        // Supabase Auth trunca em 1000 sem paginação — busca todas as páginas
+        let allUsers = [];
+        let page = 1;
+        const perPage = 1000;
+
+        while (true) {
+            const { data: authData, error: authError } = await supabase.auth.admin.listUsers({
+                page,
+                perPage
+            });
+            if (authError) throw new Error(`Erro Auth: ${authError.message}`);
+            allUsers = allUsers.concat(authData.users || []);
+            if ((authData.users || []).length < perPage) break;
+            page++;
+        }
 
         const { data: accessData, error: accessError } = await supabase
             .from('usuarios_acessos')
@@ -63,7 +76,7 @@ class AdminService {
 
         if (accessError) throw new Error(`Erro Acessos: ${accessError.message}`);
 
-        return authData.users.map(authUser => {
+        return allUsers.map(authUser => {
             const acesso = accessData.find(a => a.user_id === authUser.id) || {};
             return {
                 id: authUser.id,
