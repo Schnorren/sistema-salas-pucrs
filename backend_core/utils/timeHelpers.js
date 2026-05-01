@@ -24,6 +24,13 @@ export const PERIOD_TIMES = PERIODS.map(p => p.lb);
 // Array de { code, lb } — útil para selects e cabeçalhos
 export const PERIOD_OPTIONS = PERIODS.map(p => ({ code: p.code, lb: p.lb }));
 
+// Mapa de código → horário de fim — derivado do array PERIODS (fonte única)
+export const PERIOD_END_TIMES = PERIODS.reduce((acc, p) => {
+  const [h, m] = p.end;
+  acc[p.code] = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return acc;
+}, {});
+
 const pad = (n) => String(n).padStart(2, '0');
 
 export const extractPeriodCode = (s) => (s || '').split(' ')[0];

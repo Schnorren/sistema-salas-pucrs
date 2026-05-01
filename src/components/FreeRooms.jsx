@@ -1,15 +1,12 @@
 import { useState, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_END_TIMES, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const PERIOD_END_TIMES = {
-  'A': '08:45', 'B': '09:30', 'C': '10:30', 'D': '11:15', 'E': '12:15', 'E1': '13:00',
-  'F': '14:45', 'G': '15:30', 'H': '16:30', 'I': '17:15', 'J': '18:15', 'K': '19:00',
-  'L': '20:00', 'M': '20:45', 'N': '21:45', 'P': '22:30'
-};
+
+const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
 
 export default function FreeRooms({ session, acesso }) {
   const { predioAtivo } = usePredio();
