@@ -36,11 +36,15 @@ class ErrorBoundary extends Component {
 
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
+import { useUI } from '../contexts/UIContext';
 import { supabase } from '../supabase';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
   const { predioAtivo } = usePredio();
+  const { toast } = useUI();
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState('map');
   const [showAdminMenu, setShowAdminMenu] = useState(false);
@@ -101,6 +105,37 @@ export default function Dashboard({ session }) {
   }, []);
 
   const [timelineSearch, setTimelineSearch] = useState({ day: null, filtro: '' });
+
+  const predioId = predioAtivo || acesso?.predioId || '';
+  const userId = session?.user?.id;
+
+  // Badges — lê do cache do TanStack Query sem fetch adicional
+  const avisosCache = queryClient.getQueryData(['avisos', predioId, userId]);
+  const trocasCache = queryClient.getQueryData(['trocas_sala', predioId]);
+  const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
+  const totalTrocasHoje = trocasCache ? Object.keys(trocasCache).length : 0;
+
+  // Notificação de aviso urgente em qualquer aba
+  useEffect(() => {
+    if (!predioId) return;
+
+    const channel = supabase
+      .channel(`dashboard_avisos_urgentes_${predioId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'avisos',
+        filter: `predio_id=eq.${predioId}`
+      }, (payload) => {
+        const novoAviso = payload.new;
+        if (novoAviso?.prioridade === 'ALTA' || novoAviso?.tipo === 'CHAVE') {
+          toast.warning(`🔔 Novo aviso urgente: ${novoAviso.titulo || 'Aviso de chave'}`);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [predioId]);
 
   const handleSelectResult = (result) => {
     setShowDropdown(false);
@@ -225,11 +260,25 @@ export default function Dashboard({ session }) {
       <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
           <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
-          <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>Linha do Tempo</div>
+          <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
+            Linha do Tempo
+            {totalTrocasHoje > 0 && (
+              <span style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                {totalTrocasHoje}
+              </span>
+            )}
+          </div>
           <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
 
           {canViewAvisos && (
-            <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>Mural de Avisos</div>
+            <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>
+              Mural de Avisos
+              {totalAvisosPendentes > 0 && (
+                <span style={{ marginLeft: '6px', background: '#dc2626', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                  {totalAvisosPendentes}
+                </span>
+              )}
+            </div>
           )}
 
           {canViewEmprestimos && (

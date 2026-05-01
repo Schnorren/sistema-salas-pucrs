@@ -93,6 +93,13 @@ export const useAvisos = (session, acesso) => {
         avisos,
         loading,
         error: error?.message || null,
+        // Contagens para badges no Dashboard
+        totalAvisosPendentes: (avisos.chaves?.length || 0) + (avisos.gerais?.length || 0),
+        // Estados de loading das mutações para desabilitar botões
+        isCriando:   criarMutation.isPending,
+        isConcluindo: concluirMutation.isPending,
+        isComentando: comentarMutation.isPending,
+        isExcluindo:  excluirMutation.isPending,
         // Mutações relançam erro — o componente trata via toast
         criarAviso:         (dados) => criarMutation.mutateAsync(dados),
         concluirAviso:      (id, observacao) => concluirMutation.mutateAsync({ id, observacao }),
