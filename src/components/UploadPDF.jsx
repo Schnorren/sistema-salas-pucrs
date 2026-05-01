@@ -11,6 +11,14 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
         const file = e.target.files[0];
         if (!file) return;
 
+        // Validação de tipo antes de enviar — alguns browsers ignoram o atributo accept
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'pdf') {
+            setMessage('Erro: apenas arquivos .pdf são aceitos.');
+            e.target.value = null;
+            return;
+        }
+
         const idParaUpload = predioAtivo || acesso?.predioId;
         if (!idParaUpload) {
             setMessage('Erro: Selecione um prédio no menu superior antes de fazer o upload.');
