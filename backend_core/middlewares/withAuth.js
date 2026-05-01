@@ -79,6 +79,7 @@ export const withAuth = (handler, moduloRequisitado = null) => {
 
             req.user = {
                 id: user.id,
+                email: user.email,
                 predio_id: predioAtivo,
                 permissoes: permissoesUser
             };
