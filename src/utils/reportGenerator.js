@@ -179,11 +179,12 @@ export const generateSingleReportPDF = (reportData, sortedRoomsArray, activeDays
   executePrint(html);
 };
 
-export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
+export const generateHeatmapPDF = (stats, activeDays) => {
   if (!stats || !stats.heatmap || stats.heatmap.length === 0) return;
 
-  const dias = activeDays instanceof Set ? [...activeDays] : activeDays;
-  const periodos = stats.periodos || [];
+  // activeDays pode ser Set ou Array — normaliza
+  const dias = activeDays instanceof Set ? [...activeDays] : (activeDays || []);
+  const maxVal = stats.mxCount || 1;
 
   const html = `
     <!DOCTYPE html>
@@ -193,10 +194,15 @@ export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
       <title>Heatmap de Ocupação Semanal</title>
       <style>
         ${SHARED_STYLES}
-        table { width: 100%; border-collapse: collapse; font-size: 10px; }
-        th { background: #0f172a; color: #fff; padding: 8px 6px; text-align: center; font-weight: 700; }
-        td { padding: 7px 5px; text-align: center; border: 1px solid #e2e8f0; font-weight: 600; }
-        .dia-col { font-weight: 700; color: #334155; text-align: left; padding-left: 10px; }
+        .summary { display: flex; gap: 20px; margin: 16px 0; }
+        .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 20px; flex: 1; text-align: center; }
+        .kpi-val { font-size: 26px; font-weight: 900; color: #0f172a; }
+        .kpi-lbl { font-size: 11px; color: #64748b; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 16px; }
+        th { background: #0f172a; color: #fff; padding: 10px 8px; text-align: center; font-weight: 700; }
+        td { padding: 8px 6px; text-align: center; border: 1px solid #e2e8f0; font-weight: 600; }
+        .sala-col { font-weight: 700; color: #334155; text-align: left; padding-left: 10px; min-width: 60px; }
+        .total-col { background: #f1f5f9; font-weight: 800; }
       </style>
     </head>
     <body>
@@ -204,29 +210,38 @@ export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
         <h1>Heatmap de Ocupação Semanal</h1>
         <div class="gen-date">Exportado em: ${new Date().toLocaleString('pt-BR')}</div>
       </div>
+      <div class="summary">
+        <div class="kpi"><div class="kpi-val">${stats.percGeral}%</div><div class="kpi-lbl">Taxa de Ocupação Global</div></div>
+        <div class="kpi"><div class="kpi-val">${stats.totalOccupied}</div><div class="kpi-lbl">Slots Ocupados</div></div>
+        <div class="kpi"><div class="kpi-val">${stats.heatmap.length}</div><div class="kpi-lbl">Salas Analisadas</div></div>
+      </div>
       <table>
         <thead>
           <tr>
-            <th>Dia</th>
-            ${periodos.map(p => `<th>${p}</th>`).join('')}
+            <th>Sala</th>
+            ${dias.map(d => `<th>${d}</th>`).join('')}
+            <th>Total</th>
+            <th>Ocup.%</th>
           </tr>
         </thead>
         <tbody>
-          ${stats.heatmap.filter(row => dias.includes(row.dia)).map(row => `
+          ${stats.heatmap.map(row => `
             <tr>
-              <td class="dia-col">${row.dia}</td>
-              ${periodos.map(p => {
-                const val = row[p] || 0;
-                const intensity = Math.min(val / (stats.maxValor || 1), 1);
-                const bg = `rgba(59,130,246,${(intensity * 0.8).toFixed(2)})`;
-                const color = intensity > 0.4 ? '#fff' : '#0f172a';
-                return `<td style="background:${bg};color:${color}">${val > 0 ? val : '-'}</td>`;
+              <td class="sala-col">${row.sala}</td>
+              ${dias.map(dia => {
+                const val = (row.contagemPorDia && row.contagemPorDia[dia]) || 0;
+                const intensity = Math.min(val / maxVal, 1);
+                const bg = \`rgba(59,130,246,\${(intensity * 0.75).toFixed(2)})\`;
+                const color = intensity > 0.45 ? '#fff' : '#0f172a';
+                return \`<td style="background:\${bg};color:\${color}">\${val > 0 ? val : '-'}</td>\`;
               }).join('')}
+              <td class="total-col">${row.totalSala}</td>
+              <td class="total-col">${row.percSala}%</td>
             </tr>
           `).join('')}
         </tbody>
       </table>
-      <div class="footer-note">Valores representam número de salas ocupadas por período.</div>
+      <div class="footer-note">Valores: número de slots ocupados por sala/dia nos filtros ativos.</div>
     </body>
     </html>
   `;
