@@ -50,8 +50,9 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                     'x-predio-id': currentPredioId
                 }
             });
-            if (!res.ok) throw new Error(`Erro do servidor: ${res.status}`);
-            return res.json();
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+            return json;
         },
         enabled: !!currentPredioId && !!filtroInicio && !!filtroFim,
         staleTime: 1000 * 60 * 2
