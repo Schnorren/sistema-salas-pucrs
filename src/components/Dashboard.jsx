@@ -144,7 +144,7 @@ export default function Dashboard({ session }) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [predioId]);
+  }, [predioId, toast]);
 
   const handleSelectResult = (result) => {
     setShowDropdown(false);
