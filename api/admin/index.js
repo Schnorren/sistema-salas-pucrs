@@ -75,6 +75,25 @@ async function handler(req, res) {
         }
     }
 
+    if (req.method === 'DELETE') {
+        try {
+            if (endpoint === 'predios') {
+                const { id } = req.body;
+                if (!id) return res.status(400).json({ error: 'ID é obrigatório.' });
+                await service.deletarPredio(id);
+                return res.status(200).json({ success: true });
+            }
+            if (endpoint === 'perfis') {
+                const { id } = req.body;
+                if (!id) return res.status(400).json({ error: 'ID é obrigatório.' });
+                await service.deletarPerfil(id);
+                return res.status(200).json({ success: true });
+            }
+        } catch (error) {
+            return res.status(400).json({ error: error.message });
+        }
+    }
+
     return res.status(404).json({ error: 'Endpoint não encontrado no módulo Administrativo.' });
 }
 

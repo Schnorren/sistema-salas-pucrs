@@ -43,7 +43,15 @@ class AdminService {
         return data;
     }
 
-    async listarModulos() {
+    async deletarPredio(id) {
+        const { error } = await supabase.from('predios').delete().eq('id', id);
+        if (error) throw new Error(`Erro ao deletar prédio: ${error.message}`);
+    }
+
+    async deletarPerfil(id) {
+        const { error } = await supabase.from('perfis').delete().eq('id', id);
+        if (error) throw new Error(`Erro ao deletar perfil: ${error.message}`);
+    }
         const { data, error } = await supabase
             .from('sistema_modulos')
             .select('id, nome, descricao')
