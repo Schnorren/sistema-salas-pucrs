@@ -38,13 +38,12 @@ import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { supabase } from '../supabase';
-import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
   const { predioAtivo } = usePredio();
   const { toast } = useUI();
-  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState('map');
   const [showAdminMenu, setShowAdminMenu] = useState(false);
