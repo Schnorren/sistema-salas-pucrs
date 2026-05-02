@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
 import { usePredio } from '../contexts/PredioContext';
 
-export default function SeletorPredio({ acesso }) {
+export default function SeletorPredio({ acesso, session }) {
     const [listaPredios, setListaPredios] = useState([]);
     const { predioAtivo, setPredioAtivo } = usePredio();
 
@@ -13,16 +12,17 @@ export default function SeletorPredio({ acesso }) {
         }
 
         const fetchPredios = async () => {
-            const { data, error } = await supabase
-                .from('predios')
-                .select('id, nome')
-                .order('nome');
-
-            if (data && !error) {
+            // Usa a API autenticada em vez do Supabase direto com anon key
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/predios`, {
+                headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
                 setListaPredios(data);
-                // Só define o prédio padrão uma vez — não inclui predioAtivo nas deps
-                // para evitar loop: setPredioAtivo → predioAtivo muda → effect roda → setPredioAtivo...
-                setPredioAtivo(prev => prev || (data.length > 0 ? data[0].id : null));
+                setPredioAtivo(prev => prev || data[0].id);
             }
         };
 
@@ -37,14 +37,14 @@ export default function SeletorPredio({ acesso }) {
     return (
         <span className="seletor-interativo" style={{ marginLeft: '8px' }}>
              · 
-            <select 
-                value={predioAtivo || ''} 
+            <select
+                value={predioAtivo || ''}
                 onChange={(e) => setPredioAtivo(e.target.value)}
-                style={{ 
-                    background: 'rgba(255, 255, 255, 0.1)', 
-                    color: 'inherit', 
-                    border: '1px solid rgba(255, 255, 255, 0.3)', 
-                    borderRadius: '4px', 
+                style={{
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    color: 'inherit',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '4px',
                     padding: '2px 8px',
                     marginLeft: '8px',
                     cursor: 'pointer'

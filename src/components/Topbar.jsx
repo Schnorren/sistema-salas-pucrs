@@ -38,7 +38,7 @@ export default function Topbar({ session, acesso, onAbrirPerfil }) {
       <div className="tb-logo" style={{ display: 'flex', alignItems: 'center', gap: '16px', fontWeight: 'bold', fontSize: '18px' }}>
         <span style={{ color: '#3b82f6', letterSpacing: '1px' }}>PUCRS</span>
         <div style={{ width: '1px', height: '20px', background: 'var(--border, #334155)' }}></div>
-        <SeletorPredio acesso={acesso} /> 
+        <SeletorPredio acesso={acesso} session={session} /> 
       </div>
       <div className="tb-clock" style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary, #94a3b8)', fontSize: '14px', fontWeight: '500' }}>
         <span style={{ fontFamily: 'monospace', fontSize: '16px' }}>
