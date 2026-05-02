@@ -27,7 +27,7 @@ export default function MuralAvisos({ session, acesso }) {
 
     const {
         avisos, loading, error,
-        isConcluindo, isExcluindo,
+        isCriando, isConcluindo, isExcluindo,
         criarAviso, concluirAviso, excluirAviso, adicionarComentario
     } = useAvisos(session, acesso);
 
@@ -94,7 +94,7 @@ export default function MuralAvisos({ session, acesso }) {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Mural de Operações</h2>
-                <button onClick={() => setIsModalNovoAvisoOpen(true)} style={{
+                <button onClick={() => setIsModalNovoAvisoOpen(true)} disabled={isCriando} style={{
                     padding: '8px 16px', background: '#3b82f6', color: '#fff',
                     border: 'none', borderRadius: '8px', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
