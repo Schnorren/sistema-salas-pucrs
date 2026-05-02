@@ -18,8 +18,9 @@ export const UIProvider = ({ children }) => {
 
     const toast = {
         success: (msg) => addToast(msg, 'success'),
-        error: (msg) => addToast(msg, 'error'),
-        info: (msg) => addToast(msg, 'info')
+        error:   (msg) => addToast(msg, 'error'),
+        info:    (msg) => addToast(msg, 'info'),
+        warning: (msg) => addToast(msg, 'warning'),
     };
 
     const showConfirm = useCallback((message, title = 'Confirmação') => {
@@ -49,13 +50,14 @@ export const UIProvider = ({ children }) => {
             <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {toasts.map(t => (
                     <div key={t.id} style={{
-                        background: t.type === 'success' ? '#10b981' : t.type === 'error' ? '#ef4444' : '#3b82f6',
+                        background: t.type === 'success' ? '#10b981' : t.type === 'error' ? '#ef4444' : t.type === 'warning' ? '#f59e0b' : '#3b82f6',
                         color: '#fff', padding: '12px 20px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                         fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px',
                         animation: 'slideIn 0.3s ease-out'
                     }}>
                         {t.type === 'success' && '✅'}
                         {t.type === 'error' && '⚠️'}
+                        {t.type === 'warning' && '🔔'}
                         {t.type === 'info' && 'ℹ️'}
                         {t.message}
                     </div>
