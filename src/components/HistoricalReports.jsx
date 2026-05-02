@@ -126,6 +126,7 @@ function HistoricalReportsCore({ session, acesso }) {
                     kpis: rawData.kpis || {}
                 }
             });
+            setErrorMsg(''); // limpa erro anterior após upload bem-sucedido
 
         } catch (err) {
             setErrorMsg("Falha ao analisar arquivo: " + err.message);
