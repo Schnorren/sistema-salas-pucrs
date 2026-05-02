@@ -180,6 +180,57 @@ export const generateSingleReportPDF = (reportData, sortedRoomsArray, activeDays
 };
 
 export const generateHeatmapPDF = (stats, activeDays, activePersCount) => {
+  if (!stats || !stats.heatmap || stats.heatmap.length === 0) return;
+
+  const dias = activeDays instanceof Set ? [...activeDays] : activeDays;
+  const periodos = stats.periodos || [];
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="utf-8">
+      <title>Heatmap de Ocupação Semanal</title>
+      <style>
+        ${SHARED_STYLES}
+        table { width: 100%; border-collapse: collapse; font-size: 10px; }
+        th { background: #0f172a; color: #fff; padding: 8px 6px; text-align: center; font-weight: 700; }
+        td { padding: 7px 5px; text-align: center; border: 1px solid #e2e8f0; font-weight: 600; }
+        .dia-col { font-weight: 700; color: #334155; text-align: left; padding-left: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>Heatmap de Ocupação Semanal</h1>
+        <div class="gen-date">Exportado em: ${new Date().toLocaleString('pt-BR')}</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Dia</th>
+            ${periodos.map(p => `<th>${p}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${stats.heatmap.filter(row => dias.includes(row.dia)).map(row => `
+            <tr>
+              <td class="dia-col">${row.dia}</td>
+              ${periodos.map(p => {
+                const val = row[p] || 0;
+                const intensity = Math.min(val / (stats.maxValor || 1), 1);
+                const bg = `rgba(59,130,246,${(intensity * 0.8).toFixed(2)})`;
+                const color = intensity > 0.4 ? '#fff' : '#0f172a';
+                return `<td style="background:${bg};color:${color}">${val > 0 ? val : '-'}</td>`;
+              }).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div class="footer-note">Valores representam número de salas ocupadas por período.</div>
+    </body>
+    </html>
+  `;
+  executePrint(html);
 };
 
 const executePrint = (html) => {
