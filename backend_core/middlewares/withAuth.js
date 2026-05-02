@@ -1,10 +1,16 @@
 import supabase from '../config/supabase.js';
 
 const tokenCache = new Map();
-
 const activeAuthRequests = new Map();
-
 const TEMPO_DE_CACHE = 1000 * 60 * 5;
+
+// Remove entradas expiradas a cada 10min para evitar crescimento ilimitado da Map
+setInterval(() => {
+    const agora = Date.now();
+    for (const [key, value] of tokenCache.entries()) {
+        if (agora > value.exp) tokenCache.delete(key);
+    }
+}, 1000 * 60 * 10);
 
 async function validarEBuscarAcesso(token) {
     if (tokenCache.has(token)) {
