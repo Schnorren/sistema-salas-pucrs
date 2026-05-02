@@ -58,29 +58,32 @@ export default function AdminPanel({ session, acesso }) {
             'Authorization': `Bearer ${token}`
         };
 
+        const parseRes = async (res) => {
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+            return json;
+        };
+
         try {
             if (modal.tipo === 'novo_predio') {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/predios`, {
-                    method: 'POST',
-                    headers,
+                    method: 'POST', headers,
                     body: JSON.stringify({ nome: modal.dados.nome })
                 });
-                if (!res.ok) throw new Error('Falha ao criar prédio');
+                await parseRes(res);
             }
 
             if (modal.tipo === 'novo_perfil') {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/perfis`, {
-                    method: 'POST',
-                    headers,
+                    method: 'POST', headers,
                     body: JSON.stringify({ nome: modal.dados.nome })
                 });
-                if (!res.ok) throw new Error('Falha ao criar cargo');
+                await parseRes(res);
             }
 
             if (modal.tipo === 'editar_usuario') {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/usuarios`, {
-                    method: 'PUT',
-                    headers,
+                    method: 'PUT', headers,
                     body: JSON.stringify({
                         usuarioId: modal.dados.id,
                         nome: modal.dados.nome,
@@ -90,9 +93,10 @@ export default function AdminPanel({ session, acesso }) {
                         permissoes: modal.dados.permissoes || []
                     })
                 });
-                if (!res.ok) throw new Error('Falha ao atualizar usuário');
+                await parseRes(res);
             }
 
+            toast.success('Salvo com sucesso!');
             setModal({ aberto: false, tipo: null, dados: null });
             carregarDados();
 
