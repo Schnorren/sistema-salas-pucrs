@@ -5,6 +5,17 @@ import SeletorPredio from './SeletorPredio';
 export default function Topbar({ session, acesso, onAbrirPerfil }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
   const [time, setTime] = useState(new Date());
+  const [saindo, setSaindo] = useState(false);
+
+  const handleSignOut = async () => {
+    setSaindo(true);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setSaindo(false);
+      // Se falhar, tenta limpar a sessão localmente mesmo assim
+      await supabase.auth.signOut({ scope: 'local' });
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -85,16 +96,18 @@ export default function Topbar({ session, acesso, onAbrirPerfil }) {
         </button>
         <button 
           className="tb-btn" 
-          onClick={() => supabase.auth.signOut()} 
+          onClick={handleSignOut}
+          disabled={saindo}
           style={{ 
             background: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', 
             color: '#ef4444', padding: '6px 16px', borderRadius: '6px', 
-            fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s'
+            fontWeight: 'bold', fontSize: '13px', cursor: saindo ? 'not-allowed' : 'pointer',
+            opacity: saindo ? 0.6 : 1, transition: 'all 0.2s'
           }}
           onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.borderColor = '#ef4444'; }}
           onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'; }}
         >
-          Sair
+          {saindo ? 'Saindo...' : 'Sair'}
         </button>
 
       </div>
