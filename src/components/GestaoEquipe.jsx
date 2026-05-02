@@ -26,7 +26,7 @@ export default function GestaoEquipe({ session, acesso }) {
     const modoEdicao = !!usuarioSelecionado;
 
     useEffect(() => {
-        carregarDados(true);
+        carregarDados();
     }, [carregarDados]);
 
     useEffect(() => {
