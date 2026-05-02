@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getDiaAtual, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
 
 const normalizeText = (text) => {
   if (!text) return '';

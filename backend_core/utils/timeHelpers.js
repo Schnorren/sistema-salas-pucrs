@@ -18,6 +18,12 @@ export const PERIODS = [
   { code: 'P', lb: '21:45', start: [21, 45], end: [22, 30] },
 ];
 
+// Retorna o nome do dia atual em português
+export const getDiaAtual = () => {
+  const DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  return DAYS[new Date().getDay()] || 'Segunda';
+};
+
 // Array de horários de início dos períodos PUCRS (para comparação de relógio)
 export const PERIOD_TIMES = PERIODS.map(p => p.lb);
 

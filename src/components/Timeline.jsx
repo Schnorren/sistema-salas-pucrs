@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_TIMES, PERIOD_END_TIMES, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase'; 
@@ -11,7 +11,6 @@ const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'S
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
 // Fora do componente — funções puras sem dependência de estado
-const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
 const getDataHoje = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -753,7 +752,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
 
                     return (
                       <div
-                        key={idx}
+                        key={slot.periodo}
                         className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`} 
                         title={getTooltip()} 
                         onClick={() => handleCellClick(slot, linha.slots, linha.sala)}
