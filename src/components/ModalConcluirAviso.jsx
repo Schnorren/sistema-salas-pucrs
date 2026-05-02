@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function ModalConcluirAviso({ aviso, onClose, onConfirm }) {
+export default function ModalConcluirAviso({ aviso, onClose, onConfirm, isPending }) {
     const [obs, setObs] = useState('');
 
     const handleSubmit = (e) => {
@@ -36,8 +36,8 @@ export default function ModalConcluirAviso({ aviso, onClose, onConfirm }) {
                         <button type="button" onClick={onClose} style={{ padding: '10px 18px', border: '1px solid #475569', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', color: '#cbd5e1' }}>
                             Cancelar
                         </button>
-                        <button type="submit" style={{ padding: '10px 24px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
-                            Confirmar
+                        <button type="submit" disabled={isPending} style={{ padding: '10px 24px', background: isPending ? '#166534' : '#22c55e', color: '#fff', border: 'none', borderRadius: '6px', cursor: isPending ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
+                            {isPending ? 'Salvando...' : 'Confirmar'}
                         </button>
                     </div>
                 </form>

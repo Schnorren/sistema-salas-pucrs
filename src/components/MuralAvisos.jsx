@@ -207,8 +207,8 @@ export default function MuralAvisos({ session, acesso }) {
             </div>
 
             {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} />}
-            {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} />}
-            {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} />}
+            {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} isPending={isConcluindo} />}
+            {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} isPending={isComentando} />}
 
             {isModalHistoricoOpen && <ModalHistoricoAvisos onClose={() => setIsModalHistoricoOpen(false)} session={session} acesso={acesso} />}
         </div>
