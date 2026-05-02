@@ -38,7 +38,7 @@ import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { supabase } from '../supabase';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
