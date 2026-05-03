@@ -52,7 +52,7 @@ export const useAuthAccess = (session) => {
                     setAcesso(prev => ({ ...prev, loading: false }));
                 }
 
-            } catch (err) {
+            } catch {
                 setAcesso(prev => ({ ...prev, loading: false }));
             }
         };

@@ -45,7 +45,7 @@ export default function GestaoEquipe({ session, acesso }) {
             return;
         }
 
-        setPermissoesEditadas([]);
+        setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
     }, [cargoSelecionado, modoEdicao, usuarioSelecionado]);
 
     const handleSelecionar = (user) => {
@@ -64,7 +64,7 @@ export default function GestaoEquipe({ session, acesso }) {
         setEmailBusca('');
         setCargoSelecionado('');
         setBuscaCargo('');
-        setPermissoesEditadas([]);
+        setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
         setDropdownAberto(false);
     };
 

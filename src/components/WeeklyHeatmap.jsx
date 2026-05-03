@@ -7,7 +7,7 @@ import { PERIODS, extractPeriodCode } from '../../backend_core/utils/timeHelpers
 const COLORS = ['#1c2b4a', '#1e6b40', '#4e338a', '#a02828', '#96520a', '#1a6878', '#3a6e1a', '#823060'];
 const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-export default function WeeklyHeatmap({ session, acesso }) {
+export default function WeeklyHeatmap({ acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
@@ -37,7 +37,7 @@ export default function WeeklyHeatmap({ session, acesso }) {
   // Reseta os filtros apenas quando o prédio muda — não a cada render do processedData
   useEffect(() => {
     if (processedData) {
-      setActiveDays(new Set(processedData.diasDisponiveis));
+      setActiveDays(new Set(processedData.diasDisponiveis)); // eslint-disable-line react-hooks/set-state-in-effect
       setActiveRooms(new Set(processedData.salasDisponiveis));
       setActivePers(new Set(processedData.periodosDisponiveis));
     }

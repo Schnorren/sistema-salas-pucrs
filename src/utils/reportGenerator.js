@@ -231,9 +231,9 @@ export const generateHeatmapPDF = (stats, activeDays) => {
               ${dias.map(dia => {
                 const val = (row.contagemPorDia && row.contagemPorDia[dia]) || 0;
                 const intensity = Math.min(val / maxVal, 1);
-                const bg = \`rgba(59,130,246,\${(intensity * 0.75).toFixed(2)})\`;
-                const color = intensity > 0.45 ? '#fff' : '#0f172a';
-                return \`<td style="background:\${bg};color:\${color}">\${val > 0 ? val : '-'}</td>\`;
+                const alpha = (intensity * 0.75).toFixed(2);
+                const txtColor = intensity > 0.45 ? '#fff' : '#0f172a';
+                return '<td style="background:rgba(59,130,246,' + alpha + ');color:' + txtColor + '">' + (val > 0 ? val : '-') + '</td>';
               }).join('')}
               <td class="total-col">${row.totalSala}</td>
               <td class="total-col">${row.percSala}%</td>

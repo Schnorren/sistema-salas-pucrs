@@ -4,7 +4,6 @@ import ModalNovoAviso from './ModalNovoAviso';
 import ModalConcluirAviso from './ModalConcluirAviso';
 import ModalHistoricoAvisos from './ModalHistoricoAvisos';
 import ModalComentarAviso from './ModalComentarAviso';
-import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 
 const pillStyle = {
@@ -22,12 +21,11 @@ const prioStyle = {
 
 export default function MuralAvisos({ session, acesso }) {
     const userEmail = session?.user?.email || 'Sistema';
-    const { predioAtivo } = usePredio();
     const { showConfirm, toast } = useUI();
 
     const {
         avisos, loading, error,
-        isCriando, isConcluindo, isExcluindo,
+        isCriando, isConcluindo, isComentando, isExcluindo,
         criarAviso, concluirAviso, excluirAviso, adicionarComentario
     } = useAvisos(session, acesso);
 

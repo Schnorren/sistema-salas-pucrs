@@ -90,7 +90,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
             pdf.save(`Relatorio_Emprestimos_${new Date().getTime()}.pdf`);
 
             toast.success('PDF exportado com sucesso!');
-        } catch (error) {
+        } catch {
             toast.error('Ocorreu um erro ao gerar o PDF.');
         } finally {
             setGerandoPdf(false);

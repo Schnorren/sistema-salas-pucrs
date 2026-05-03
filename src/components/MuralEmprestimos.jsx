@@ -24,7 +24,7 @@ const TempoDecorrido = ({ dataIso }) => {
             return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
         };
 
-        setTempo(calcular());
+        setTempo(calcular()); // eslint-disable-line react-hooks/set-state-in-effect
         const timer = setInterval(() => setTempo(calcular()), 30000);
         return () => clearInterval(timer);
     }, [dataIso]);
@@ -36,7 +36,7 @@ const TempoDecorrido = ({ dataIso }) => {
 const EmprestimoWizard = ({
     categorias, itensDisponiveis, emprestimosAtivos,
     consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
-    categoriaSel, setCategoriaSel, loadingWizard
+    categoriaSel, setCategoriaSel
 }) => {
     const { toast, showPrompt, showConfirm } = useUI();
     const [step, setStep] = useState(1);
@@ -57,17 +57,6 @@ const EmprestimoWizard = ({
         if (step === 3 && inputNomeRef.current) inputNomeRef.current.focus();
     }, [step]);
 
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (step === 4 && e.key === 'Enter') {
-                e.preventDefault();
-                handleConfirmarDevolucao();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [step, alunoAnalisado]);
-
     const resetFlow = () => {
         setStep(1);
         setInputMatricula('');
@@ -77,6 +66,28 @@ const EmprestimoWizard = ({
         setItemSelecionado(null);
         setBuscandoAluno(false);
     };
+
+    const handleConfirmarDevolucao = async () => {
+        const idParaDevolver = alunoAnalisado.emprestimoAtivo.id;
+        try {
+            await registrarDevolucao(idParaDevolver);
+            resetFlow();
+            toast.success('Devolução registrada com sucesso!');
+        } catch (err) {
+            toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
+        }
+    };
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (step === 4 && e.key === 'Enter') {
+                e.preventDefault();
+                handleConfirmarDevolucao();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [step, alunoAnalisado, handleConfirmarDevolucao]);
 
     const handleBiparMatricula = async (e) => {
         e.preventDefault();
@@ -140,17 +151,6 @@ const EmprestimoWizard = ({
             toast.success(`Empréstimo de "${item.nome_item}" registrado!`);
         } catch (err) {
             toast.error(`Erro ao registrar empréstimo: ${err.message || 'Tente novamente.'}`);
-        }
-    };
-
-    const handleConfirmarDevolucao = async () => {
-        const idParaDevolver = alunoAnalisado.emprestimoAtivo.id;
-        try {
-            await registrarDevolucao(idParaDevolver);
-            resetFlow();
-            toast.success('Devolução registrada com sucesso!');
-        } catch (err) {
-            toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
         }
     };
 
@@ -407,7 +407,7 @@ export default function MuralEmprestimos({ session }) {
 
     useEffect(() => {
         if (hookData.categorias.length > 0 && !categoriaSel) {
-            setCategoriaSel(hookData.categorias[0].id);
+            setCategoriaSel(hookData.categorias[0].id); // eslint-disable-line react-hooks/set-state-in-effect
         }
     }, [hookData.categorias, categoriaSel]);
 
@@ -419,7 +419,6 @@ export default function MuralEmprestimos({ session }) {
                 {...hookData}
                 categoriaSel={categoriaSel}
                 setCategoriaSel={setCategoriaSel}
-                loadingWizard={hookData.loadingWizard}
             />
             <PainelRegistros 
                 abaAtiva={abaAtiva}

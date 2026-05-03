@@ -52,6 +52,8 @@ class AdminService {
         const { error } = await supabase.from('perfis').delete().eq('id', id);
         if (error) throw new Error(`Erro ao deletar perfil: ${error.message}`);
     }
+
+    async listarModulos() {
         const { data, error } = await supabase
             .from('sistema_modulos')
             .select('id, nome, descricao')

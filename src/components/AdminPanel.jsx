@@ -38,7 +38,7 @@ export default function AdminPanel({ session, acesso }) {
             if (resPredios.ok)  setPredios(await resPredios.json());
             if (resUsuarios.ok) setUsuarios(await resUsuarios.json());
 
-        } catch (err) {
+        } catch {
             toast.error('Erro ao carregar dados do painel administrativo.');
         } finally {
             setLoading(false);

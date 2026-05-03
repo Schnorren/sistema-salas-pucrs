@@ -12,7 +12,7 @@ const normalizeText = (text) => {
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 };
 
-export default function NextClasses({ session, acesso }) {
+export default function NextClasses({ acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);

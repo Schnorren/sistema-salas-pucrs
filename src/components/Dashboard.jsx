@@ -80,7 +80,7 @@ export default function Dashboard({ session }) {
         const data = await response.json();
         setSearchResults(data);
         setShowDropdown(true);
-      } catch (err) {
+      } catch {
         // busca silencia erros — não interrompe o fluxo do usuário
       } finally {
         setIsSearching(false);

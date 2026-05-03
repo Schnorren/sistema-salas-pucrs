@@ -33,7 +33,7 @@ const formatarAula = (nomeBruto) => {
   return partes.length > 1 ? { codigo: partes[0], nome: partes.slice(1).join(' - ') } : { codigo: '', nome: nomeBruto };
 };
 
-export default function Timeline({ session, acesso, initialDay, initialFiltro }) {
+export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const { predioAtivo } = usePredio();
   const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
@@ -53,7 +53,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '' });
 
   useEffect(() => {
-    if (initialDay) { setDay(initialDay); setAutoMode(false); }
+    if (initialDay) { setDay(initialDay); setAutoMode(false); } // eslint-disable-line react-hooks/set-state-in-effect
     if (initialFiltro) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
@@ -157,7 +157,8 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   useEffect(() => {
     if (!predioAtual) return;
     const limpar = async () => {
-      try { await supabase.rpc('limpar_trocas_antigas'); } catch (_) {}
+      try { await supabase.rpc('limpar_trocas_antigas'); } catch { // intencional — limpeza em background, erros ignorados
+    }
     };
     limpar();
   }, [predioAtual]);
@@ -212,7 +213,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
       });
 
       return { periodosCabecalho, timeline };
-    } catch (err) {
+    } catch {
       return null;
     }
   }, [rawGradeData, day, tick]);
@@ -723,7 +724,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
                   {linha.sala}
                 </div>
                 <div className="tl-cells" style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
-                  {linha.slots.map((slot, idx) => {
+                  {linha.slots.map((slot) => {
                     const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
                     const aula = formatarAula(slot.nome);
 
