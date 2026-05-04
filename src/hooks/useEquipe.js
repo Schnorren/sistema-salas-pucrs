@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 
 async function parseResponse(res) {
     const json = await res.json().catch(() => ({}));
@@ -51,7 +52,10 @@ export const useEquipe = (session, predioId) => {
     const loading = loadEquipe || loadPerfis || loadModulos;
     const error = errorEquipe?.message || null;
 
-    const invalidarEquipe = () => queryClient.invalidateQueries({ queryKey: ['equipe', predioId] });
+    const invalidarEquipe = useCallback(
+        () => queryClient.invalidateQueries({ queryKey: ['equipe', predioId] }),
+        [queryClient, predioId]
+    );
 
     const atualizarMutation = useMutation({
         mutationFn: async (dados) => {
@@ -77,15 +81,28 @@ export const useEquipe = (session, predioId) => {
         onSuccess: invalidarEquipe
     });
 
+    const removerMutation = useMutation({
+        mutationFn: async (email) => {
+            const res = await fetch(`${base}/api/equipe/membro`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+                body: JSON.stringify({ email })
+            });
+            return parseResponse(res);
+        },
+        onSuccess: invalidarEquipe
+    });
+
     return {
         equipe,
         perfis,
         modulos,
         loading,
         error,
-        carregarDados: () => invalidarEquipe(),
+        carregarDados: invalidarEquipe,
         // Mutações relançam erro — o componente trata via toast
         atualizarMembro: (dados) => atualizarMutation.mutateAsync(dados),
         convidarMembro:  (dados) => convidarMutation.mutateAsync(dados),
+        removerMembro:   (email) => removerMutation.mutateAsync(email),
     };
 };

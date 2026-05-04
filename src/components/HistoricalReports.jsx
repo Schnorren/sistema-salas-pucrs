@@ -30,7 +30,7 @@ class LocalErrorBoundary extends Component {
     }
 }
 
-function HistoricalReportsCore({ session, acesso }) {
+function HistoricalReportsCore({ acesso }) {
     const predioContext = usePredio() || {};
     const predioAtivo = predioContext.predioAtivo;
 
@@ -126,6 +126,7 @@ function HistoricalReportsCore({ session, acesso }) {
                     kpis: rawData.kpis || {}
                 }
             });
+            setErrorMsg(''); // limpa erro anterior após upload bem-sucedido
 
         } catch (err) {
             setErrorMsg("Falha ao analisar arquivo: " + err.message);
@@ -227,7 +228,6 @@ function HistoricalReportsCore({ session, acesso }) {
             ...reportData,
             data: { ...reportData.data, turnos: reportData.dinamico.turnos }
         };
-        const activeRoomsArray = allAvailableRooms.filter(r => activeRooms.has(r));
         generateSingleReportPDF(exportData, sortedRooms, Array.from(activeDays), Array.from(activePers));
     };
 

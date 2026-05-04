@@ -50,8 +50,7 @@ class GradeService {
     }
 
     async obterStatusPlanta(diaSolicitado, periodoReferencia, predio_id) {
-        try {
-            const salasDb = await gradeRepository.buscarSalas(predio_id) || [];
+        const salasDb = await gradeRepository.buscarSalas(predio_id) || [];
             const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
             const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
@@ -111,9 +110,6 @@ class GradeService {
                 },
                 andares: andares.filter(a => a.salas.length > 0)
             };
-        } catch (error) {
-            throw error;
-        }
     }
 
     async obterSalasLivres(diaSolicitado, predio_id) {

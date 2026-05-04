@@ -80,7 +80,7 @@ class EmprestimosService {
         };
     }
 
-    async registrarRetirada({ predioId, itemId, matricula, nomeAluno, documento, respRetirada }) {
+    async registrarRetirada({ itemId, matricula, nomeAluno, documento, respRetirada }) {
         if (!itemId || !matricula || !nomeAluno) {
             throw new Error("Dados obrigatórios faltando.");
         }

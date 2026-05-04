@@ -1,25 +1,32 @@
 import { useState } from 'react';
 import { usePredio } from '../contexts/PredioContext';
+import { useUI } from '../contexts/UIContext';
 
 export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState('');
-
     const { predioAtivo } = usePredio();
+    const { toast } = useUI();
 
     const handleUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
+        // Validação de tipo antes de enviar — alguns browsers ignoram o atributo accept
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'pdf') {
+            toast.error('Apenas arquivos .pdf são aceitos.');
+            e.target.value = null;
+            return;
+        }
+
         const idParaUpload = predioAtivo || acesso?.predioId;
         if (!idParaUpload) {
-            setMessage('Erro: Selecione um prédio no menu superior antes de fazer o upload.');
+            toast.error('Selecione um prédio no menu superior antes de fazer o upload.');
             e.target.value = null;
             return;
         }
 
         setLoading(true);
-        setMessage('Lendo PDF e atualizando banco de dados...');
 
         const formData = new FormData();
         formData.append('arquivo', file);
@@ -46,11 +53,11 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
                 window.__GRADE_CACHE[idParaUpload] = null;
             }
 
-            setMessage(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
+            toast.success(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
             if (onUploadSuccess) onUploadSuccess();
 
         } catch (error) {
-            setMessage(`Erro: ${error.message}`);
+            toast.error(error.message);
         } finally {
             setLoading(false);
             e.target.value = null;
@@ -80,12 +87,6 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             >
                 {loading ? 'Processando PDF...' : 'Selecionar Arquivo PDF'}
             </button>
-
-            {message && (
-                <div style={{ marginTop: '20px', fontWeight: 'bold', color: message.includes('Erro') ? 'var(--red)' : 'var(--accent)' }}>
-                    {message}
-                </div>
-            )}
         </div>
     );
 }

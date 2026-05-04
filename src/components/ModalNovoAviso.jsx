@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useUI } from '../contexts/UIContext';
+import { PERIOD_OPTIONS } from '../../backend_core/utils/timeHelpers';
 
 const inputStyle = {
     width: '100%', padding: '10px 14px',
@@ -18,7 +19,7 @@ export default function ModalNovoAviso({ onClose, onSave }) {
     const { toast } = useUI();
     const [tipo, setTipo] = useState('CHAVE');
     const [formData, setFormData] = useState({});
-    const periodosDisponiveis = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P'];
+    const periodosDisponiveis = PERIOD_OPTIONS.map(p => p.code);
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 

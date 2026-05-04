@@ -52,8 +52,7 @@ export const useAuthAccess = (session) => {
                     setAcesso(prev => ({ ...prev, loading: false }));
                 }
 
-            } catch (err) {
-                console.error('Erro ao verificar permissões:', err);
+            } catch {
                 setAcesso(prev => ({ ...prev, loading: false }));
             }
         };

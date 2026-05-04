@@ -50,8 +50,9 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                     'x-predio-id': currentPredioId
                 }
             });
-            if (!res.ok) throw new Error(`Erro do servidor: ${res.status}`);
-            return res.json();
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+            return json;
         },
         enabled: !!currentPredioId && !!filtroInicio && !!filtroFim,
         staleTime: 1000 * 60 * 2
@@ -89,8 +90,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
             pdf.save(`Relatorio_Emprestimos_${new Date().getTime()}.pdf`);
 
             toast.success('PDF exportado com sucesso!');
-        } catch (error) {
-            console.error('Erro ao gerar PDF:', error);
+        } catch {
             toast.error('Ocorreu um erro ao gerar o PDF.');
         } finally {
             setGerandoPdf(false);

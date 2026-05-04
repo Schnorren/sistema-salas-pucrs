@@ -8,8 +8,8 @@ export default function GestaoEquipe({ session, acesso }) {
     const { toast, showConfirm } = useUI();
     
     const { 
-        equipe, perfis, modulos, loading, 
-        carregarDados, atualizarMembro, convidarMembro 
+        equipe, perfis, modulos, loading, error,
+        carregarDados, atualizarMembro, convidarMembro, removerMembro
     } = useEquipe(session, predioAtivo || acesso?.predioId);
     
     const [nomeBusca, setNomeBusca] = useState('');
@@ -26,7 +26,7 @@ export default function GestaoEquipe({ session, acesso }) {
     const modoEdicao = !!usuarioSelecionado;
 
     useEffect(() => {
-        carregarDados(true);
+        carregarDados();
     }, [carregarDados]);
 
     useEffect(() => {
@@ -45,7 +45,7 @@ export default function GestaoEquipe({ session, acesso }) {
             return;
         }
 
-        setPermissoesEditadas([]);
+        setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
     }, [cargoSelecionado, modoEdicao, usuarioSelecionado]);
 
     const handleSelecionar = (user) => {
@@ -64,7 +64,7 @@ export default function GestaoEquipe({ session, acesso }) {
         setEmailBusca('');
         setCargoSelecionado('');
         setBuscaCargo('');
-        setPermissoesEditadas([]);
+        setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
         setDropdownAberto(false);
     };
 
@@ -72,6 +72,17 @@ export default function GestaoEquipe({ session, acesso }) {
         setPermissoesEditadas(prev =>
             prev.includes(modId) ? prev.filter(p => p !== modId) : [...prev, modId]
         );
+    };
+
+    const handleRemover = async (user) => {
+        const confirmacao = await showConfirm(`Deseja revogar o acesso de ${user.email} a este prédio?`, 'Revogar Acesso');
+        if (!confirmacao) return;
+        try {
+            await removerMembro(user.email);
+            toast.success('Acesso revogado com sucesso.');
+        } catch (err) {
+            toast.error('Erro ao revogar acesso: ' + err.message);
+        }
     };
 
     const handleSalvar = async () => {
@@ -281,7 +292,7 @@ export default function GestaoEquipe({ session, acesso }) {
                     </select>
                 </div>
 
-                {loading && equipe.length === 0 ? <p style={{ color: 'var(--muted)' }}>Buscando dados no servidor...</p> : (
+                {loading && equipe.length === 0 ? <p style={{ color: 'var(--muted)' }}>Buscando dados no servidor...</p> : error ? <p style={{ color: 'var(--red)' }}>⚠️ Erro ao carregar equipe: {error}</p> : (
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                             <thead>
@@ -340,6 +351,19 @@ export default function GestaoEquipe({ session, acesso }) {
                                                         }}
                                                     >
                                                         {isSelecionado ? 'Editando...' : 'Editar'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRemover(user)}
+                                                        style={{
+                                                            background: 'rgba(220,38,38,0.1)',
+                                                            color: '#f87171',
+                                                            border: '1px solid rgba(220,38,38,0.2)',
+                                                            padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px',
+                                                            transition: 'all 0.2s', marginLeft: '4px'
+                                                        }}
+                                                        title="Revogar acesso deste usuário"
+                                                    >
+                                                        🗑
                                                     </button>
                                                 </td>
                                             </tr>

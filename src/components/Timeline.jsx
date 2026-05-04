@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_TIMES, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_TIMES, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase'; 
@@ -10,10 +10,7 @@ import { useUI } from '../contexts/UIContext';
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-const PERIOD_END_TIMES = { 'A': '08:45', 'B': '09:30', 'C': '10:30', 'D': '11:15', 'E': '12:15', 'E1': '13:00', 'F': '14:45', 'G': '15:30', 'H': '16:30', 'I': '17:15', 'J': '18:15', 'K': '19:00', 'L': '20:00', 'M': '20:45', 'N': '21:45', 'P': '22:30' };
-
 // Fora do componente — funções puras sem dependência de estado
-const getDiaAtual = () => DAYS_PT[new Date().getDay()] || 'Segunda';
 const getDataHoje = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -36,7 +33,7 @@ const formatarAula = (nomeBruto) => {
   return partes.length > 1 ? { codigo: partes[0], nome: partes.slice(1).join(' - ') } : { codigo: '', nome: nomeBruto };
 };
 
-export default function Timeline({ session, acesso, initialDay, initialFiltro }) {
+export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const { predioAtivo } = usePredio();
   const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
@@ -56,7 +53,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '' });
 
   useEffect(() => {
-    if (initialDay) { setDay(initialDay); setAutoMode(false); }
+    if (initialDay) { setDay(initialDay); setAutoMode(false); } // eslint-disable-line react-hooks/set-state-in-effect
     if (initialFiltro) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
@@ -160,7 +157,8 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
   useEffect(() => {
     if (!predioAtual) return;
     const limpar = async () => {
-      try { await supabase.rpc('limpar_trocas_antigas'); } catch (_) {}
+      try { await supabase.rpc('limpar_trocas_antigas'); } catch { // intencional — limpeza em background, erros ignorados
+    }
     };
     limpar();
   }, [predioAtual]);
@@ -215,8 +213,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
       });
 
       return { periodosCabecalho, timeline };
-    } catch (err) {
-      console.error('Erro ao processar grade:', err);
+    } catch {
       return null;
     }
   }, [rawGradeData, day, tick]);
@@ -727,7 +724,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
                   {linha.sala}
                 </div>
                 <div className="tl-cells" style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
-                  {linha.slots.map((slot, idx) => {
+                  {linha.slots.map((slot) => {
                     const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
                     const aula = formatarAula(slot.nome);
 
@@ -756,7 +753,7 @@ export default function Timeline({ session, acesso, initialDay, initialFiltro })
 
                     return (
                       <div
-                        key={idx}
+                        key={slot.periodo}
                         className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`} 
                         title={getTooltip()} 
                         onClick={() => handleCellClick(slot, linha.slots, linha.sala)}

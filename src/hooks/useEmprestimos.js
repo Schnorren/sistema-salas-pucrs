@@ -119,13 +119,16 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
 
         const channel = supabase.channel(`emprestimos_${predioId}`);
 
+        // Invalida por prefixo parcial — afeta todas as queryKeys que começam com esses valores,
+        // incluindo as com userId e categoriaId como sufixo
         channel.on('postgres_changes', { event: '*', schema: 'public', table: 'emprestimo_itens' }, () => {
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId] });
+            queryClient.invalidateQueries({ queryKey: ['itens', predioId], exact: false });
+            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId], exact: false });
         });
 
         channel.on('postgres_changes', { event: '*', schema: 'public', table: 'emprestimos_registro' }, () => {
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId] });
-            queryClient.invalidateQueries({ queryKey: ['historico', predioId] });
+            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId], exact: false });
+            queryClient.invalidateQueries({ queryKey: ['historico', predioId], exact: false });
         });
 
         channel.subscribe();

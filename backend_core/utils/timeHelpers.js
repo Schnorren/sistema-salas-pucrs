@@ -18,11 +18,24 @@ export const PERIODS = [
   { code: 'P', lb: '21:45', start: [21, 45], end: [22, 30] },
 ];
 
+// Retorna o nome do dia atual em português
+export const getDiaAtual = () => {
+  const DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  return DAYS[new Date().getDay()] || 'Segunda';
+};
+
 // Array de horários de início dos períodos PUCRS (para comparação de relógio)
 export const PERIOD_TIMES = PERIODS.map(p => p.lb);
 
 // Array de { code, lb } — útil para selects e cabeçalhos
 export const PERIOD_OPTIONS = PERIODS.map(p => ({ code: p.code, lb: p.lb }));
+
+// Mapa de código → horário de fim — derivado do array PERIODS (fonte única)
+export const PERIOD_END_TIMES = PERIODS.reduce((acc, p) => {
+  const [h, m] = p.end;
+  acc[p.code] = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return acc;
+}, {});
 
 const pad = (n) => String(n).padStart(2, '0');
 

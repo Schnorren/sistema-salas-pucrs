@@ -4,7 +4,6 @@ import ModalNovoAviso from './ModalNovoAviso';
 import ModalConcluirAviso from './ModalConcluirAviso';
 import ModalHistoricoAvisos from './ModalHistoricoAvisos';
 import ModalComentarAviso from './ModalComentarAviso';
-import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 
 const pillStyle = {
@@ -22,11 +21,12 @@ const prioStyle = {
 
 export default function MuralAvisos({ session, acesso }) {
     const userEmail = session?.user?.email || 'Sistema';
-    const { predioAtivo } = usePredio();
     const { showConfirm, toast } = useUI();
 
     const {
-        avisos, loading, error, criarAviso, concluirAviso, excluirAviso, adicionarComentario
+        avisos, loading, error,
+        isCriando, isConcluindo, isComentando, isExcluindo,
+        criarAviso, concluirAviso, excluirAviso, adicionarComentario
     } = useAvisos(session, acesso);
 
     const [isModalNovoAvisoOpen, setIsModalNovoAvisoOpen] = useState(false);
@@ -92,7 +92,7 @@ export default function MuralAvisos({ session, acesso }) {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Mural de Operações</h2>
-                <button onClick={() => setIsModalNovoAvisoOpen(true)} style={{
+                <button onClick={() => setIsModalNovoAvisoOpen(true)} disabled={isCriando} style={{
                     padding: '8px 16px', background: '#3b82f6', color: '#fff',
                     border: 'none', borderRadius: '8px', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
@@ -135,8 +135,8 @@ export default function MuralAvisos({ session, acesso }) {
                                     <span style={{ ...pillStyle, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Per. {aviso.periodo}</span>
                                 </div>
 
-                                <button onClick={() => handleConcluirChaveDireto(aviso.id)} style={{ padding: '8px 16px', background: 'transparent', color: '#60a5fa', border: '1px solid #3b82f6', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseOver={e => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)' }} onMouseOut={e => { e.currentTarget.style.background = 'transparent' }}>
-                                    ✓ Entregar chave
+                                <button onClick={() => handleConcluirChaveDireto(aviso.id)} disabled={isConcluindo} style={{ padding: '8px 16px', background: 'transparent', color: isConcluindo ? '#475569' : '#60a5fa', border: `1px solid ${isConcluindo ? '#334155' : '#3b82f6'}`, borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                                    {isConcluindo ? 'Processando...' : '✓ Entregar chave'}
                                 </button>
                             </div>
                         );
@@ -170,14 +170,14 @@ export default function MuralAvisos({ session, acesso }) {
                                             {prio.charAt(0) + prio.slice(1).toLowerCase()}
                                         </span>
                                     </div>
-                                    <button onClick={() => handleExcluir(aviso.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.5} title="Excluir Permanentemente">🗑️</button>
+                                    <button onClick={() => handleExcluir(aviso.id)} disabled={isExcluindo} style={{ background: 'transparent', border: 'none', cursor: isExcluindo ? 'not-allowed' : 'pointer', opacity: isExcluindo ? 0.3 : 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => { if (!isExcluindo) e.currentTarget.style.opacity = 1 }} onMouseOut={e => { e.currentTarget.style.opacity = isExcluindo ? 0.3 : 0.5 }} title="Excluir Permanentemente">🗑️</button>
                                 </div>
 
-                                <p style={{ fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6', marginBottom: '16px', whiteSpace: 'pre-wrap', margin: '0 0 16px 0' }}>{aviso.descricao}</p>
+                                <p style={{ fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6', whiteSpace: 'pre-wrap', margin: '0 0 16px 0' }}>{aviso.descricao}</p>
 
                                 <div style={{ display: 'flex', gap: '10px' }}>
-                                    <button onClick={() => setAvisoSelecionadoParaConcluir(aviso)} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }} onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}>
-                                        ✓ Marcar resolvido
+                                    <button onClick={() => setAvisoSelecionadoParaConcluir(aviso)} disabled={isConcluindo} style={{ flex: 1, padding: '8px', background: isConcluindo ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)', color: isConcluindo ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                                        {isConcluindo ? 'Processando...' : '✓ Marcar resolvido'}
                                     </button>
                                     <button onClick={() => setAvisoSelecionadoParaComentar(aviso)} style={{ flex: 1, padding: '8px', background: 'transparent', color: '#94a3b8', border: '1px dashed #475569', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseOver={e => { e.currentTarget.style.color = '#e2e8f0'; e.currentTarget.style.borderColor = '#94a3b8' }} onMouseOut={e => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = '#475569' }}>
                                         💬 Adicionar Nota
@@ -205,8 +205,8 @@ export default function MuralAvisos({ session, acesso }) {
             </div>
 
             {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} />}
-            {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} />}
-            {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} />}
+            {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} isPending={isConcluindo} />}
+            {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} isPending={isComentando} />}
 
             {isModalHistoricoOpen && <ModalHistoricoAvisos onClose={() => setIsModalHistoricoOpen(false)} session={session} acesso={acesso} />}
         </div>

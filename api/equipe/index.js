@@ -54,7 +54,6 @@ async function handler(req, res) {
             if (error) throw error;
             return res.status(200).json(data);
         } catch (error) {
-            console.error("❌ [API Equipe - Módulos]:", error.message);
             return res.status(400).json({ error: error.message });
         }
     }
@@ -114,6 +113,36 @@ async function handler(req, res) {
             });
 
             return res.status(201).json({ success: true, message: "Convite enviado!" });
+        } catch (error) {
+            return res.status(400).json({ error: error.message });
+        }
+    }
+
+    if (req.method === 'DELETE' && caminho1 === 'membro') {
+        try {
+            if (!isGestor) return res.status(403).json({ error: 'Permissão negada.' });
+
+            const { email } = req.body;
+            if (!email) return res.status(400).json({ error: 'E-mail obrigatório.' });
+
+            const { data: usuario, error: errBusca } = await supabase
+                .from('vw_equipe_predio')
+                .select('user_id')
+                .eq('email', email)
+                .eq('predio_id', predioId)
+                .single();
+
+            if (errBusca || !usuario) return res.status(404).json({ error: 'Usuário não encontrado neste prédio.' });
+
+            const { error: errDelete } = await supabase
+                .from('usuarios_acessos')
+                .delete()
+                .eq('user_id', usuario.user_id)
+                .eq('predio_id', predioId);
+
+            if (errDelete) throw errDelete;
+
+            return res.status(200).json({ success: true });
         } catch (error) {
             return res.status(400).json({ error: error.message });
         }

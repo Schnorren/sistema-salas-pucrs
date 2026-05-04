@@ -36,11 +36,14 @@ class ErrorBoundary extends Component {
 
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
+import { useUI } from '../contexts/UIContext';
 import { supabase } from '../supabase';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
   const { predioAtivo } = usePredio();
+  const { toast } = useUI();
 
   const [activeTab, setActiveTab] = useState('map');
   const [showAdminMenu, setShowAdminMenu] = useState(false);
@@ -77,7 +80,7 @@ export default function Dashboard({ session }) {
         const data = await response.json();
         setSearchResults(data);
         setShowDropdown(true);
-      } catch (err) {
+      } catch {
         // busca silencia erros — não interrompe o fluxo do usuário
       } finally {
         setIsSearching(false);
@@ -101,6 +104,46 @@ export default function Dashboard({ session }) {
   }, []);
 
   const [timelineSearch, setTimelineSearch] = useState({ day: null, filtro: '' });
+
+  const predioId = predioAtivo || acesso?.predioId || '';
+  const userId = session?.user?.id;
+
+  // Badges — usa useQuery com staleTime infinito para leitura reativa do cache
+  // sem disparar novo fetch (os dados já são mantidos pelos hooks MuralAvisos e Timeline)
+  const { data: avisosCache } = useQuery({
+    queryKey: ['avisos', predioId, userId],
+    enabled: false, // nunca faz fetch — só lê o que já está no cache
+    staleTime: Infinity,
+  });
+  const { data: trocasCache } = useQuery({
+    queryKey: ['trocas_sala', predioId],
+    enabled: false,
+    staleTime: Infinity,
+  });
+  const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
+  const totalTrocasHoje = trocasCache ? Object.keys(trocasCache).length : 0;
+
+  // Notificação de aviso urgente em qualquer aba
+  useEffect(() => {
+    if (!predioId) return;
+
+    const channel = supabase
+      .channel(`dashboard_avisos_urgentes_${predioId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'avisos',
+        filter: `predio_id=eq.${predioId}`
+      }, (payload) => {
+        const novoAviso = payload.new;
+        if (novoAviso?.prioridade === 'ALTA' || novoAviso?.tipo === 'CHAVE') {
+          toast.warning(`🔔 Novo aviso urgente: ${novoAviso.titulo || 'Aviso de chave'}`);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [predioId, toast]);
 
   const handleSelectResult = (result) => {
     setShowDropdown(false);
@@ -225,11 +268,25 @@ export default function Dashboard({ session }) {
       <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
           <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
-          <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>Linha do Tempo</div>
+          <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
+            Linha do Tempo
+            {totalTrocasHoje > 0 && (
+              <span style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                {totalTrocasHoje}
+              </span>
+            )}
+          </div>
           <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
 
           {canViewAvisos && (
-            <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>Mural de Avisos</div>
+            <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>
+              Mural de Avisos
+              {totalAvisosPendentes > 0 && (
+                <span style={{ marginLeft: '6px', background: '#dc2626', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                  {totalAvisosPendentes}
+                </span>
+              )}
+            </div>
           )}
 
           {canViewEmprestimos && (
