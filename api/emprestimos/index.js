@@ -13,7 +13,10 @@ async function handler(req, res) {
     const caminho2 = baseIndex !== -1 && urlParts.length > baseIndex + 2 ? urlParts[baseIndex + 2] : null; 
     const caminho3 = baseIndex !== -1 && urlParts.length > baseIndex + 3 ? urlParts[baseIndex + 3] : null;
 
-    const predioId = req.headers['x-predio-id'] || req.user.predio_id;
+    // Prédio vem SEMPRE do withAuth (resolvido no servidor). Nunca reler o header
+    // aqui — isso permitiria a um usuário comum forjar x-predio-id e vazar/alterar
+    // dados de outro prédio.
+    const predioId = req.user.predio_id;
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -39,7 +42,7 @@ async function handler(req, res) {
     if (req.method === 'GET' && caminho1 === 'categorias' && caminho2 && caminho3 === 'itens') {
         try {
             const categoriaId = caminho2;
-            const itens = await service.listarItensDisponiveis(categoriaId);
+            const itens = await service.listarItensDisponiveis(categoriaId, predioId);
             return res.status(200).json(itens);
         } catch (error) {
             return res.status(400).json({ error: error.message });
@@ -86,7 +89,8 @@ async function handler(req, res) {
 
             const resultado = await service.registrarDevolucao({
                 emprestimoId: id,
-                respDevolucao
+                respDevolucao,
+                predioId
             });
             return res.status(200).json({ success: true, data: resultado });
         } catch (error) {
@@ -98,7 +102,7 @@ async function handler(req, res) {
             const itemId = caminho2;
             const { status, observacoes } = req.body;
 
-            await service.alterarStatusItem(itemId, status, observacoes);
+            await service.alterarStatusItem(itemId, status, observacoes, predioId);
             
             return res.status(200).json({ success: true, message: "Status do item atualizado." });
         } catch (error) {

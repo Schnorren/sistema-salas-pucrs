@@ -68,9 +68,13 @@ export const withAuth = (handler, moduloRequisitado = null) => {
             let predioAtivo = acesso?.predio_id || null;
             const permissoesUser = acesso?.permissoes || [];
 
+            // "Global" (pode operar em qualquer prédio) exige a permissão 'admin'.
+            // Prédio nulo SEM admin = usuário órfão (sem prédio, sem acesso), nunca global.
             const isAdmin = permissoesUser.includes('admin');
-            const isUserGlobal = predioAtivo === null || isAdmin;
+            const isUserGlobal = isAdmin;
 
+            // Só usuário global pode escolher o prédio pelo header; usuário comum
+            // fica preso ao seu predio_id resolvido no servidor (fonte única de verdade).
             const predioSelecionadoFrontend = req.headers['x-predio-id'] || req.query.predio_id;
 
             if (isUserGlobal && predioSelecionadoFrontend) {
@@ -87,7 +91,8 @@ export const withAuth = (handler, moduloRequisitado = null) => {
                 id: user.id,
                 email: user.email,
                 predio_id: predioAtivo,
-                permissoes: permissoesUser
+                permissoes: permissoesUser,
+                is_admin: isAdmin
             };
 
             return await handler(req, res);

@@ -11,7 +11,8 @@ async function handler(req, res) {
         return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Empréstimos ou Relatórios.' });
     }
 
-    const predioId = req.headers['x-predio-id'];
+    // Prédio resolvido pelo withAuth (não reler x-predio-id — evita relatórios de outro prédio).
+    const predioId = req.user?.predio_id;
     if (!predioId) return res.status(400).json({ error: 'Prédio não informado' });
 
     const { inicio, fim } = req.query;

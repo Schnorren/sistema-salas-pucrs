@@ -2,17 +2,22 @@ import supabase from '../../backend_core/config/supabase.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 
 async function handler(req, res) {
-    const isVercelCron = req.headers['x-vercel-cron'] === '1';
-    if (isVercelCron) return res.status(200).json({ status: 'keep-alive', timestamp: new Date() });
-
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
     const baseIndex = urlParts.indexOf('equipe');
     const caminho1 = baseIndex !== -1 && urlParts.length > baseIndex + 1 ? urlParts[baseIndex + 1] : null;
 
-    const predioId = req.headers['x-predio-id'] || req.user?.predio_id;
+    // Prédio resolvido pelo withAuth — não reler x-predio-id (evita gerenciar equipe de outro prédio).
+    const predioId = req.user?.predio_id;
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-    const isGestor = req.user?.permissoes?.includes('admin') || req.user?.permissoes?.includes('equipe');
+    const isAdminReq = req.user?.permissoes?.includes('admin');
+    const isGestor = isAdminReq || req.user?.permissoes?.includes('equipe');
+
+    // Gestor não-admin não pode conceder 'admin' (nem escalar a si mesmo a superusuário global).
+    const sanitizarPermissoes = (lista) => {
+        const arr = Array.isArray(lista) ? lista : [];
+        return isAdminReq ? arr : arr.filter(p => p !== 'admin');
+    };
 
     if (req.method === 'GET' && !caminho1) {
         try {
@@ -72,7 +77,7 @@ async function handler(req, res) {
 
             if (errBusca || !usuario) return res.status(404).json({ error: "Usuário não encontrado." });
 
-            const payload = { permissoes: permissoes || [] };
+            const payload = { permissoes: sanitizarPermissoes(permissoes) };
             if (perfil_id) payload.perfil_id = perfil_id;
 
             await supabase.from('usuarios_acessos').update(payload).eq('user_id', usuario.user_id);
@@ -109,7 +114,7 @@ async function handler(req, res) {
                 user_id: authData.user.id,
                 predio_id: predioId,
                 perfil_id: perfil_id || null,
-                permissoes: permissoes || []
+                permissoes: sanitizarPermissoes(permissoes)
             });
 
             return res.status(201).json({ success: true, message: "Convite enviado!" });
@@ -150,4 +155,14 @@ async function handler(req, res) {
 
     return res.status(404).json({ error: 'Endpoint não encontrado.' });
 }
-export default withAuth(handler, 'equipe');
+
+const handlerAutenticado = withAuth(handler, 'equipe');
+
+// O cron da Vercel (keep-alive) não envia JWT — precisa responder ANTES do withAuth,
+// senão levaria 401 e a função nunca "esquentaria".
+export default function equipeEntrypoint(req, res) {
+    if (req.headers['x-vercel-cron'] === '1') {
+        return res.status(200).json({ status: 'keep-alive', timestamp: new Date() });
+    }
+    return handlerAutenticado(req, res);
+}

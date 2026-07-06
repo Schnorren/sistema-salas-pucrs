@@ -64,6 +64,17 @@ class EmprestimosRepository {
         return data;
     }
 
+    async getCategoria(categoriaId) {
+        const { data, error } = await supabase
+            .from('emprestimo_categorias')
+            .select('id, predio_id')
+            .eq('id', categoriaId)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        return data;
+    }
+
     async getEmprestimo(emprestimoId) {
         const { data, error } = await supabase
             .from('emprestimos_registro')
