@@ -24,6 +24,7 @@ ALTER TABLE trocas_sala
 
 -- 3. Troca a constraint de unicidade: aula + semana (antes era aula + data_aula)
 ALTER TABLE trocas_sala DROP CONSTRAINT IF EXISTS trocas_sala_aula_data_unique;
+ALTER TABLE trocas_sala DROP CONSTRAINT IF EXISTS trocas_sala_aula_semana_unique;
 ALTER TABLE trocas_sala
     ADD CONSTRAINT trocas_sala_aula_semana_unique UNIQUE (aula_unique_key, semana);
 
