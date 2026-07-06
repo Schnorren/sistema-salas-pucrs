@@ -197,6 +197,15 @@ Execute no SQL Editor do Supabase (dev e prod):
 -- arquivo: supabase/migrations/trocas_sala_data_aula.sql
 ```
 
+**4. Row Level Security (isolamento multi-prédio no banco) — obrigatória:**
+```sql
+-- arquivo: supabase/migrations/rls_policies.sql
+```
+> Sem esta migração, a anon key do frontend consegue ler/gravar dados de qualquer
+> prédio (o frontend acessa `usuarios_acessos`, `trocas_sala` e o Realtime direto
+> no banco). Ela também é onde a permissão `edicao_grade` é de fato aplicada
+> (escrita em `trocas_sala`). Aplique e **teste os fluxos** do frontend depois.
+
 Os arquivos SQL estão em `supabase/migrations/`. Rode-os **na ordem** acima.
 
 **Verificar se as RPCs foram criadas:**
