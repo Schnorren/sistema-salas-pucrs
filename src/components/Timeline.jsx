@@ -10,9 +10,14 @@ import { useUI } from '../contexts/UIContext';
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-// Fora do componente — funções puras sem dependência de estado
-const getDataHoje = () => {
+// Fora do componente — funções puras sem dependência de estado.
+// Segunda-feira (ISO) da semana atual, em horário local — as trocas de sala são
+// agrupadas e expiram por semana.
+const getSemanaAtual = () => {
   const d = new Date();
+  const dow = d.getDay();                 // 0=Dom .. 6=Sáb
+  const diff = dow === 0 ? -6 : 1 - dow;  // dias até a segunda-feira
+  d.setDate(d.getDate() + diff);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
@@ -60,12 +65,12 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const { data: trocasAtivas = {} } = useQuery({
     queryKey: ['trocas_sala', predioAtual],
     queryFn: async () => {
-        const hoje = getDataHoje();
+        const semana = getSemanaAtual();
         const { data, error } = await supabase
             .from('trocas_sala')
             .select('*')
             .eq('predio_id', predioAtual)
-            .eq('data_aula', hoje);
+            .eq('semana', semana);
         if (error) throw error;
         const map = {};
         data.forEach(t => { map[t.aula_unique_key] = t; });
@@ -79,7 +84,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
             aula_unique_key: payload.aulaUniqueKey,
-            data_aula: getDataHoje(),
+            semana: getSemanaAtual(),
             predio_destino: formTroca.predio,
             sala_destino: formTroca.sala,
             motivo: formTroca.motivo,
@@ -88,7 +93,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
             cod_cred: formTroca.codCred || null,
             periodos_str: payload.periodosStr,
             horario_str: payload.horarioStr
-        }, { onConflict: 'aula_unique_key,data_aula' });
+        }, { onConflict: 'aula_unique_key,semana' });
         if (error) throw error;
     },
     onSuccess: (_, __, context) => {
@@ -107,7 +112,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
             .from('trocas_sala')
             .delete()
             .eq('aula_unique_key', aulaUniqueKey)
-            .eq('data_aula', getDataHoje());
+            .eq('semana', getSemanaAtual());
         if (error) throw error;
     },
     onSuccess: () => {
@@ -232,11 +237,13 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const handleCellClick = async (slot, linhaSlots, salaAtual) => {
     if (!slot.ocupado) return;
 
-    const aulaUniqueKey = `${slot.disciplinaId}-${slot.nome}-${salaAtual}`;
     const matches = linhaSlots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId);
-    const periodosStr = matches.map(m => m.periodo).join('');
     const first = matches[0];
     const last = matches[matches.length - 1];
+    // Chave estável: dia + sala + período inicial do bloco. Independe do texto de
+    // nome_aula (sobrevive ao re-import) e distingue a mesma aula em dias diferentes.
+    const aulaUniqueKey = `${day}-${salaAtual}-${first.periodo}`;
+    const periodosStr = matches.map(m => m.periodo).join('');
     const horarioStr = `${first.horario} às ${PERIOD_END_TIMES[last.periodo] || last.horario}`;
 
     const registroExistente = trocasAtivas[aulaUniqueKey];
@@ -728,11 +735,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                     const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
                     const aula = formatarAula(slot.nome);
 
-                    const aulaUniqueKey = slot.ocupado ? `${slot.disciplinaId}-${slot.nome}-${linha.sala}` : null;
+                    const matches = slot.ocupado ? linha.slots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId) : [];
+                    const aulaUniqueKey = slot.ocupado ? `${day}-${linha.sala}-${matches[0]?.periodo}` : null;
                     const isHovered = hoveredAulaId && hoveredAulaId === aulaUniqueKey;
                     const temTroca = slot.ocupado ? trocasAtivas[aulaUniqueKey] : null;
 
-                    const matches = slot.ocupado ? linha.slots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId) : [];
                     const isSequenceAgora = matches.some(m => m.isAgora);
 
                     const termoNormalizado = normalizeText(filtro).trim();

@@ -78,7 +78,9 @@ Não coloque query no handler nem regra de negócio no repository.
 
 Tabelas principais: `predios`, `salas`, `usuarios_acessos`, `perfis`, `sistema_modulos`, `avisos`, `trocas_sala`, `emprestimo_categorias`, `emprestimo_itens`, `emprestimos_registro`, `alunos_cache`.
 
-Migrations em [supabase/migrations/](supabase/migrations/) — rode **nesta ordem** no SQL Editor (dev e prod): `concluir_devolucao_rpc.sql`, `estatisticas_emprestimos_rpc.sql`, `trocas_sala_data_aula.sql`, `rls_policies.sql` (RLS multi-prédio — obrigatória), `auditoria_log.sql`. Migrations **não** rodam automaticamente; ao editar `rls_policies.sql`, reaplique (é idempotente).
+Migrations em [supabase/migrations/](supabase/migrations/) — rode **nesta ordem** no SQL Editor (dev e prod): `concluir_devolucao_rpc.sql`, `estatisticas_emprestimos_rpc.sql`, `trocas_sala_data_aula.sql`, `trocas_sala_semana.sql`, `rls_policies.sql` (RLS multi-prédio — obrigatória), `auditoria_log.sql`. Migrations **não** rodam automaticamente; ao editar `rls_policies.sql`, reaplique (é idempotente).
+
+**Trocas de sala (alteração de aula):** vivem em `trocas_sala`, escritas **direto pelo front** (anon key, [Timeline.jsx](src/components/Timeline.jsx)), tabela **separada da grade** (o re-import só mexe em `grade`, então as trocas sobrevivem). A chave é `aula_unique_key = "<dia_semana>-<sala>-<periodo_inicial>"` + `semana` (segunda-feira ISO): estável ao re-import (não depende de `nome_aula`), distingue dias, e expira na virada da semana (`limpar_trocas_antigas`).
 
 ## Convenções e armadilhas
 

@@ -211,6 +211,13 @@ Execute no SQL Editor do Supabase (dev e prod):
 -- arquivo: supabase/migrations/auditoria_log.sql
 ```
 
+**6. Trocas de sala por semana (após a #3):**
+```sql
+-- arquivo: supabase/migrations/trocas_sala_semana.sql
+```
+> Faz o aviso de troca persistir a semana toda (some na virada da semana) e usa
+> chave estável ao re-import (`dia-sala-período`), em vez de expirar no dia.
+
 Os arquivos SQL estão em `supabase/migrations/`. Rode-os **na ordem** acima.
 
 **Verificar se as RPCs foram criadas:**
@@ -301,7 +308,7 @@ A grade de cada prédio é extraída de um PDF gerado pelo sistema acadêmico da
 6. Opcionalmente adicione professor e motivo
 7. Clique em **Imprimir** — o sistema salva a troca automaticamente e abre um cartaz A4 colorido com logo PUCRS pronto para impressão e afixação na porta da sala original
 
-A troca fica visível para todos os usuários do prédio em tempo real (Realtime) e expira automaticamente ao final do dia.
+A troca fica visível para todos os usuários do prédio em tempo real (Realtime), sobrevive ao re-import da grade e expira automaticamente na virada da semana.
 
 ---
 
