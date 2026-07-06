@@ -34,6 +34,18 @@ drop policy if exists cat_select   on emprestimo_categorias;
 drop policy if exists itens_select on emprestimo_itens;
 drop policy if exists reg_select   on emprestimos_registro;
 
+-- Policies LEGADAS (criadas manualmente no painel) que abriam acesso amplo com
+-- condição `true`. Como policies permissivas se combinam com OR, elas ANULAM o
+-- isolamento abaixo. Precisam ser removidas.
+drop policy if exists "Permitir acesso total às trocas"      on trocas_sala;
+drop policy if exists "Permitir leitura de acessos"          on usuarios_acessos;
+drop policy if exists "Permitir inserção de acessos"         on usuarios_acessos;
+drop policy if exists "Permitir atualização de acessos"      on usuarios_acessos;
+drop policy if exists "Permitir leitura Realtime Itens"      on emprestimo_itens;
+drop policy if exists "Permitir leitura Realtime Registros"  on emprestimos_registro;
+drop policy if exists "Permitir leitura de predios"          on predios;
+drop policy if exists "Permitir leitura de perfis"           on perfis;
+
 -- ---------------------------------------------------------------------
 -- 1. Funções auxiliares (contexto do usuário atual via JWT). Tudo em TEXT.
 -- ---------------------------------------------------------------------
