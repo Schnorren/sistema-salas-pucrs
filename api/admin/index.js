@@ -1,5 +1,7 @@
 import service from '../../backend_core/services/admin.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
+import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 
 async function handler(req, res) {
     if (!req.user?.permissoes?.includes('admin')) {
@@ -11,24 +13,12 @@ async function handler(req, res) {
 
     if (req.method === 'GET') {
         try {
-            if (endpoint === 'predios') {
-                const dados = await service.listarPredios();
-                return res.status(200).json(dados);
-            }
-            if (endpoint === 'perfis') {
-                const dados = await service.listarPerfis();
-                return res.status(200).json(dados);
-            }
-            if (endpoint === 'usuarios') {
-                const dados = await service.listarUsuarios();
-                return res.status(200).json(dados);
-            }
-            if (endpoint === 'modulos') {
-                const dados = await service.listarModulos();
-                return res.status(200).json(dados);
-            }
+            if (endpoint === 'predios') return res.status(200).json(await service.listarPredios());
+            if (endpoint === 'perfis')  return res.status(200).json(await service.listarPerfis());
+            if (endpoint === 'usuarios') return res.status(200).json(await service.listarUsuarios());
+            if (endpoint === 'modulos')  return res.status(200).json(await service.listarModulos());
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -39,6 +29,7 @@ async function handler(req, res) {
                 if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });
 
                 const novo = await service.criarPredio(nome);
+                registrarAuditoria({ user: req.user, acao: 'admin.predio.criar', entidade: 'predios', entidadeId: novo.id, detalhes: { nome } });
                 return res.status(201).json(novo);
             }
 
@@ -47,10 +38,11 @@ async function handler(req, res) {
                 if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });
 
                 const novo = await service.criarPerfil(nome);
+                registrarAuditoria({ user: req.user, acao: 'admin.perfil.criar', entidade: 'perfis', entidadeId: novo.id, detalhes: { nome } });
                 return res.status(201).json(novo);
             }
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -69,9 +61,15 @@ async function handler(req, res) {
                 permissoes
             });
 
+            registrarAuditoria({
+                user: req.user, acao: 'admin.usuario.atualizar', entidade: 'usuarios_acessos',
+                entidadeId: usuarioId, predioId: predioId || null,
+                detalhes: { perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: Boolean(senha && senha.trim()) }
+            });
+
             return res.status(200).json(resultado);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -81,16 +79,18 @@ async function handler(req, res) {
                 const { id } = req.body;
                 if (!id) return res.status(400).json({ error: 'ID é obrigatório.' });
                 await service.deletarPredio(id);
+                registrarAuditoria({ user: req.user, acao: 'admin.predio.excluir', entidade: 'predios', entidadeId: id });
                 return res.status(200).json({ success: true });
             }
             if (endpoint === 'perfis') {
                 const { id } = req.body;
                 if (!id) return res.status(400).json({ error: 'ID é obrigatório.' });
                 await service.deletarPerfil(id);
+                registrarAuditoria({ user: req.user, acao: 'admin.perfil.excluir', entidade: 'perfis', entidadeId: id });
                 return res.status(200).json({ success: true });
             }
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 

@@ -182,9 +182,10 @@ export default function Dashboard({ session }) {
 
   const isAdmin = acesso.permissoes?.includes('admin');
   const hasPredioContext = Boolean(acesso.predioId || predioAtivo);
-  const isOrphan = !acesso.predioId && (!acesso.permissoes || acesso.permissoes.length === 0);
+  // Órfão = sem prédio e sem admin. Global exige admin; prédio nulo sem admin não dá acesso.
+  const isOrphan = !isAdmin && !acesso.predioId;
 
-  if (isOrphan && !isAdmin) {
+  if (isOrphan) {
     return (
       <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
         <h2>Acesso Restrito</h2>

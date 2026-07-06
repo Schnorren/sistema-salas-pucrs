@@ -1,6 +1,7 @@
 import avisosService from '../../backend_core/services/avisos.service.js';
 import avisosRepository from '../../backend_core/repositories/avisos.repository.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
 
 // Padrão de URL:
 //   GET    /api/avisos               → listar ativos
@@ -27,7 +28,7 @@ async function handler(req, res) {
             const dados = await avisosService.obterMuralOtimizado(predioId);
             return res.status(200).json(dados);
         } catch (err) {
-            return res.status(500).json({ error: err.message });
+            return responderErro(res, err);
         }
     }
 
@@ -42,7 +43,7 @@ async function handler(req, res) {
             await avisosRepository.inserir(payload);
             return res.status(201).json({ message: 'Aviso criado com sucesso' });
         } catch (err) {
-            return res.status(500).json({ error: err.message });
+            return responderErro(res, err);
         }
     }
 
@@ -52,7 +53,7 @@ async function handler(req, res) {
             const dados = await avisosService.obterHistoricoOtimizado(predioId);
             return res.status(200).json(dados);
         } catch (err) {
-            return res.status(500).json({ error: err.message });
+            return responderErro(res, err);
         }
     }
 
@@ -68,7 +69,7 @@ async function handler(req, res) {
             });
             return res.status(200).json({ message: 'Concluído com sucesso' });
         } catch (err) {
-            return res.status(500).json({ error: err.message });
+            return responderErro(res, err);
         }
     }
 
@@ -81,7 +82,7 @@ async function handler(req, res) {
             );
             return res.status(200).json({ descricao: novaDescricao });
         } catch (err) {
-            return res.status(500).json({ error: err.message });
+            return responderErro(res, err);
         }
     }
 
@@ -91,7 +92,7 @@ async function handler(req, res) {
             await avisosRepository.deletar(id, predioId);
             return res.status(200).json({ message: 'Aviso excluído com sucesso' });
         } catch (err) {
-            return res.status(500).json({ error: err.message });
+            return responderErro(res, err);
         }
     }
 

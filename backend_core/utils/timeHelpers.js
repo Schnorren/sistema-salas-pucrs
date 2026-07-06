@@ -119,6 +119,7 @@ export const groupConsecutiveClasses = (classes) => {
     sala: g.sala,
     nome: g.nome,
     tipo: g.tipo,
+    periodos: [...g.periodos],
     periodosFormatados: g.periodos.join(''),
     quantidadePeriodos: g.periodos.length,
     horarioInicio: g.inicio || '--:--',

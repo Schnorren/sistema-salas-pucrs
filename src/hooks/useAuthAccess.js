@@ -37,8 +37,9 @@ export const useAuthAccess = (session) => {
                 if (data) {
                     const permissoesArray = data.permissoes || [];
                     
+                    // Global (troca de prédio) exige 'admin'. Prédio nulo sem admin = órfão.
                     const isAdmin = permissoesArray.includes('admin');
-                    const isUserGlobal = data.predio_id === null || isAdmin;
+                    const isUserGlobal = isAdmin;
 
                     setAcesso({
                         loading: false,

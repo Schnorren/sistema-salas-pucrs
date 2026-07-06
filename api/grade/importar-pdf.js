@@ -1,5 +1,6 @@
 import service from '../../backend_core/services/grade.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
 import formidable from 'formidable';
 import fs from 'fs';
 
@@ -37,7 +38,7 @@ async function handler(req, res) {
             if (error.message.includes('Python') || error.message.includes('extração')) {
                 return res.status(502).json({ error: "A API do extrator (Render) está offline ou demorando para responder. Tente novamente em 30 segundos." });
             }
-            return res.status(500).json({ error: error.message });
+            return responderErro(res, error);
         }
     });
 }

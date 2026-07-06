@@ -11,7 +11,8 @@ async function handler(req, res) {
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
     const endpoint = urlParts.length > 2 ? urlParts[2] : null;
 
-    const predioId = req.headers['x-predio-id'] || req.user?.predio_id;
+    // Prédio resolvido pelo withAuth — não reler x-predio-id (evita spoofing de prédio).
+    const predioId = req.user?.predio_id;
     if (req.method === 'GET' && endpoint === 'busca') {
         try {
             const { q } = req.query;

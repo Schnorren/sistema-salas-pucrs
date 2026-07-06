@@ -1,5 +1,7 @@
 import service from '../../backend_core/services/emprestimos.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
+import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 
 async function handler(req, res) {
     const temPermissao = req.user?.permissoes?.includes('emprestimos') || req.user?.permissoes?.includes('admin');
@@ -13,7 +15,10 @@ async function handler(req, res) {
     const caminho2 = baseIndex !== -1 && urlParts.length > baseIndex + 2 ? urlParts[baseIndex + 2] : null; 
     const caminho3 = baseIndex !== -1 && urlParts.length > baseIndex + 3 ? urlParts[baseIndex + 3] : null;
 
-    const predioId = req.headers['x-predio-id'] || req.user.predio_id;
+    // Prédio vem SEMPRE do withAuth (resolvido no servidor). Nunca reler o header
+    // aqui — isso permitiria a um usuário comum forjar x-predio-id e vazar/alterar
+    // dados de outro prédio.
+    const predioId = req.user.predio_id;
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -23,7 +28,7 @@ async function handler(req, res) {
             const ativos = await service.listarEmprestimosAtivos(predioId);
             return res.status(200).json(ativos);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -32,17 +37,17 @@ async function handler(req, res) {
             const categorias = await service.listarCategorias(predioId);
             return res.status(200).json(categorias);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
     if (req.method === 'GET' && caminho1 === 'categorias' && caminho2 && caminho3 === 'itens') {
         try {
             const categoriaId = caminho2;
-            const itens = await service.listarItensDisponiveis(categoriaId);
+            const itens = await service.listarItensDisponiveis(categoriaId, predioId);
             return res.status(200).json(itens);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -52,7 +57,7 @@ async function handler(req, res) {
             const dados = await service.consultarMatricula(matricula, predioId);
             return res.status(200).json(dados);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -61,7 +66,7 @@ async function handler(req, res) {
             const historico = await service.listarHistorico(predioId);
             return res.status(200).json(historico);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -73,9 +78,14 @@ async function handler(req, res) {
                 predioId,
                 respRetirada
             });
+            registrarAuditoria({
+                user: req.user, acao: 'emprestimo.retirar', entidade: 'emprestimos_registro',
+                entidadeId: resultado?.id || resultado?.emprestimo_id || null, predioId,
+                detalhes: { itemId: req.body?.itemId, matricula: req.body?.matricula }
+            });
             return res.status(201).json({ success: true, data: resultado });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -86,11 +96,16 @@ async function handler(req, res) {
 
             const resultado = await service.registrarDevolucao({
                 emprestimoId: id,
-                respDevolucao
+                respDevolucao,
+                predioId
+            });
+            registrarAuditoria({
+                user: req.user, acao: 'emprestimo.devolver', entidade: 'emprestimos_registro',
+                entidadeId: id, predioId
             });
             return res.status(200).json({ success: true, data: resultado });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
     if (req.method === 'PUT' && caminho1 === 'itens' && caminho3 === 'manutencao') {
@@ -98,11 +113,15 @@ async function handler(req, res) {
             const itemId = caminho2;
             const { status, observacoes } = req.body;
 
-            await service.alterarStatusItem(itemId, status, observacoes);
-            
+            await service.alterarStatusItem(itemId, status, observacoes, predioId);
+
+            registrarAuditoria({
+                user: req.user, acao: 'emprestimo.item.status', entidade: 'emprestimo_itens',
+                entidadeId: itemId, predioId, detalhes: { status }
+            });
             return res.status(200).json({ success: true, message: "Status do item atualizado." });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 

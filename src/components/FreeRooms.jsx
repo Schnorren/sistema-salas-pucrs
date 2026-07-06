@@ -41,8 +41,8 @@ export default function FreeRooms({ acesso }) {
       });
       const freePeriods = PERIODS.filter(p => {
         const isOccupied = aulasDaSala.some(aula => {
-          const codes = extractPeriodCode(aula.periodo);
-          return codes && codes.includes(p.code);
+          const code = extractPeriodCode(aula.periodo);
+          return code === p.code;
         });
         return !isOccupied;
       });
