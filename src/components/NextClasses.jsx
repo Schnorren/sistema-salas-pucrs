@@ -61,13 +61,13 @@ export default function NextClasses({ acesso }) {
         response.labelPeriodoAtual = PERIODS[pi].lb;
         const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
 
-        response.emAndamento = todasAgrupadas.filter(g => g.periodosFormatados.includes(activePer));
+        response.emAndamento = todasAgrupadas.filter(g => g.periodos.includes(activePer));
 
         const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
-        response.proximas = todasAgrupadas.filter(g => nextPeriodCodes.includes(g.periodosFormatados[0]));
+        response.proximas = todasAgrupadas.filter(g => nextPeriodCodes.includes(g.periodos[0]));
 
         const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
-        response.restoDoDia = todasAgrupadas.filter(g => futurePeriodCodes.includes(g.periodosFormatados[0]));
+        response.restoDoDia = todasAgrupadas.filter(g => futurePeriodCodes.includes(g.periodos[0]));
       }
     } else {
       response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);

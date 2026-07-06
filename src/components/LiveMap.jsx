@@ -44,7 +44,7 @@ export default function LiveMap({ acesso }) {
     const aulasNoMomento = gradeBruta.filter(d => {
       const mesmoDia = d.dia_semana?.toLowerCase().includes(day.toLowerCase());
       const codigoPeriodoBanco = extractPeriodCode(d.periodo);
-      const noMesmoPeriodo = codigoPeriodoBanco.includes(activePer);
+      const noMesmoPeriodo = codigoPeriodoBanco === activePer;
       return mesmoDia && noMesmoPeriodo;
     });
     const salasProcessadas = salasDb.map(s => {
