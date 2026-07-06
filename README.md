@@ -206,6 +206,11 @@ Execute no SQL Editor do Supabase (dev e prod):
 > no banco). Ela também é onde a permissão `edicao_grade` é de fato aplicada
 > (escrita em `trocas_sala`). Aplique e **teste os fluxos** do frontend depois.
 
+**5. Trilha de auditoria (ações sensíveis / LGPD):**
+```sql
+-- arquivo: supabase/migrations/auditoria_log.sql
+```
+
 Os arquivos SQL estão em `supabase/migrations/`. Rode-os **na ordem** acima.
 
 **Verificar se as RPCs foram criadas:**
