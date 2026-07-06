@@ -1,5 +1,35 @@
 import supabase from '../../backend_core/config/supabase.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
+import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
+import { sanitizarPermissoes } from '../../backend_core/utils/modulos.js';
+
+// Allowlist opcional de domínios de e-mail para convite.
+// Configure INVITE_EMAIL_DOMINIOS="pucrs.br,edu.pucrs.br" para restringir.
+// Vazio/ausente = sem restrição.
+function emailPermitido(email) {
+    const raw = process.env.INVITE_EMAIL_DOMINIOS;
+    if (!raw || !raw.trim()) return true;
+    const dominios = raw.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+    const dom = String(email || '').split('@')[1]?.toLowerCase();
+    return dom ? dominios.includes(dom) : false;
+}
+
+// Localiza um usuário do Auth pelo e-mail (paginado — não há busca direta).
+async function encontrarUsuarioAuthPorEmail(email) {
+    const alvo = String(email || '').toLowerCase();
+    let page = 1;
+    const perPage = 1000;
+    while (true) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+        if (error) throw error;
+        const found = (data.users || []).find(u => u.email?.toLowerCase() === alvo);
+        if (found) return found;
+        if ((data.users || []).length < perPage) break;
+        page++;
+    }
+    return null;
+}
 
 async function handler(req, res) {
     const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
@@ -13,11 +43,7 @@ async function handler(req, res) {
     const isAdminReq = req.user?.permissoes?.includes('admin');
     const isGestor = isAdminReq || req.user?.permissoes?.includes('equipe');
 
-    // Gestor não-admin não pode conceder 'admin' (nem escalar a si mesmo a superusuário global).
-    const sanitizarPermissoes = (lista) => {
-        const arr = Array.isArray(lista) ? lista : [];
-        return isAdminReq ? arr : arr.filter(p => p !== 'admin');
-    };
+    const sanitizar = (lista) => sanitizarPermissoes(lista, { permitirAdmin: isAdminReq });
 
     if (req.method === 'GET' && !caminho1) {
         try {
@@ -32,7 +58,7 @@ async function handler(req, res) {
             if (error) throw error;
             return res.status(200).json(data);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -46,7 +72,7 @@ async function handler(req, res) {
             if (error) throw error;
             return res.status(200).json(data);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
     if (req.method === 'GET' && caminho1 === 'modulos') {
@@ -59,12 +85,13 @@ async function handler(req, res) {
             if (error) throw error;
             return res.status(200).json(data);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
     if ((req.method === 'POST' || req.method === 'PUT') && caminho1 === 'membro') {
         try {
             if (!isGestor) return res.status(403).json({ error: "Permissão negada." });
+            if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
 
             const { email, nome, permissoes, perfil_id } = req.body;
 
@@ -77,10 +104,16 @@ async function handler(req, res) {
 
             if (errBusca || !usuario) return res.status(404).json({ error: "Usuário não encontrado." });
 
-            const payload = { permissoes: sanitizarPermissoes(permissoes) };
+            const permissoesFinais = sanitizar(permissoes);
+            const payload = { permissoes: permissoesFinais };
             if (perfil_id) payload.perfil_id = perfil_id;
 
-            await supabase.from('usuarios_acessos').update(payload).eq('user_id', usuario.user_id);
+            const { error: errUpd } = await supabase
+                .from('usuarios_acessos')
+                .update(payload)
+                .eq('user_id', usuario.user_id)
+                .eq('predio_id', predioId);
+            if (errUpd) throw errUpd;
 
             if (nome) {
                 await supabase.auth.admin.updateUserById(usuario.user_id, {
@@ -88,44 +121,85 @@ async function handler(req, res) {
                 });
             }
 
+            registrarAuditoria({
+                user: req.user, acao: 'equipe.membro.atualizar', entidade: 'usuarios_acessos',
+                entidadeId: usuario.user_id, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null }
+            });
+
             return res.status(200).json({ success: true });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
     if (req.method === 'POST' && caminho1 === 'convidar') {
         try {
             if (!isGestor) return res.status(403).json({ error: "Permissão negada." });
+            if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
 
             const { email, nome, permissoes, perfil_id } = req.body;
+            if (!email) return res.status(400).json({ error: "E-mail obrigatório." });
+            if (!emailPermitido(email)) {
+                return res.status(400).json({ error: "Domínio de e-mail não permitido para convite." });
+            }
 
+            const permissoesFinais = sanitizar(permissoes);
             const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
                 email,
                 { data: { nome: nome || 'Membro da Equipe' } }
             );
 
+            let userId;
+
             if (authError) {
-                if (authError.status === 422) throw new Error("Usuário já cadastrado.");
-                throw authError;
+                // Usuário já existe no Auth (ex.: foi removido antes e reconvidado).
+                const jaExiste = authError.status === 422 || /already|registered|exists/i.test(authError.message || '');
+                if (!jaExiste) throw authError;
+
+                const existente = await encontrarUsuarioAuthPorEmail(email);
+                if (!existente) return res.status(409).json({ error: "Usuário já cadastrado, mas não foi possível localizá-lo." });
+                userId = existente.id;
+
+                // Trava anti-hijack: não reatribuir usuário que pertence a OUTRO prédio (só admin pode).
+                const { data: acessoAtual } = await supabase
+                    .from('usuarios_acessos').select('predio_id').eq('user_id', userId).maybeSingle();
+                if (acessoAtual?.predio_id && acessoAtual.predio_id !== predioId && !isAdminReq) {
+                    return res.status(409).json({ error: "Usuário já pertence a outro prédio. Peça a um administrador." });
+                }
+
+                const { error: upErr } = await supabase.from('usuarios_acessos').upsert({
+                    user_id: userId,
+                    predio_id: predioId,
+                    perfil_id: perfil_id || null,
+                    permissoes: permissoesFinais
+                }, { onConflict: 'user_id' });
+                if (upErr) throw upErr;
+            } else {
+                userId = authData.user.id;
+                const { error: insErr } = await supabase.from('usuarios_acessos').insert({
+                    user_id: userId,
+                    predio_id: predioId,
+                    perfil_id: perfil_id || null,
+                    permissoes: permissoesFinais
+                });
+                if (insErr) throw insErr;
             }
 
-            await supabase.from('usuarios_acessos').insert({
-                user_id: authData.user.id,
-                predio_id: predioId,
-                perfil_id: perfil_id || null,
-                permissoes: sanitizarPermissoes(permissoes)
+            registrarAuditoria({
+                user: req.user, acao: 'equipe.convidar', entidade: 'usuarios_acessos',
+                entidadeId: userId, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null }
             });
 
             return res.status(201).json({ success: true, message: "Convite enviado!" });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
     if (req.method === 'DELETE' && caminho1 === 'membro') {
         try {
             if (!isGestor) return res.status(403).json({ error: 'Permissão negada.' });
+            if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
 
             const { email } = req.body;
             if (!email) return res.status(400).json({ error: 'E-mail obrigatório.' });
@@ -147,9 +221,14 @@ async function handler(req, res) {
 
             if (errDelete) throw errDelete;
 
+            registrarAuditoria({
+                user: req.user, acao: 'equipe.membro.remover', entidade: 'usuarios_acessos',
+                entidadeId: usuario.user_id, predioId, detalhes: { email }
+            });
+
             return res.status(200).json({ success: true });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 

@@ -1,5 +1,7 @@
 import service from '../../backend_core/services/emprestimos.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
+import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 
 async function handler(req, res) {
     const temPermissao = req.user?.permissoes?.includes('emprestimos') || req.user?.permissoes?.includes('admin');
@@ -26,7 +28,7 @@ async function handler(req, res) {
             const ativos = await service.listarEmprestimosAtivos(predioId);
             return res.status(200).json(ativos);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -35,7 +37,7 @@ async function handler(req, res) {
             const categorias = await service.listarCategorias(predioId);
             return res.status(200).json(categorias);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -45,7 +47,7 @@ async function handler(req, res) {
             const itens = await service.listarItensDisponiveis(categoriaId, predioId);
             return res.status(200).json(itens);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -55,7 +57,7 @@ async function handler(req, res) {
             const dados = await service.consultarMatricula(matricula, predioId);
             return res.status(200).json(dados);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -64,7 +66,7 @@ async function handler(req, res) {
             const historico = await service.listarHistorico(predioId);
             return res.status(200).json(historico);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -76,9 +78,14 @@ async function handler(req, res) {
                 predioId,
                 respRetirada
             });
+            registrarAuditoria({
+                user: req.user, acao: 'emprestimo.retirar', entidade: 'emprestimos_registro',
+                entidadeId: resultado?.id || resultado?.emprestimo_id || null, predioId,
+                detalhes: { itemId: req.body?.itemId, matricula: req.body?.matricula }
+            });
             return res.status(201).json({ success: true, data: resultado });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 
@@ -92,9 +99,13 @@ async function handler(req, res) {
                 respDevolucao,
                 predioId
             });
+            registrarAuditoria({
+                user: req.user, acao: 'emprestimo.devolver', entidade: 'emprestimos_registro',
+                entidadeId: id, predioId
+            });
             return res.status(200).json({ success: true, data: resultado });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
     if (req.method === 'PUT' && caminho1 === 'itens' && caminho3 === 'manutencao') {
@@ -103,10 +114,14 @@ async function handler(req, res) {
             const { status, observacoes } = req.body;
 
             await service.alterarStatusItem(itemId, status, observacoes, predioId);
-            
+
+            registrarAuditoria({
+                user: req.user, acao: 'emprestimo.item.status', entidade: 'emprestimo_itens',
+                entidadeId: itemId, predioId, detalhes: { status }
+            });
             return res.status(200).json({ success: true, message: "Status do item atualizado." });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return responderErro(res, error);
         }
     }
 

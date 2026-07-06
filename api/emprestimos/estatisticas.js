@@ -1,5 +1,6 @@
 import supabase from '../../backend_core/config/supabase.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
 
 async function handler(req, res) {
     if (req.method !== 'GET') return res.status(405).end();
@@ -32,11 +33,11 @@ async function handler(req, res) {
             p_fim:       toTimestamptz(fim)
         });
 
-        if (error) return res.status(500).json({ error: error.message });
+        if (error) return responderErro(res, error);
 
         return res.status(200).json(data);
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        return responderErro(res, err);
     }
 }
 
