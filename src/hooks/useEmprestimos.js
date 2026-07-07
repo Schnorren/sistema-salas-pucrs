@@ -105,13 +105,11 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
         }
     });
 
+    // Propaga o erro: quem chama precisa distinguir "aluno sem cadastro" de
+    // "consulta falhou" (senão uma queda de rede vira 'aluno novo' silenciosamente)
     const consultarAluno = async (matricula) => {
-        try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/aluno/${matricula}`, { headers: getHeaders() });
-            return await parseResponse(res);
-        } catch {
-            return null;
-        }
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/aluno/${encodeURIComponent(matricula)}`, { headers: getHeaders() });
+        return parseResponse(res);
     };
 
     useEffect(() => {
@@ -144,6 +142,10 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
         loadingWizard,
         loadingHistorico,
         loadingItens,
+        // Flags de mutação pendente — usadas para desabilitar botões e barrar double-submit
+        retirando: retirarMutation.isPending,
+        devolvendo: devolverMutation.isPending,
+        alterandoStatus: manutencaoMutation.isPending,
         consultarAluno,
         registrarRetirada: (dados) => retirarMutation.mutateAsync(dados),
         registrarDevolucao: (id) => devolverMutation.mutateAsync(id),

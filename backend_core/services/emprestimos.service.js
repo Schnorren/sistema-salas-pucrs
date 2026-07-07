@@ -1,6 +1,12 @@
 import repository from '../repositories/emprestimos.repository.js';
-import supabase from '../config/supabase.js';
 import { ErroPublico } from '../utils/http.js';
+
+// Status que a secretaria pode definir manualmente. EMPRESTADO é exclusivo do
+// fluxo de retirada/devolução (RPCs) — nunca setado direto pela API de status.
+const STATUS_EDITAVEIS = ['DISPONIVEL', 'MANUTENCAO'];
+
+// Normaliza entrada de texto vinda do cliente (trim + limite de tamanho).
+const limparTexto = (valor, max) => String(valor ?? '').trim().slice(0, max);
 
 class EmprestimosService {
     // Garante que o item pertence ao prédio do usuário antes de qualquer operação por ID.
@@ -52,22 +58,11 @@ class EmprestimosService {
     }
 
     async listarHistorico(predioId) {
-        const { data, error } = await supabase
-            .from('emprestimos_registro')
-            .select(`
-                id, matricula_aluno, nome_aluno, data_retirada, data_devolucao, resp_retirada, resp_devolucao,
-                item:emprestimo_itens!inner (
-                    nome_item, patrimonio,
-                    categoria:emprestimo_categorias!inner (predio_id)
-                )
-            `)
-            .eq('item.categoria.predio_id', predioId)
-            .order('data_retirada', { ascending: false })
-            .limit(50);
+        if (!predioId) throw new ErroPublico("Prédio não informado.");
 
-        if (error) throw error;
+        const registros = await repository.getHistorico(predioId);
 
-        return data.map(e => ({
+        return registros.map(e => ({
             id: e.id,
             nomeItem: e.item.nome_item,
             patrimonio: e.item.patrimonio,
@@ -80,17 +75,17 @@ class EmprestimosService {
     }
 
     async consultarMatricula(matricula, predioId) {
-        if (!matricula) throw new ErroPublico("Matrícula não informada.");
+        const mat = limparTexto(matricula, 40);
+        if (!mat) throw new ErroPublico("Matrícula não informada.");
+        if (!predioId) throw new ErroPublico("Prédio não informado.");
 
-        const [aluno, ativos] = await Promise.all([
-            repository.buscarAlunoCache(matricula),
-            repository.getEmprestimosAtivos(predioId)
+        const [aluno, emprestimoAtivo] = await Promise.all([
+            repository.buscarAlunoCache(mat),
+            repository.getEmprestimoAtivoPorMatricula(mat, predioId)
         ]);
 
-        const emprestimoAtivo = ativos.find(e => e.matricula_aluno === matricula);
-
         return {
-            matricula: matricula,
+            matricula: mat,
             nomeCadastrado: aluno ? aluno.nome : null,
             emprestimoAtivo: emprestimoAtivo ? {
                 id: emprestimoAtivo.id,
@@ -102,22 +97,28 @@ class EmprestimosService {
     }
 
     async registrarRetirada({ itemId, matricula, nomeAluno, documento, respRetirada, predioId }) {
-        if (!itemId || !matricula || !nomeAluno) {
+        const mat = limparTexto(matricula, 40);
+        const nome = limparTexto(nomeAluno, 120);
+        const doc = limparTexto(documento, 120);
+
+        if (!itemId || !mat || !nome) {
             throw new ErroPublico("Dados obrigatórios faltando.");
         }
 
         await this._assertItemNoPredio(itemId, predioId);
 
+        // A RPC valida atomicamente: item DISPONIVEL (com trava) e máximo de
+        // 1 empréstimo ativo por matrícula no prédio.
         const resultado = await repository.criarRetiradaRpc({
             item_id: itemId,
-            matricula_aluno: matricula,
-            nome_aluno: nomeAluno,
-            documento_retido: documento || null,
+            matricula_aluno: mat,
+            nome_aluno: nome,
+            documento_retido: doc || null,
             resp_retirada: respRetirada
         });
 
         // Atualiza o cache de alunos em background — não bloqueia a resposta
-        repository.upsertAlunoCache(matricula, nomeAluno).catch(() => {});
+        repository.upsertAlunoCache(mat, nome).catch(() => {});
 
         return resultado;
     }
@@ -132,29 +133,28 @@ class EmprestimosService {
 
         await this._assertItemNoPredio(emprestimo.item_id, predioId);
 
-        return await repository.concluirDevolucao(emprestimoId, emprestimo.item_id, respDevolucao);
+        return await repository.concluirDevolucao(emprestimoId, respDevolucao);
     }
 
     async alterarStatusItem(itemId, novoStatus, observacoes, predioId) {
         if (!itemId || !novoStatus) {
             throw new ErroPublico("ID do item e novo status são obrigatórios.");
         }
+        if (!STATUS_EDITAVEIS.includes(novoStatus)) {
+            throw new ErroPublico("Status inválido. Use DISPONIVEL ou MANUTENCAO.");
+        }
 
         await this._assertItemNoPredio(itemId, predioId);
 
-        const { error } = await supabase
-            .from('emprestimo_itens')
-            .update({
-                status: novoStatus,
-                observacoes: observacoes || null
-            })
-            .eq('id', itemId);
-
-        if (error) {
-            console.error('[emprestimos] alterarStatusItem:', error.message);
-            throw new Error("Erro ao atualizar status do item.");
+        // Item com empréstimo em aberto não muda de status por aqui — a devolução
+        // (RPC concluir_devolucao) é quem o libera. Checa o registro ativo, e não o
+        // status do item, para permitir corrigir itens órfãos (EMPRESTADO sem registro).
+        const emprestimoAberto = await repository.getEmprestimoAtivoPorItem(itemId);
+        if (emprestimoAberto) {
+            throw new ErroPublico("Item está emprestado. Registre a devolução antes de alterar o status.");
         }
 
+        await repository.atualizarStatusItem(itemId, novoStatus, limparTexto(observacoes, 500) || null);
         return true;
     }
 }
