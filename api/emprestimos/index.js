@@ -3,6 +3,15 @@ import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 
+// Segmentos de URL podem vir codificados (%20 etc.); sequência inválida não pode derrubar o handler
+function decodificarSegmento(valor) {
+    try {
+        return valor ? decodeURIComponent(valor) : valor;
+    } catch {
+        return valor;
+    }
+}
+
 async function handler(req, res) {
     const temPermissao = req.user?.permissoes?.includes('emprestimos') || req.user?.permissoes?.includes('admin');
     if (!temPermissao) {
@@ -53,7 +62,7 @@ async function handler(req, res) {
 
     if (req.method === 'GET' && caminho1 === 'aluno' && caminho2) {
         try {
-            const matricula = caminho2;
+            const matricula = decodificarSegmento(caminho2);
             const dados = await service.consultarMatricula(matricula, predioId);
             return res.status(200).json(dados);
         } catch (error) {
@@ -72,16 +81,21 @@ async function handler(req, res) {
 
     if (req.method === 'POST' && caminho1 === 'retirar') {
         try {
+            const body = req.body || {};
             const respRetirada = req.user?.email || 'Sistema';
+            // Campos explícitos — o spread do body permitiria injetar chaves extras no service
             const resultado = await service.registrarRetirada({
-                ...req.body,
+                itemId: body.itemId,
+                matricula: body.matricula,
+                nomeAluno: body.nomeAluno,
+                documento: body.documento,
                 predioId,
                 respRetirada
             });
             registrarAuditoria({
                 user: req.user, acao: 'emprestimo.retirar', entidade: 'emprestimos_registro',
                 entidadeId: resultado?.id || resultado?.emprestimo_id || null, predioId,
-                detalhes: { itemId: req.body?.itemId, matricula: req.body?.matricula }
+                detalhes: { itemId: body.itemId, matricula: body.matricula }
             });
             return res.status(201).json({ success: true, data: resultado });
         } catch (error) {
@@ -108,10 +122,10 @@ async function handler(req, res) {
             return responderErro(res, error);
         }
     }
-    if (req.method === 'PUT' && caminho1 === 'itens' && caminho3 === 'manutencao') {
+    if (req.method === 'PUT' && caminho1 === 'itens' && caminho2 && caminho3 === 'manutencao') {
         try {
             const itemId = caminho2;
-            const { status, observacoes } = req.body;
+            const { status, observacoes } = req.body || {};
 
             await service.alterarStatusItem(itemId, status, observacoes, predioId);
 

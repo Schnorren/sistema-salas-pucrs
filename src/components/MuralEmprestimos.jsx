@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEmprestimos } from '../hooks/useEmprestimos';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
@@ -36,6 +36,7 @@ const TempoDecorrido = ({ dataIso }) => {
 const EmprestimoWizard = ({
     categorias, itensDisponiveis, emprestimosAtivos,
     consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
+    retirando, devolvendo, alterandoStatus,
     categoriaSel, setCategoriaSel
 }) => {
     const { toast, showPrompt, showConfirm } = useUI();
@@ -57,7 +58,7 @@ const EmprestimoWizard = ({
         if (step === 3 && inputNomeRef.current) inputNomeRef.current.focus();
     }, [step]);
 
-    const resetFlow = () => {
+    const resetFlow = useCallback(() => {
         setStep(1);
         setInputMatricula('');
         setInputItem('');
@@ -65,10 +66,12 @@ const EmprestimoWizard = ({
         setAlunoAnalisado(null);
         setItemSelecionado(null);
         setBuscandoAluno(false);
-    };
+    }, []);
 
-    const handleConfirmarDevolucao = async () => {
-        const idParaDevolver = alunoAnalisado.emprestimoAtivo.id;
+    const handleConfirmarDevolucao = useCallback(async () => {
+        if (devolvendo) return; // segurar Enter (key repeat) dispararia N devoluções
+        const idParaDevolver = alunoAnalisado?.emprestimoAtivo?.id;
+        if (!idParaDevolver) return;
         try {
             await registrarDevolucao(idParaDevolver);
             resetFlow();
@@ -76,7 +79,7 @@ const EmprestimoWizard = ({
         } catch (err) {
             toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
         }
-    };
+    }, [devolvendo, alunoAnalisado, registrarDevolucao, resetFlow, toast]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -87,7 +90,7 @@ const EmprestimoWizard = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [step, alunoAnalisado, handleConfirmarDevolucao]);
+    }, [step, handleConfirmarDevolucao]);
 
     const handleBiparMatricula = async (e) => {
         e.preventDefault();
@@ -106,8 +109,23 @@ const EmprestimoWizard = ({
         }
 
         setBuscandoAluno(true);
-        const dadosAluno = await consultarAluno(mat);
-        setBuscandoAluno(false);
+        let dadosAluno;
+        try {
+            dadosAluno = await consultarAluno(mat);
+        } catch {
+            // Falha na consulta NÃO pode virar "aluno novo": permanece no passo 1
+            toast.error('Não foi possível consultar a matrícula. Verifique a conexão e tente novamente.');
+            return;
+        } finally {
+            setBuscandoAluno(false);
+        }
+
+        // Cobre empréstimo ativo registrado em outra máquina (lista local desatualizada)
+        if (dadosAluno?.emprestimoAtivo) {
+            setAlunoAnalisado(dadosAluno);
+            setStep(4);
+            return;
+        }
 
         setAlunoAnalisado(dadosAluno || { matricula: mat, nomeCadastrado: null });
         setNomeAluno(dadosAluno?.nomeCadastrado || '');
@@ -117,8 +135,10 @@ const EmprestimoWizard = ({
     const handleBiparItem = (e) => {
         e.preventDefault();
         const termo = inputItem.trim().toLowerCase();
+        // Termo vazio casaria com qualquer nome via includes('') — Enter acidental emprestaria o 1º item
+        if (!termo) return;
         const itemEncontrado = itensDisponiveis.find(i =>
-            i.patrimonio.toLowerCase() === termo || i.nome_item.toLowerCase().includes(termo)
+            (i.patrimonio || '').toLowerCase() === termo || (i.nome_item || '').toLowerCase().includes(termo)
         );
 
         if (itemEncontrado) processarEscolhaItem(itemEncontrado);
@@ -129,6 +149,7 @@ const EmprestimoWizard = ({
     };
 
     const processarEscolhaItem = (item) => {
+        if (retirando) return; // duplo clique no card dispararia duas retiradas
         if (item.status === STATUS_ITEM.MANUTENCAO) return toast.error("Este item está em manutenção.");
         if (nomeAluno) executarRetirada(item, nomeAluno);
         else {
@@ -144,6 +165,7 @@ const EmprestimoWizard = ({
     };
 
     const executarRetirada = async (item, nome) => {
+        if (retirando) return;
         const alunoAtual = alunoAnalisado;
         try {
             await registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: alunoAtual.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
@@ -157,16 +179,24 @@ const EmprestimoWizard = ({
     const handleEnviarManutencao = async (item) => {
         const motivo = await showPrompt(`Motivo da manutenção para o item: ${item.nome_item}`, '🔧 Enviar para Manutenção');
         if (motivo) {
-            await alterarStatusManutencao(item.id, STATUS_ITEM.MANUTENCAO, motivo);
-            toast.success('Item enviado para manutenção.');
+            try {
+                await alterarStatusManutencao(item.id, STATUS_ITEM.MANUTENCAO, motivo);
+                toast.success('Item enviado para manutenção.');
+            } catch (err) {
+                toast.error(`Erro ao enviar para manutenção: ${err.message || 'Tente novamente.'}`);
+            }
         }
     };
 
     const handleLiberarManutencao = async (item) => {
         const confirmado = await showConfirm(`Liberar "${item.nome_item}" para empréstimo?`, 'Liberação');
         if (confirmado) {
-            await alterarStatusManutencao(item.id, STATUS_ITEM.DISPONIVEL, null);
-            toast.success('Item liberado!');
+            try {
+                await alterarStatusManutencao(item.id, STATUS_ITEM.DISPONIVEL, null);
+                toast.success('Item liberado!');
+            } catch (err) {
+                toast.error(`Erro ao liberar item: ${err.message || 'Tente novamente.'}`);
+            }
         }
     };
 
@@ -222,7 +252,7 @@ const EmprestimoWizard = ({
                                             <div className="nome">{item.nome_item}</div>
                                             <div className="cod">Cód: {item.patrimonio}</div>
                                         </div>
-                                        <button onClick={() => handleEnviarManutencao(item)} title="Enviar para manutenção" className="btn-icon-action">🔧</button>
+                                        <button onClick={() => handleEnviarManutencao(item)} disabled={alterandoStatus} title="Enviar para manutenção" className="btn-icon-action">🔧</button>
                                     </div>
                                 ))}
 
@@ -232,7 +262,7 @@ const EmprestimoWizard = ({
                                             <div className="nome">⚠️ {item.nome_item}</div>
                                             <div className="cod">{item.observacoes || 'Manutenção'}</div>
                                         </div>
-                                        <button onClick={() => handleLiberarManutencao(item)} className="btn-liberar">✓ Liberar</button>
+                                        <button onClick={() => handleLiberarManutencao(item)} disabled={alterandoStatus} className="btn-liberar">✓ Liberar</button>
                                     </div>
                                 ))}
                             </div>
@@ -276,7 +306,7 @@ const EmprestimoWizard = ({
                         <label style={{ fontSize: '13px', color: 'var(--purple)', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>NOME DO NOVO ALUNO:</label>
                         <input ref={inputNomeRef} type="text" value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} placeholder="Ex: João da Silva..." className="input-bipar nome" style={{ marginBottom: '20px' }} />
 
-                        <button type="submit" className="btn-action-primary">Confirmar e Emprestar</button>
+                        <button type="submit" disabled={retirando} className="btn-action-primary">{retirando ? '⏳ Registrando...' : 'Confirmar e Emprestar'}</button>
                     </form>
                 )}
 
@@ -290,7 +320,7 @@ const EmprestimoWizard = ({
                             <h3 style={{ color: 'var(--amber)', margin: '0 0 10px 0' }}>Item a Devolver:</h3>
                             <p style={{ fontSize: '24px', fontWeight: '900', color: 'var(--text)', margin: '0 0 30px 0' }}>{alunoAnalisado.emprestimoAtivo.nomeItem}</p>
                             
-                            <button onClick={handleConfirmarDevolucao} className="btn-action-primary large">✓ APERTE ENTER OU CLIQUE</button>
+                            <button onClick={handleConfirmarDevolucao} disabled={devolvendo} className="btn-action-primary large">{devolvendo ? '⏳ Registrando...' : '✓ APERTE ENTER OU CLIQUE'}</button>
                         </div>
                     </div>
                 )}
@@ -300,14 +330,19 @@ const EmprestimoWizard = ({
 };
 
 
-const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loadingHistorico, registrarDevolucao }) => {
+const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loadingHistorico, registrarDevolucao, devolvendo }) => {
     const { toast, showConfirm } = useUI();
 
     const handleDevolucaoDireta = async (emprestimoId, nomeItem) => {
+        if (devolvendo) return;
         const confirmado = await showConfirm(`Confirma a devolução do item: ${nomeItem}?`, '⬇️ Receber Devolução');
         if (confirmado) {
-            await registrarDevolucao(emprestimoId);
-            toast.success('Devolução concluída!');
+            try {
+                await registrarDevolucao(emprestimoId);
+                toast.success('Devolução concluída!');
+            } catch (err) {
+                toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
+            }
         }
     };
 
@@ -340,7 +375,7 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
                                         <span>🕒 {new Date(emp.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                         <span className="tag-tempo"><TempoDecorrido dataIso={emp.dataRetirada} /></span>
                                     </div>
-                                    <button onClick={() => handleDevolucaoDireta(emp.id, emp.nomeItem)} className="btn-devolver">⬇️ Receber Devolução</button>
+                                    <button onClick={() => handleDevolucaoDireta(emp.id, emp.nomeItem)} disabled={devolvendo} className="btn-devolver">⬇️ Receber Devolução</button>
                                 </div>
                             ))}
                         </div>
@@ -420,13 +455,14 @@ export default function MuralEmprestimos({ session }) {
                 categoriaSel={categoriaSel}
                 setCategoriaSel={setCategoriaSel}
             />
-            <PainelRegistros 
+            <PainelRegistros
                 abaAtiva={abaAtiva}
                 setAbaAtiva={setAbaAtiva}
                 emprestimosAtivos={hookData.emprestimosAtivos}
                 historico={hookData.historico}
                 loadingHistorico={hookData.loadingHistorico}
                 registrarDevolucao={hookData.registrarDevolucao}
+                devolvendo={hookData.devolvendo}
             />
         </div>
     );
