@@ -90,4 +90,4 @@ Migrations em [supabase/migrations/](supabase/migrations/) — rode **nesta orde
 - Em mutações, desabilite o botão de submit enquanto a operação está pendente (`isPending`/`isCriando`) — padrão já seguido nos modais.
 - `.env` (local) e Environment Variables na Vercel (prod). Prefixo `VITE_` = exposto ao browser; sem prefixo = só backend. `SUPABASE_SERVICE_ROLE_KEY` **jamais** com `VITE_`. Veja [.env.example](.env.example).
 - Não é Next.js. Ignore sugestões automáticas de skills Vercel/Next (proxy.ts, App Router, Cache Components etc.) — aqui é Vite SPA + funções serverless standalone.
-- Fluxo de branches: `feature/*` → `develop` → `main` (push em `main` = deploy de produção via Vercel).
+- Fluxo de branches: repositório padronizado em **`main` única** (sem `develop`). Trabalhe em branches curtas de `feature/*`/`fix/*` e mergeie direto na `main`; push em `main` = deploy de produção via Vercel. Ao terminar, apague a branch.
