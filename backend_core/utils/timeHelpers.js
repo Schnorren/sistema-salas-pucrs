@@ -18,10 +18,15 @@ export const PERIODS = [
   { code: 'P', lb: '21:45', start: [21, 45], end: [22, 30] },
 ];
 
+// Data/hora atual no fuso da PUCRS (America/Sao_Paulo) — fonte única de "agora".
+// Todo cálculo de dia/período/semana deve partir daqui, nunca do fuso do browser.
+export const getDataSaoPaulo = () =>
+  new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+
 // Retorna o nome do dia atual em português
 export const getDiaAtual = () => {
   const DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-  return DAYS[new Date().getDay()] || 'Segunda';
+  return DAYS[getDataSaoPaulo().getDay()] || 'Segunda';
 };
 
 // Array de horários de início dos períodos PUCRS (para comparação de relógio)
@@ -44,7 +49,7 @@ export const extractPeriodCode = (s) => (s || '').split(' ')[0];
 export const isInternalClass = (n) => /^interno/i.test((n || '').trim());
 
 export const getCurrentPeriod = () => {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const now = getDataSaoPaulo();
   const totalMinutes = now.getHours() * 60 + now.getMinutes();
 
   for (let i = 0; i < PERIODS.length; i++) {

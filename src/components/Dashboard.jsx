@@ -121,7 +121,8 @@ export default function Dashboard({ session }) {
     staleTime: Infinity,
   });
   const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
-  const totalTrocasHoje = trocasCache ? Object.keys(trocasCache).length : 0;
+  // O cache da Timeline agrupa as trocas por SEMANA (não por dia)
+  const totalTrocasSemana = trocasCache ? Object.keys(trocasCache).length : 0;
 
   // Notificação de aviso urgente em qualquer aba
   useEffect(() => {
@@ -271,9 +272,9 @@ export default function Dashboard({ session }) {
           <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
           <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
             Linha do Tempo
-            {totalTrocasHoje > 0 && (
-              <span style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
-                {totalTrocasHoje}
+            {totalTrocasSemana > 0 && (
+              <span title="Trocas de sala ativas nesta semana" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                {totalTrocasSemana}
               </span>
             )}
           </div>

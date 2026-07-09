@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_TIMES, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_END_TIMES, getDataSaoPaulo, getDiaAtual, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase'; 
@@ -11,10 +11,10 @@ const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'S
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
 // Fora do componente — funções puras sem dependência de estado.
-// Segunda-feira (ISO) da semana atual, em horário local — as trocas de sala são
-// agrupadas e expiram por semana.
+// Segunda-feira (ISO) da semana atual, no fuso de Brasília — mesma regra do
+// default da coluna `semana` e de limpar_trocas_antigas() no banco.
 const getSemanaAtual = () => {
-  const d = new Date();
+  const d = getDataSaoPaulo();
   const dow = d.getDay();                 // 0=Dom .. 6=Sáb
   const diff = dow === 0 ? -6 : 1 - dow;  // dias até a segunda-feira
   d.setDate(d.getDate() + diff);
@@ -32,10 +32,31 @@ const parsearNomeAula = (nomeBruto) => {
 
 const normalizeText = (text) => text ? text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
 
-const formatarAula = (nomeBruto) => {
-  if (!nomeBruto) return { codigo: '', nome: '' };
-  const partes = nomeBruto.split(' - ');
-  return partes.length > 1 ? { codigo: partes[0], nome: partes.slice(1).join(' - ') } : { codigo: '', nome: nomeBruto };
+// Escapa valores interpolados no HTML do cartaz de impress\u00e3o (inclui dados
+// gravados por outros usu\u00e1rios \u2014 sem escape vira vetor de XSS na janela de print).
+const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+// Bloco de per\u00edodos CONSECUTIVOS da mesma aula que cont\u00e9m o slot dado.
+// A linha tem os 16 per\u00edodos em ordem (livres inclusos), ent\u00e3o adjac\u00eancia no
+// array = consecutividade \u2014 mesma regra de groupConsecutiveClasses().
+const getBlocoConsecutivo = (linhaSlots, slot) => {
+  const idx = linhaSlots.findIndex(s => s.periodo === slot.periodo);
+  if (idx === -1) return [slot];
+  const mesmaAula = (s) => s?.ocupado && s.nome === slot.nome && s.disciplinaId === slot.disciplinaId;
+  let ini = idx;
+  let fim = idx;
+  while (ini > 0 && mesmaAula(linhaSlots[ini - 1])) ini--;
+  while (fim < linhaSlots.length - 1 && mesmaAula(linhaSlots[fim + 1])) fim++;
+  return linhaSlots.slice(ini, fim + 1);
+};
+
+// Mensagem p\u00fablica para falhas nas mutations de troca (RLS nega com 42501)
+const descreverErroTroca = (err, fallback) => {
+  if (err?.code === '42501') return 'Voc\u00ea n\u00e3o tem permiss\u00e3o para editar trocas de sala (m\u00f3dulo "edicao_grade").';
+  if (err?.publico) return err.message;
+  return fallback;
 };
 
 export default function Timeline({ acesso, initialDay, initialFiltro }) {
@@ -52,6 +73,8 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const [autoMode, setAutoMode] = useState(!initialDay); // false se veio de busca
   const inputRef = useRef(null);
   const periodoAtualRef = useRef(null); // ref para o cabeçalho do período atual
+  const ultimoPeriodoRef = useRef(getCurrentPeriod()); // último período visto pelo relógio
+  const formRef = useRef(null); // form do modal — validação também no fluxo de impressão
 
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
@@ -79,6 +102,8 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     enabled: !!predioAtual
   });
 
+  // Toast/fechamento do modal ficam nos callbacks de cada chamada: salvar via
+  // formulário fecha o modal; salvar antes de imprimir não fecha.
   const salvarTrocaMutation = useMutation({
     mutationFn: async (payload) => {
         const { error } = await supabase.from('trocas_sala').upsert({
@@ -93,59 +118,67 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
             cod_cred: formTroca.codCred || null,
             periodos_str: payload.periodosStr,
             horario_str: payload.horarioStr
-        }, { onConflict: 'aula_unique_key,semana' });
+        }, { onConflict: 'predio_id,aula_unique_key,semana' });
         if (error) throw error;
     },
-    onSuccess: (_, __, context) => {
-        queryClient.invalidateQueries(['trocas_sala', predioAtual]);
-        // Fecha o modal apenas se não veio de um print (context.fromPrint)
-        if (!context?.fromPrint) {
-            toast.success('Troca de sala registrada com sucesso!');
-            setModalAvisoOpen(false);
-        }
+    onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['trocas_sala', predioAtual] });
+    },
+    onError: (err) => {
+        toast.error(descreverErroTroca(err, 'Não foi possível salvar a troca de sala.'));
     }
   });
 
   const removerTrocaMutation = useMutation({
     mutationFn: async (aulaUniqueKey) => {
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('trocas_sala')
             .delete()
+            .eq('predio_id', predioAtual)
             .eq('aula_unique_key', aulaUniqueKey)
-            .eq('semana', getSemanaAtual());
+            .eq('semana', getSemanaAtual())
+            .select();
         if (error) throw error;
+        // RLS nega DELETE silenciosamente (0 linhas) — transforma em erro visível
+        if (!data?.length) {
+            const e = new Error('Nenhuma troca foi removida — verifique se você tem a permissão "edicao_grade".');
+            e.publico = true;
+            throw e;
+        }
     },
     onSuccess: () => {
-        queryClient.invalidateQueries(['trocas_sala', predioAtual]);
+        queryClient.invalidateQueries({ queryKey: ['trocas_sala', predioAtual] });
         toast.info('Aviso de troca removido.');
         setModalAvisoOpen(false);
+    },
+    onError: (err) => {
+        toast.error(descreverErroTroca(err, 'Não foi possível remover a troca de sala.'));
     }
   });
 
   useEffect(() => {
     if (!predioAtual) return;
     const channel = supabase.channel(`trocas_${predioAtual}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'trocas_sala' }, () => {
-            queryClient.invalidateQueries(['trocas_sala', predioAtual]);
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'trocas_sala', filter: `predio_id=eq.${predioAtual}` }, () => {
+            queryClient.invalidateQueries({ queryKey: ['trocas_sala', predioAtual] });
         }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [predioAtual, queryClient]);
 
-  // Relógio: atualiza o highlight do período a cada minuto.
-  // Em modo automático: também corrige o dia (virada de meia-noite)
-  // e rola para o período atual sempre que o período muda.
+  // Relógio: a cada minuto compara o período/dia calculados (fuso de Brasília)
+  // com o último valor visto, em vez de esperar o minuto exato de início de
+  // período — assim o highlight também LIMPA em intervalos longos (13h–14h) e
+  // no fim do dia, o dia vira à meia-noite em modo automático, e ticks pulados
+  // por throttling de aba em background não perdem a transição.
   useEffect(() => {
     const verificar = () => {
-      const agora = new Date();
-      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
+      // Em modo automático, mantém o dia sincronizado (no-op se não mudou)
+      if (autoMode) setDay(getDiaAtual());
 
-      if (PERIOD_TIMES.includes(horaStr)) {
+      const periodo = getCurrentPeriod();
+      if (periodo !== ultimoPeriodoRef.current) {
+        ultimoPeriodoRef.current = periodo;
         setTick(t => t + 1);
-
-        // Atualiza o dia automaticamente (cobre virada de meia-noite)
-        if (autoMode) {
-          setDay(getDiaAtual());
-        }
 
         // Scroll suave para o período atual após a atualização do DOM
         setTimeout(() => {
@@ -194,7 +227,10 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
       const gradeBruta = rawGradeData.grade;
       if (!salasDb || !gradeBruta || !Array.isArray(salasDb) || !Array.isArray(gradeBruta)) return null;
 
-      const periodoAtual = getCurrentPeriod();
+      // "Agora" só faz sentido quando o dia exibido é o dia de hoje — navegando
+      // para outro dia, nenhuma coluna/sala deve aparecer como período atual.
+      const isHoje = day === getDiaAtual();
+      const periodoAtual = isHoje ? getCurrentPeriod() : null;
       const aulasDoDia = gradeBruta.filter(d => d?.dia_semana?.toLowerCase().includes(day.toLowerCase()));
       const periodosCabecalho = PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual }));
       const sortedSalas = [...salasDb].sort((a, b) => (a.numero || '').localeCompare(b.numero || '', undefined, { numeric: true }));
@@ -237,7 +273,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const handleCellClick = async (slot, linhaSlots, salaAtual) => {
     if (!slot.ocupado) return;
 
-    const matches = linhaSlots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId);
+    const matches = getBlocoConsecutivo(linhaSlots, slot);
     const first = matches[0];
     const last = matches[matches.length - 1];
     // Chave estável: dia + sala + período inicial do bloco. Independe do texto de
@@ -271,28 +307,38 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
 
   const handleSalvarTroca = (e) => {
     e.preventDefault();
-    salvarTrocaMutation.mutate(aulaSelecionadaParaTroca);
+    salvarTrocaMutation.mutate(aulaSelecionadaParaTroca, {
+        onSuccess: () => {
+            toast.success('Troca de sala registrada com sucesso!');
+            setModalAvisoOpen(false);
+        }
+    });
   };
 
   const handleImprimirCartaz = async () => {
-    // Garante que a troca está salva antes de imprimir
+    // O botão é type="button" — força a validação dos campos obrigatórios do
+    // form (prédio/sala destino) também no fluxo de impressão.
+    if (!formRef.current?.reportValidity()) return;
+
+    // Garante que a troca está salva antes de imprimir (sem fechar o modal)
     const jaSalvo = !!trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
     if (!jaSalvo) {
         try {
-            await salvarTrocaMutation.mutateAsync(aulaSelecionadaParaTroca, { context: { fromPrint: true } });
+            await salvarTrocaMutation.mutateAsync(aulaSelecionadaParaTroca);
         } catch {
-            toast.error('Não foi possível salvar a troca antes de imprimir. Verifique os campos obrigatórios.');
-            return;
+            return; // onError da mutation já exibiu o motivo
         }
     }
 
-    const nomeAula      = formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome;
-    const codCred       = formTroca.codCred?.trim();
-    const professor     = formTroca.professor?.trim();
-    const predioDestino = formTroca.predio || predioAtual;
-    const salaDestino   = formTroca.sala;
-    const periodos      = aulaSelecionadaParaTroca.periodosStr;
-    const horario       = aulaSelecionadaParaTroca.horarioStr;
+    // Tudo que entra no HTML do cartaz passa por escapeHtml (dados vêm do
+    // form e de registros gravados por outros usuários).
+    const nomeAula      = escapeHtml(formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome);
+    const codCred       = escapeHtml(formTroca.codCred?.trim());
+    const professor     = escapeHtml(formTroca.professor?.trim());
+    const predioDestino = escapeHtml(formTroca.predio);
+    const salaDestino   = escapeHtml(formTroca.sala);
+    const periodos      = escapeHtml(aulaSelecionadaParaTroca.periodosStr);
+    const horario       = escapeHtml(aulaSelecionadaParaTroca.horarioStr);
 
     // Linha em inglês — só inclui os campos preenchidos
     const partesEN = [`Class: ${nomeAula}`];
@@ -315,6 +361,10 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
       </div>` : '';
 
     const printWindow = window.open('', '', 'width=794,height=1123');
+    if (!printWindow) {
+        toast.error('O navegador bloqueou a janela de impressão. Libere pop-ups para este site e tente novamente.');
+        return;
+    }
     printWindow.document.write(`
       <!DOCTYPE html>
       <html lang="pt-BR">
@@ -552,7 +602,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
               <!-- Destino — centralizado e em destaque -->
               <div class="destino-section">
                 <div class="destino-label">Foi transferida para a sala</div>
-                <div class="destino-sala">${salaDestino || '???'}</div>
+                <div class="destino-sala">${salaDestino}</div>
                 <div class="destino-predio">Prédio ${predioDestino}</div>
               </div>
 
@@ -599,7 +649,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                     🔁 Registrar Troca de Sala
                 </h2>
                 
-                <form onSubmit={handleSalvarTroca}>
+                <form onSubmit={handleSalvarTroca} ref={formRef}>
                     <div style={{ padding: '15px', background: 'var(--panel2)', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '5px' }}>NOME DA DISCIPLINA (IMPRESSÃO)</div>
                         <input 
@@ -654,8 +704,8 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                         <button type="button" onClick={handleImprimirCartaz} style={{ padding: '10px 16px', background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             🖨️ Imprimir
                         </button>
-                        <button type="submit" disabled={salvarTrocaMutation.isLoading} style={{ padding: '10px 16px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            {salvarTrocaMutation.isLoading ? 'Salvando...' : 'Salvar Alteração'}
+                        <button type="submit" disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            {salvarTrocaMutation.isPending ? 'Salvando...' : 'Salvar Alteração'}
                         </button>
                     </div>
                 </form>
@@ -733,9 +783,9 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                 <div className="tl-cells" style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
                   {linha.slots.map((slot) => {
                     const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
-                    const aula = formatarAula(slot.nome);
+                    const aula = parsearNomeAula(slot.nome);
 
-                    const matches = slot.ocupado ? linha.slots.filter(s => s.nome === slot.nome && s.disciplinaId === slot.disciplinaId) : [];
+                    const matches = slot.ocupado ? getBlocoConsecutivo(linha.slots, slot) : [];
                     const aulaUniqueKey = slot.ocupado ? `${day}-${linha.sala}-${matches[0]?.periodo}` : null;
                     const isHovered = hoveredAulaId && hoveredAulaId === aulaUniqueKey;
                     const temTroca = slot.ocupado ? trocasAtivas[aulaUniqueKey] : null;
@@ -790,11 +840,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                               fontSize: '0.75rem', lineHeight: 1.3, fontWeight: 600, whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                               color: temTroca ? 'var(--red)' : ((isHovered || isSearchMatch) ? 'var(--text)' : undefined)
                             }}>
-                              {aula.nome}
+                              {aula.nomeAula}
                             </div>
-                            {aula.codigo && (
+                            {aula.codCred && (
                               <div style={{ fontSize: '0.65rem', opacity: (isHovered || isSearchMatch) ? 1 : 0.7, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {aula.codigo}
+                                {aula.codCred}
                               </div>
                             )}
                           </div>
