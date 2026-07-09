@@ -31,6 +31,7 @@ const ORDEM = [
   'trocas_sala_data_aula.sql',
   'trocas_sala_semana.sql',
   'trocas_sala_predio_unique.sql',
+  'trocas_sala_replica_identity.sql',
   'rls_policies.sql',
   'auditoria_log.sql',
 ];

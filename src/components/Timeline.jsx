@@ -9,6 +9,8 @@ import { useUI } from '../contexts/UIContext';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+// Dia em inglês para a linha EN do cartaz de impressão
+const DAYS_EN = { Segunda: 'Monday', 'Terça': 'Tuesday', Quarta: 'Wednesday', Quinta: 'Thursday', Sexta: 'Friday', 'Sábado': 'Saturday', Domingo: 'Sunday' };
 
 // Fora do componente — funções puras sem dependência de estado.
 // Segunda-feira (ISO) da semana atual, no fuso de Brasília — mesma regra do
@@ -38,19 +40,9 @@ const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-// Bloco de per\u00edodos CONSECUTIVOS da mesma aula que cont\u00e9m o slot dado.
-// A linha tem os 16 per\u00edodos em ordem (livres inclusos), ent\u00e3o adjac\u00eancia no
-// array = consecutividade \u2014 mesma regra de groupConsecutiveClasses().
-const getBlocoConsecutivo = (linhaSlots, slot) => {
-  const idx = linhaSlots.findIndex(s => s.periodo === slot.periodo);
-  if (idx === -1) return [slot];
-  const mesmaAula = (s) => s?.ocupado && s.nome === slot.nome && s.disciplinaId === slot.disciplinaId;
-  let ini = idx;
-  let fim = idx;
-  while (ini > 0 && mesmaAula(linhaSlots[ini - 1])) ini--;
-  while (fim < linhaSlots.length - 1 && mesmaAula(linhaSlots[fim + 1])) fim++;
-  return linhaSlots.slice(ini, fim + 1);
-};
+// Normaliza valores de formul\u00e1rio/banco para grava\u00e7\u00e3o e compara\u00e7\u00e3o
+// (null/undefined e '' equivalem; o banco pode devolver n\u00famero em predio/sala).
+const limpar = (v) => String(v ?? '').trim();
 
 // Mensagem p\u00fablica para falhas nas mutations de troca (RLS nega com 42501)
 const descreverErroTroca = (err, fallback) => {
@@ -105,19 +97,21 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   // Toast/fechamento do modal ficam nos callbacks de cada chamada: salvar via
   // formulário fecha o modal; salvar antes de imprimir não fecha.
   const salvarTrocaMutation = useMutation({
-    mutationFn: async (payload) => {
+    // Recebe aula + form no payload (em vez de ler formTroca da closure):
+    // evita gravar estado defasado quando a mutation é disparada fora do submit.
+    mutationFn: async ({ aula, form }) => {
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
-            aula_unique_key: payload.aulaUniqueKey,
+            aula_unique_key: aula.aulaUniqueKey,
             semana: getSemanaAtual(),
-            predio_destino: formTroca.predio,
-            sala_destino: formTroca.sala,
-            motivo: formTroca.motivo,
-            nome_aula_editado: formTroca.nomeAulaEditado,
-            professor: formTroca.professor || null,
-            cod_cred: formTroca.codCred || null,
-            periodos_str: payload.periodosStr,
-            horario_str: payload.horarioStr
+            predio_destino: limpar(form.predio),
+            sala_destino: limpar(form.sala),
+            motivo: limpar(form.motivo),
+            nome_aula_editado: limpar(form.nomeAulaEditado),
+            professor: limpar(form.professor) || null,
+            cod_cred: limpar(form.codCred) || null,
+            periodos_str: aula.periodosStr,
+            horario_str: aula.horarioStr
         }, { onConflict: 'predio_id,aula_unique_key,semana' });
         if (error) throw error;
     },
@@ -220,6 +214,14 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [modalAvisoOpen]);
 
+  // Esc fecha o modal de troca (padrão de modal; descarta edições não salvas)
+  useEffect(() => {
+    if (!modalAvisoOpen) return;
+    const onEsc = (e) => { if (e.key === 'Escape') setModalAvisoOpen(false); };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [modalAvisoOpen]);
+
   const dataProcessed = useMemo(() => {
     try {
       if (!rawGradeData) return null;
@@ -235,22 +237,60 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
       const periodosCabecalho = PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual }));
       const sortedSalas = [...salasDb].sort((a, b) => (a.numero || '').localeCompare(b.numero || '', undefined, { numeric: true }));
 
+      // Índice "sala|período" → aula (1ª ocorrência, como o find antigo): troca a
+      // varredura O(aulas) por célula por um lookup O(1) em salas × 16 períodos.
+      const aulasPorSlot = new Map();
+      for (const d of aulasDoDia) {
+        const numSala = d?.salas?.numero || d?.sala;
+        const code = extractPeriodCode(d?.periodo);
+        const chave = `${numSala}|${code}`;
+        if (numSala && code && !aulasPorSlot.has(chave)) aulasPorSlot.set(chave, d);
+      }
+
       const timeline = sortedSalas.map(salaRef => {
         const slots = PERIODS.map(p => {
-          const aulaNoSlot = aulasDoDia.find(d => {
-            const numSala = d?.salas?.numero || d?.sala;
-            return numSala === salaRef.numero && extractPeriodCode(d?.periodo) === p.code;
-          });
+          const aulaNoSlot = aulasPorSlot.get(`${salaRef.numero}|${p.code}`);
+          const nome = aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome || '') : null;
 
           return {
             periodo: p.code, horario: p.lb, isAgora: p.code === periodoAtual,
             ocupado: !!aulaNoSlot,
-            nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome || '') : null,
+            nome,
+            nomeNorm: aulaNoSlot ? normalizeText(nome) : '',
+            aulaParseada: aulaNoSlot ? parsearNomeAula(nome) : null,
             tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre',
             disciplinaId: aulaNoSlot ? (aulaNoSlot.disciplina_id || aulaNoSlot.nome_aula || '') : null
           };
         });
-        return { sala: salaRef.numero, temAulaAgora: slots.some(s => s.isAgora && s.ocupado), slots };
+
+        // Blocos de períodos CONSECUTIVOS da mesma aula (adjacência no array de 16
+        // períodos = consecutividade — mesma regra de groupConsecutiveClasses()).
+        // Cada slot do bloco recebe a chave da troca e os textos derivados, calculados
+        // UMA vez aqui em vez de por célula a cada render (hover re-renderiza tudo).
+        // Chave estável: dia + sala + período inicial do bloco — independe do texto de
+        // nome_aula (sobrevive ao re-import) e distingue dias e prédios.
+        for (let i = 0; i < slots.length; i++) {
+          if (!slots[i].ocupado) continue;
+          let fim = i;
+          while (
+            fim + 1 < slots.length && slots[fim + 1].ocupado &&
+            slots[fim + 1].nome === slots[i].nome &&
+            slots[fim + 1].disciplinaId === slots[i].disciplinaId
+          ) fim++;
+          const bloco = slots.slice(i, fim + 1);
+          const first = bloco[0];
+          const last = bloco[bloco.length - 1];
+          const dadosBloco = {
+            aulaUniqueKey: `${day}-${salaRef.numero}-${first.periodo}`,
+            periodosStr: bloco.map(m => m.periodo).join(''),
+            horarioStr: `${first.horario} às ${PERIOD_END_TIMES[last.periodo] || last.horario}`,
+            isSequenceAgora: bloco.some(m => m.isAgora)
+          };
+          bloco.forEach(s => Object.assign(s, dadosBloco));
+          i = fim;
+        }
+
+        return { sala: salaRef.numero, salaNorm: normalizeText(salaRef.numero), temAulaAgora: slots.some(s => s.isAgora && s.ocupado), slots };
       });
 
       return { periodosCabecalho, timeline };
@@ -259,40 +299,37 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     }
   }, [rawGradeData, day, tick]);
 
+  // Termo de busca normalizado — calculado 1x por render (era por célula) e
+  // comparado contra nomeNorm/salaNorm pré-computados no dataProcessed.
+  const termoNormalizado = normalizeText(filtro).trim();
+
   const filteredTimeline = useMemo(() => {
     if (!dataProcessed?.timeline) return [];
-    if (!filtro.trim()) return dataProcessed.timeline;
-    const termo = normalizeText(filtro);
-    return dataProcessed.timeline.filter(linha => {
-      const matchSala = normalizeText(linha.sala).includes(termo);
-      const matchAula = linha.slots.some(slot => slot.ocupado && normalizeText(slot.nome).includes(termo));
-      return matchSala || matchAula;
-    });
+    const termo = normalizeText(filtro).trim();
+    if (!termo) return dataProcessed.timeline;
+    return dataProcessed.timeline.filter(linha =>
+      linha.salaNorm.includes(termo) ||
+      linha.slots.some(slot => slot.ocupado && slot.nomeNorm.includes(termo))
+    );
   }, [dataProcessed, filtro]);
 
-  const handleCellClick = async (slot, linhaSlots, salaAtual) => {
+  const handleCellClick = async (slot, salaAtual) => {
     if (!slot.ocupado) return;
 
-    const matches = getBlocoConsecutivo(linhaSlots, slot);
-    const first = matches[0];
-    const last = matches[matches.length - 1];
-    // Chave estável: dia + sala + período inicial do bloco. Independe do texto de
-    // nome_aula (sobrevive ao re-import) e distingue a mesma aula em dias diferentes.
-    const aulaUniqueKey = `${day}-${salaAtual}-${first.periodo}`;
-    const periodosStr = matches.map(m => m.periodo).join('');
-    const horarioStr = `${first.horario} às ${PERIOD_END_TIMES[last.periodo] || last.horario}`;
-
-    const registroExistente = trocasAtivas[aulaUniqueKey];
+    const registroExistente = trocasAtivas[slot.aulaUniqueKey];
 
     if (!registroExistente) {
         const confirma = await showConfirm('Deseja registrar uma alteração de sala para esta aula?', 'Registrar Troca de Sala');
         if (!confirma) return;
     }
 
-    setAulaSelecionadaParaTroca({ ...slot, salaAtual, aulaUniqueKey, periodosStr, horarioStr });
+    // slot já carrega aulaUniqueKey/periodosStr/horarioStr (calculados no
+    // dataProcessed); `dia` entra para o cartaz de impressão.
+    setAulaSelecionadaParaTroca({ ...slot, salaAtual, dia: day });
 
-    // Auto-preenchimento: extrai cod/cred e nome limpo do padrão "97316-04/1 - NOME DA AULA"
-    const { codCred: codAutoDetectado, nomeAula: nomeAutoDetectado } = parsearNomeAula(slot.nome);
+    // Auto-preenchimento: cod/cred e nome limpo do padrão "97316-04/1 - NOME DA
+    // AULA", já parseados na montagem da grade.
+    const { codCred: codAutoDetectado, nomeAula: nomeAutoDetectado } = slot.aulaParseada;
 
     setFormTroca({
         predio: registroExistente?.predio_destino || '',
@@ -307,7 +344,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
 
   const handleSalvarTroca = (e) => {
     e.preventDefault();
-    salvarTrocaMutation.mutate(aulaSelecionadaParaTroca, {
+    salvarTrocaMutation.mutate({ aula: aulaSelecionadaParaTroca, form: formTroca }, {
         onSuccess: () => {
             toast.success('Troca de sala registrada com sucesso!');
             setModalAvisoOpen(false);
@@ -315,16 +352,33 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     });
   };
 
+  // Remoção é destrutiva (o aviso some para todos os clientes) — confirma antes.
+  const handleRemoverTroca = async () => {
+    const confirma = await showConfirm('Remover o aviso de troca desta aula? Ele deixa de aparecer na grade para todos.', 'Remover Troca de Sala');
+    if (!confirma) return;
+    removerTrocaMutation.mutate(aulaSelecionadaParaTroca.aulaUniqueKey);
+  };
+
   const handleImprimirCartaz = async () => {
     // O botão é type="button" — força a validação dos campos obrigatórios do
     // form (prédio/sala destino) também no fluxo de impressão.
     if (!formRef.current?.reportValidity()) return;
 
-    // Garante que a troca está salva antes de imprimir (sem fechar o modal)
-    const jaSalvo = !!trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
-    if (!jaSalvo) {
+    // O cartaz impresso precisa refletir o que está salvo: regrava quando o form
+    // difere do registro (ou não há registro) — sem isso, editar um campo e clicar
+    // direto em Imprimir gerava cartaz com dados novos e grade/banco com os velhos.
+    // Sem alterações, não grava: quem não tem 'edicao_grade' segue podendo reimprimir.
+    const registro = trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
+    const formDifereDoSalvo = !registro ||
+        limpar(registro.predio_destino)    !== limpar(formTroca.predio) ||
+        limpar(registro.sala_destino)      !== limpar(formTroca.sala) ||
+        limpar(registro.motivo)            !== limpar(formTroca.motivo) ||
+        limpar(registro.nome_aula_editado) !== limpar(formTroca.nomeAulaEditado) ||
+        limpar(registro.professor)         !== limpar(formTroca.professor) ||
+        limpar(registro.cod_cred)          !== limpar(formTroca.codCred);
+    if (formDifereDoSalvo) {
         try {
-            await salvarTrocaMutation.mutateAsync(aulaSelecionadaParaTroca);
+            await salvarTrocaMutation.mutateAsync({ aula: aulaSelecionadaParaTroca, form: formTroca });
         } catch {
             return; // onError da mutation já exibiu o motivo
         }
@@ -333,19 +387,23 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     // Tudo que entra no HTML do cartaz passa por escapeHtml (dados vêm do
     // form e de registros gravados por outros usuários).
     const nomeAula      = escapeHtml(formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome);
-    const codCred       = escapeHtml(formTroca.codCred?.trim());
-    const professor     = escapeHtml(formTroca.professor?.trim());
-    const predioDestino = escapeHtml(formTroca.predio);
-    const salaDestino   = escapeHtml(formTroca.sala);
+    const codCred       = escapeHtml(limpar(formTroca.codCred));
+    const professor     = escapeHtml(limpar(formTroca.professor));
+    const predioDestino = escapeHtml(limpar(formTroca.predio));
+    const salaDestino   = escapeHtml(limpar(formTroca.sala));
     const periodos      = escapeHtml(aulaSelecionadaParaTroca.periodosStr);
     const horario       = escapeHtml(aulaSelecionadaParaTroca.horarioStr);
+    const salaOrigem    = escapeHtml(aulaSelecionadaParaTroca.salaAtual);
+    const diaSemana     = escapeHtml(aulaSelecionadaParaTroca.dia);
+    // "Gerado em" no fuso da PUCRS, não no do browser (regra do projeto)
+    const geradoEm      = escapeHtml(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
 
     // Linha em inglês — só inclui os campos preenchidos
     const partesEN = [`Class: ${nomeAula}`];
     if (codCred)   partesEN.push(`Code/Credits: ${codCred}`);
     if (professor) partesEN.push(`Instructor: ${professor}`);
-    partesEN.push(`has been moved to Room ${salaDestino}, Building ${predioDestino}`);
-    partesEN.push(`Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
+    partesEN.push(`has been moved from Room ${salaOrigem} to Room ${salaDestino}, Building ${predioDestino}`);
+    partesEN.push(`${DAYS_EN[aulaSelecionadaParaTroca.dia] || diaSemana} · Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
     const linhaEN = partesEN.join(' · ');
 
     const blocoCodCred   = codCred   ? `
@@ -597,6 +655,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                 </div>
                 ${blocoCodCred ? `<hr class="divider">${blocoCodCred}` : ''}
                 ${blocoProfessor ? `<hr class="divider">${blocoProfessor}` : ''}
+                <hr class="divider">
+                <div class="field">
+                  <div class="field-label">Sala de Origem</div>
+                  <div class="field-value small">Sala ${salaOrigem}</div>
+                </div>
               </div>
 
               <!-- Destino — centralizado e em destaque -->
@@ -609,7 +672,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
               <!-- Períodos -->
               <div class="periodos-section">
                 <div class="periodos-badge">
-                  PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
+                  ${diaSemana} &nbsp;·&nbsp; PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
                 </div>
               </div>
 
@@ -621,12 +684,16 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
             <!-- Rodapé -->
             <div class="footer">
               <div class="footer-left">Secretaria Acadêmica — PUCRS</div>
-              <div class="footer-right">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+              <div class="footer-right">Gerado em ${geradoEm}</div>
             </div>
 
           </div>
           <script>
-            window.onload = () => { window.print(); window.close(); }
+            // print() é assíncrono em alguns navegadores — fechar a janela logo
+            // após chamá-lo cancelava o diálogo. onafterprint fecha só ao concluir
+            // (ou cancelar) a impressão.
+            window.onload = () => { window.focus(); window.print(); };
+            window.onafterprint = () => window.close();
           </script>
         </body>
       </html>
@@ -697,11 +764,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                             Cancelar
                         </button>
                         {trocasAtivas[aulaSelecionadaParaTroca.aulaUniqueKey] && (
-                            <button type="button" onClick={() => removerTrocaMutation.mutate(aulaSelecionadaParaTroca.aulaUniqueKey)} style={{ padding: '10px 16px', background: 'var(--red-b)', color: 'var(--red)', border: '1px solid rgba(160, 40, 40, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                Remover
+                            <button type="button" onClick={handleRemoverTroca} disabled={removerTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--red-b)', color: 'var(--red)', border: '1px solid rgba(160, 40, 40, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                {removerTrocaMutation.isPending ? 'Removendo...' : 'Remover'}
                             </button>
                         )}
-                        <button type="button" onClick={handleImprimirCartaz} style={{ padding: '10px 16px', background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button type="button" onClick={handleImprimirCartaz} disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             🖨️ Imprimir
                         </button>
                         <button type="submit" disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
@@ -783,38 +850,28 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                 <div className="tl-cells" style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
                   {linha.slots.map((slot) => {
                     const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
-                    const aula = parsearNomeAula(slot.nome);
+                    // Derivados por célula já vêm prontos do dataProcessed
+                    // (aulaParseada, aulaUniqueKey, periodosStr, horarioStr,
+                    // isSequenceAgora) — aqui só resta cruzar com o estado vivo.
+                    const aula = slot.aulaParseada;
+                    const isHovered = !!hoveredAulaId && hoveredAulaId === slot.aulaUniqueKey;
+                    const temTroca = slot.ocupado ? trocasAtivas[slot.aulaUniqueKey] : null;
+                    const isSequenceAgora = !!slot.isSequenceAgora;
 
-                    const matches = slot.ocupado ? getBlocoConsecutivo(linha.slots, slot) : [];
-                    const aulaUniqueKey = slot.ocupado ? `${day}-${linha.sala}-${matches[0]?.periodo}` : null;
-                    const isHovered = hoveredAulaId && hoveredAulaId === aulaUniqueKey;
-                    const temTroca = slot.ocupado ? trocasAtivas[aulaUniqueKey] : null;
+                    const isSearchMatch = termoNormalizado && slot.ocupado && slot.nomeNorm.includes(termoNormalizado);
+                    const isRoomMatch = termoNormalizado && linha.salaNorm.includes(termoNormalizado);
 
-                    const isSequenceAgora = matches.some(m => m.isAgora);
-
-                    const termoNormalizado = normalizeText(filtro).trim();
-                    const isSearchMatch = termoNormalizado && slot.ocupado && normalizeText(slot.nome).includes(termoNormalizado);
-                    const isRoomMatch = termoNormalizado && normalizeText(linha.sala).includes(termoNormalizado);
-
-                    const getTooltip = () => {
-                        if (!slot.ocupado) return `Livre (${slot.horario})`;
-                        if (matches.length > 0) {
-                            const periodosLetras = matches.map(m => m.periodo).join('');
-                            const first = matches[0];
-                            const last = matches[matches.length - 1];
-                            const fimReal = PERIOD_END_TIMES[last.periodo] || last.horario;
-                            return `${slot.nome}\nPeríodos: ${periodosLetras}\nHorário: ${first.horario} às ${fimReal}`;
-                        }
-                        return `${slot.nome} (${slot.horario})`;
-                    };
+                    const tooltip = slot.ocupado
+                        ? `${slot.nome}\nPeríodos: ${slot.periodosStr}\nHorário: ${slot.horarioStr}`
+                        : `Livre (${slot.horario})`;
 
                     return (
                       <div
                         key={slot.periodo}
-                        className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`} 
-                        title={getTooltip()} 
-                        onClick={() => handleCellClick(slot, linha.slots, linha.sala)}
-                        onMouseEnter={() => slot.ocupado && setHoveredAulaId(aulaUniqueKey)}
+                        className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`}
+                        title={tooltip}
+                        onClick={() => handleCellClick(slot, linha.sala)}
+                        onMouseEnter={() => slot.ocupado && setHoveredAulaId(slot.aulaUniqueKey)}
                         onMouseLeave={() => setHoveredAulaId(null)}
                         style={{
                           flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'auto', minHeight: '100%', boxSizing: 'border-box', cursor: slot.ocupado ? 'pointer' : 'default', transition: 'all 0.2s ease', position: 'relative', overflow: 'hidden',
