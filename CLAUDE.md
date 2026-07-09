@@ -15,6 +15,7 @@ vercel dev            # ÚNICA forma correta de rodar localmente (front + /api s
 npm run dev           # SÓ o frontend Vite — /api/** NÃO funciona; use apenas para UI pura
 npm run build         # build de produção (Vite → dist/)
 npm run lint          # ESLint (front + back). Deve passar limpo antes de commitar
+npm run migrate       # aplica as migrations via psql, na ordem certa (requer DATABASE_URL no .env)
 vercel --prod         # deploy manual de produção (normalmente automático via push)
 ```
 
@@ -78,7 +79,7 @@ Não coloque query no handler nem regra de negócio no repository.
 
 Tabelas principais: `predios`, `salas`, `usuarios_acessos`, `perfis`, `sistema_modulos`, `avisos`, `trocas_sala`, `emprestimo_categorias`, `emprestimo_itens`, `emprestimos_registro`, `alunos_cache`.
 
-Migrations em [supabase/migrations/](supabase/migrations/) — rode **nesta ordem** no SQL Editor (dev e prod): `concluir_devolucao_rpc.sql`, `realizar_emprestimo_rpc.sql` (retirada atômica + máx. 1 empréstimo ativo por aluno), `estatisticas_emprestimos_rpc.sql`, `trocas_sala_data_aula.sql`, `trocas_sala_semana.sql`, `trocas_sala_predio_unique.sql` (unicidade por prédio — o `onConflict` do front depende dela), `rls_policies.sql` (RLS multi-prédio — obrigatória), `auditoria_log.sql`. Migrations **não** rodam automaticamente; ao editar `rls_policies.sql`, reaplique (é idempotente).
+Migrations em [supabase/migrations/](supabase/migrations/) — rode **nesta ordem** no SQL Editor (dev e prod): `concluir_devolucao_rpc.sql`, `realizar_emprestimo_rpc.sql` (retirada atômica + máx. 1 empréstimo ativo por aluno), `estatisticas_emprestimos_rpc.sql`, `trocas_sala_data_aula.sql`, `trocas_sala_semana.sql`, `trocas_sala_predio_unique.sql` (unicidade por prédio — o `onConflict` do front depende dela), `rls_policies.sql` (RLS multi-prédio — obrigatória), `auditoria_log.sql`. Migrations **não** rodam automaticamente. Duas formas de aplicar: (a) colar cada arquivo no SQL Editor na ordem acima; ou (b) `npm run migrate`, que roda todas via `psql` nessa mesma ordem ([scripts/migrate.mjs](scripts/migrate.mjs)) — requer `DATABASE_URL` no `.env` (Session pooler, porta 5432; **não** é a service_role key). Toda migration é idempotente, então reaplicar tudo é seguro (não há tracking de "já aplicadas"); ao adicionar uma nova, inclua-a no array `ORDEM` do script. Ao editar `rls_policies.sql`, reaplique.
 
 **Trocas de sala (alteração de aula):** vivem em `trocas_sala`, escritas **direto pelo front** (anon key, [Timeline.jsx](src/components/Timeline.jsx)), tabela **separada da grade** (o re-import só mexe em `grade`, então as trocas sobrevivem). A chave é `predio_id` + `aula_unique_key = "<dia_semana>-<sala>-<periodo_inicial>"` + `semana` (segunda-feira ISO): estável ao re-import (não depende de `nome_aula`), distingue dias e prédios (salas de mesmo número existem em prédios diferentes), e expira na virada da semana (`limpar_trocas_antigas`). Cálculos de "agora" (dia, período, semana) usam sempre o fuso `America/Sao_Paulo` via `getDataSaoPaulo()` do timeHelpers — nunca o fuso do browser.
 
