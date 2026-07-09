@@ -31,7 +31,12 @@ export const useAvisos = (session, acesso) => {
         enabled: !!predioId && !!userId
     });
 
-    const invalidar = () => queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
+    const invalidar = () => {
+        queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
+        // Concluir/excluir mudam o histórico também — sem isso o modal de auditoria
+        // pode mostrar dados de até 1min atrás (staleTime próprio).
+        queryClient.invalidateQueries({ queryKey: ['avisos_historico', predioId] });
+    };
 
     // Realtime — qualquer alteração na tabela avisos atualiza o mural automaticamente
     useEffect(() => {
@@ -69,10 +74,12 @@ export const useAvisos = (session, acesso) => {
     });
 
     const comentarMutation = useMutation({
-        mutationFn: async ({ id, descricao_atual, nota, userEmail }) => {
+        mutationFn: async ({ id, nota }) => {
+            // O servidor lê a descrição atual do banco e usa o e-mail do token —
+            // enviar só a nota evita sobrescrita com estado desatualizado do front.
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/${id}/comentar`, {
                 method: 'PATCH', headers: getHeaders(),
-                body: JSON.stringify({ descricao_atual, nota, user_email: userEmail })
+                body: JSON.stringify({ nota })
             });
             return parseResponse(res);
         },
@@ -103,7 +110,7 @@ export const useAvisos = (session, acesso) => {
         // Mutações relançam erro — o componente trata via toast
         criarAviso:         (dados) => criarMutation.mutateAsync(dados),
         concluirAviso:      (id, observacao) => concluirMutation.mutateAsync({ id, observacao }),
-        adicionarComentario:(id, descricao_atual, nota, userEmail) => comentarMutation.mutateAsync({ id, descricao_atual, nota, userEmail }),
+        adicionarComentario:(id, nota) => comentarMutation.mutateAsync({ id, nota }),
         excluirAviso:       (id) => excluirMutation.mutateAsync(id),
     };
 };

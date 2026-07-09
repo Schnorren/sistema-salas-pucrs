@@ -1,5 +1,4 @@
 import avisosService from '../../backend_core/services/avisos.service.js';
-import avisosRepository from '../../backend_core/repositories/avisos.repository.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro } from '../../backend_core/utils/http.js';
 
@@ -22,81 +21,47 @@ async function handler(req, res) {
     const acao    = segmentos[1] || null;  // 'concluir' | 'comentar', se presente
     const predioId = req.user.predio_id;
 
-    // GET /api/avisos
-    if (req.method === 'GET' && !id) {
-        try {
+    try {
+        // GET /api/avisos
+        if (req.method === 'GET' && !id) {
             const dados = await avisosService.obterMuralOtimizado(predioId);
             return res.status(200).json(dados);
-        } catch (err) {
-            return responderErro(res, err);
         }
-    }
 
-    // POST /api/avisos
-    if (req.method === 'POST' && !id) {
-        try {
-            const payload = {
-                ...req.body,
-                criado_por: req.user.id,
-                predio_id: predioId
-            };
-            await avisosRepository.inserir(payload);
+        // POST /api/avisos
+        if (req.method === 'POST' && !id) {
+            await avisosService.criarAviso(req.body, req.user, predioId);
             return res.status(201).json({ message: 'Aviso criado com sucesso' });
-        } catch (err) {
-            return responderErro(res, err);
         }
-    }
 
-    // GET /api/avisos/historico
-    if (req.method === 'GET' && id === 'historico') {
-        try {
+        // GET /api/avisos/historico
+        if (req.method === 'GET' && id === 'historico') {
             const dados = await avisosService.obterHistoricoOtimizado(predioId);
             return res.status(200).json(dados);
-        } catch (err) {
-            return responderErro(res, err);
         }
-    }
 
-    // PUT /api/avisos/:id/concluir
-    if (req.method === 'PUT' && id && acao === 'concluir') {
-        try {
-            const { obs } = req.body;
-            await avisosRepository.atualizar(id, predioId, {
-                status: 'CONCLUIDO',
-                concluido_por: req.user.id,
-                concluido_em: new Date().toISOString(),
-                obs_conclusao: obs || null
-            });
+        // PUT /api/avisos/:id/concluir
+        if (req.method === 'PUT' && id && acao === 'concluir') {
+            await avisosService.concluirAviso(id, req.body?.obs, req.user, predioId);
             return res.status(200).json({ message: 'Concluído com sucesso' });
-        } catch (err) {
-            return responderErro(res, err);
         }
-    }
 
-    // PATCH /api/avisos/:id/comentar
-    if (req.method === 'PATCH' && id && acao === 'comentar') {
-        try {
-            const { descricao_atual, nota, user_email } = req.body;
-            const novaDescricao = await avisosService.adicionarComentario(
-                id, descricao_atual, nota, user_email, predioId
-            );
-            return res.status(200).json({ descricao: novaDescricao });
-        } catch (err) {
-            return responderErro(res, err);
+        // PATCH /api/avisos/:id/comentar
+        if (req.method === 'PATCH' && id && acao === 'comentar') {
+            const descricao = await avisosService.adicionarComentario(id, req.body?.nota, req.user, predioId);
+            return res.status(200).json({ descricao });
         }
-    }
 
-    // DELETE /api/avisos/:id
-    if (req.method === 'DELETE' && id && !acao) {
-        try {
-            await avisosRepository.deletar(id, predioId);
+        // DELETE /api/avisos/:id
+        if (req.method === 'DELETE' && id && !acao) {
+            await avisosService.excluirAviso(id, req.user, predioId);
             return res.status(200).json({ message: 'Aviso excluído com sucesso' });
-        } catch (err) {
-            return responderErro(res, err);
         }
-    }
 
-    return res.status(404).json({ error: 'Endpoint não encontrado no módulo de Avisos.' });
+        return res.status(404).json({ error: 'Endpoint não encontrado no módulo de Avisos.' });
+    } catch (err) {
+        return responderErro(res, err);
+    }
 }
 
 export default withAuth(handler, 'avisos');

@@ -15,7 +15,7 @@ const labelStyle = {
     textTransform: 'uppercase', letterSpacing: '0.05em'
 };
 
-export default function ModalNovoAviso({ onClose, onSave }) {
+export default function ModalNovoAviso({ onClose, onSave, isPending }) {
     const { toast } = useUI();
     const [tipo, setTipo] = useState('CHAVE');
     const [formData, setFormData] = useState({});
@@ -34,11 +34,31 @@ export default function ModalNovoAviso({ onClose, onSave }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (tipo === 'CHAVE' && (!formData.periodo || formData.periodo.length === 0)) {
-            toast.error("Selecione pelo menos um período.");
+        if (isPending) return;
+
+        // Envia só os campos do tipo ativo — alternar entre as abas não pode
+        // vazar campos de CHAVE num aviso GERAL (e vice-versa).
+        if (tipo === 'CHAVE') {
+            if (!formData.periodo || formData.periodo.length === 0) {
+                toast.error("Selecione pelo menos um período.");
+                return;
+            }
+            onSave({
+                tipo,
+                aluno_nome: formData.aluno_nome,
+                sala_id: formData.sala_id,
+                disciplina: formData.disciplina,
+                data_prevista: formData.data_prevista,
+                periodo: formData.periodo
+            });
             return;
         }
-        onSave({ ...formData, tipo });
+        onSave({
+            tipo,
+            titulo: formData.titulo,
+            prioridade: formData.prioridade || 'NORMAL',
+            descricao: formData.descricao
+        });
     };
 
     const overlayStyle = {
@@ -148,8 +168,8 @@ export default function ModalNovoAviso({ onClose, onSave }) {
                         <button type="button" onClick={onClose} style={{ padding: '10px 18px', border: '1px solid #475569', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', color: '#cbd5e1' }}>
                             Cancelar
                         </button>
-                        <button type="submit" style={{ padding: '10px 24px', border: 'none', borderRadius: '6px', background: '#3b82f6', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
-                            Salvar Registro
+                        <button type="submit" disabled={isPending} style={{ padding: '10px 24px', border: 'none', borderRadius: '6px', background: isPending ? '#1d4ed8' : '#3b82f6', color: '#fff', cursor: isPending ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
+                            {isPending ? 'Salvando...' : 'Salvar Registro'}
                         </button>
                     </div>
                 </form>

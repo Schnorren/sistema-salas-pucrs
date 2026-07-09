@@ -20,7 +20,6 @@ const prioStyle = {
 };
 
 export default function MuralAvisos({ session, acesso }) {
-    const userEmail = session?.user?.email || 'Sistema';
     const { showConfirm, toast } = useUI();
 
     const {
@@ -67,7 +66,7 @@ export default function MuralAvisos({ session, acesso }) {
     const handleSalvarNota = async (nota) => {
         if (!avisoSelecionadoParaComentar) return;
         try {
-            await adicionarComentario(avisoSelecionadoParaComentar.id, avisoSelecionadoParaComentar.descricao, nota, userEmail);
+            await adicionarComentario(avisoSelecionadoParaComentar.id, nota);
             setAvisoSelecionadoParaComentar(null);
         } catch (err) {
             toast.error(err.message || 'Não foi possível salvar o comentário.');
@@ -102,7 +101,7 @@ export default function MuralAvisos({ session, acesso }) {
                 </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', flex: 1 }}>
 
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -125,7 +124,7 @@ export default function MuralAvisos({ session, acesso }) {
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                                     <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' }}>{aviso.aluno_nome}</div>
-                                    <button onClick={() => handleExcluir(aviso.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.5} title="Excluir Permanentemente">🗑️</button>
+                                    <button onClick={() => handleExcluir(aviso.id)} disabled={isExcluindo} style={{ background: 'transparent', border: 'none', cursor: isExcluindo ? 'not-allowed' : 'pointer', opacity: isExcluindo ? 0.3 : 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => { if (!isExcluindo) e.currentTarget.style.opacity = 1 }} onMouseOut={e => { e.currentTarget.style.opacity = isExcluindo ? 0.3 : 0.5 }} title="Excluir Permanentemente">🗑️</button>
                                 </div>
 
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
@@ -159,6 +158,9 @@ export default function MuralAvisos({ session, acesso }) {
                         const prio = ['ALTA', 'NORMAL', 'BAIXA'].includes(prioBruta) ? prioBruta : 'NORMAL';
                         const borderLeftColor = prio === 'ALTA' ? '#ef4444' : prio === 'BAIXA' ? '#64748b' : '#f59e0b';
                         const currentPrioStyle = prioStyle[prio] || prioStyle['NORMAL'];
+                        const abertoEm = aviso.created_at
+                            ? new Date(aviso.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' })
+                            : null;
 
                         return (
                             <div key={aviso.id} style={{ background: '#1e293b', border: '1px solid #334155', borderLeft: `4px solid ${borderLeftColor}`, borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
@@ -169,6 +171,7 @@ export default function MuralAvisos({ session, acesso }) {
                                         <span style={{ ...pillStyle, ...currentPrioStyle }}>
                                             {prio.charAt(0) + prio.slice(1).toLowerCase()}
                                         </span>
+                                        {abertoEm && <span style={pillStyle} title="Data de abertura do aviso">Aberto em {abertoEm}</span>}
                                     </div>
                                     <button onClick={() => handleExcluir(aviso.id)} disabled={isExcluindo} style={{ background: 'transparent', border: 'none', cursor: isExcluindo ? 'not-allowed' : 'pointer', opacity: isExcluindo ? 0.3 : 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => { if (!isExcluindo) e.currentTarget.style.opacity = 1 }} onMouseOut={e => { e.currentTarget.style.opacity = isExcluindo ? 0.3 : 0.5 }} title="Excluir Permanentemente">🗑️</button>
                                 </div>
@@ -204,7 +207,7 @@ export default function MuralAvisos({ session, acesso }) {
                 </button>
             </div>
 
-            {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} />}
+            {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} isPending={isCriando} />}
             {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} isPending={isConcluindo} />}
             {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} isPending={isComentando} />}
 
