@@ -23,3 +23,6 @@ dist-ssr
 .vercel
 .env*.local
 .env
+
+# Claude Code — overrides pessoais não versionados (o settings.json do projeto é versionado)
+.claude/settings.local.json
