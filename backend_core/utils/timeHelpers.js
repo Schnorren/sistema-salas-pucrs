@@ -29,6 +29,17 @@ export const getDiaAtual = () => {
   return DAYS[getDataSaoPaulo().getDay()] || 'Segunda';
 };
 
+// Segunda-feira (ISO) da semana atual como "YYYY-MM-DD", no fuso da PUCRS —
+// mesma regra do default da coluna `semana` de trocas_sala e de
+// limpar_trocas_antigas() no banco.
+export const getSemanaAtual = () => {
+  const d = getDataSaoPaulo();
+  const dow = d.getDay();                 // 0=Dom .. 6=Sáb
+  const diff = dow === 0 ? -6 : 1 - dow;  // dias até a segunda-feira
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 // Array de horários de início dos períodos PUCRS (para comparação de relógio)
 export const PERIOD_TIMES = PERIODS.map(p => p.lb);
 
@@ -68,6 +79,49 @@ export const getCurrentPeriod = () => {
     if (totalMinutes >= startMinutes && totalMinutes < endMinutes) return p.code;
   }
   return null;
+};
+
+// Conjunto de chaves "<dia>-<sala>-<período inicial>" de todos os blocos de
+// aula da grade — espelha a regra de bloco do dataProcessed da Timeline
+// (períodos adjacentes no array PERIODS, mesmo nome e mesma disciplina;
+// 1ª ocorrência vence no slot). Serve para validar trocas de sala: após um
+// re-import, trocas cuja chave não existe mais na grade ficam invisíveis na
+// Timeline e não devem ser contadas como ativas. Se mudar a regra de bloco
+// lá, mude aqui junto.
+export const computarChavesDeBlocos = (gradeBruta) => {
+  const chaves = new Set();
+  if (!Array.isArray(gradeBruta)) return chaves;
+
+  const DIAS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+  for (const dia of DIAS) {
+    const diaLower = dia.toLowerCase();
+    const porSlot = new Map();
+    const salas = new Set();
+    for (const d of gradeBruta) {
+      if (!d?.dia_semana?.toLowerCase().includes(diaLower)) continue;
+      const sala = d?.salas?.numero || d?.sala;
+      const code = extractPeriodCode(d?.periodo);
+      const chave = `${sala}|${code}`;
+      if (sala && code && !porSlot.has(chave)) {
+        porSlot.set(chave, d);
+        salas.add(sala);
+      }
+    }
+    for (const sala of salas) {
+      let anterior = null;
+      for (const p of PERIODS) {
+        const aula = porSlot.get(`${sala}|${p.code}`);
+        if (!aula) { anterior = null; continue; }
+        const nome = aula.nome_aula || aula.disciplinas?.nome || '';
+        const disciplinaId = aula.disciplina_id || aula.nome_aula || '';
+        if (!anterior || anterior.nome !== nome || anterior.disciplinaId !== disciplinaId) {
+          chaves.add(`${dia}-${sala}-${p.code}`);
+        }
+        anterior = { nome, disciplinaId };
+      }
+    }
+  }
+  return chaves;
 };
 
 export const groupConsecutiveClasses = (classes) => {

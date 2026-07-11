@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_END_TIMES, getDataSaoPaulo, getDiaAtual, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, getSemanaAtual, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../supabase'; 
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
+import { useTrocasSala } from '../hooks/useTrocasSala';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -13,16 +14,6 @@ const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', '
 const DAYS_EN = { Segunda: 'Monday', 'Terça': 'Tuesday', Quarta: 'Wednesday', Quinta: 'Thursday', Sexta: 'Friday', 'Sábado': 'Saturday', Domingo: 'Sunday' };
 
 // Fora do componente — funções puras sem dependência de estado.
-// Segunda-feira (ISO) da semana atual, no fuso de Brasília — mesma regra do
-// default da coluna `semana` e de limpar_trocas_antigas() no banco.
-const getSemanaAtual = () => {
-  const d = getDataSaoPaulo();
-  const dow = d.getDay();                 // 0=Dom .. 6=Sáb
-  const diff = dow === 0 ? -6 : 1 - dow;  // dias até a segunda-feira
-  d.setDate(d.getDate() + diff);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
 // Extrai código/crédito e nome limpo do padrão "97316-04/1 - BRANDED CONTENT"
 const parsearNomeAula = (nomeBruto) => {
   if (!nomeBruto) return { codCred: '', nomeAula: nomeBruto || '' };
@@ -77,22 +68,8 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     if (initialFiltro) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
-  const { data: trocasAtivas = {} } = useQuery({
-    queryKey: ['trocas_sala', predioAtual],
-    queryFn: async () => {
-        const semana = getSemanaAtual();
-        const { data, error } = await supabase
-            .from('trocas_sala')
-            .select('*')
-            .eq('predio_id', predioAtual)
-            .eq('semana', semana);
-        if (error) throw error;
-        const map = {};
-        data.forEach(t => { map[t.aula_unique_key] = t; });
-        return map;
-    },
-    enabled: !!predioAtual
-  });
+  // Busca + Realtime vivem no hook (compartilhado com o badge do Dashboard)
+  const trocasAtivas = useTrocasSala(predioAtual);
 
   // Toast/fechamento do modal ficam nos callbacks de cada chamada: salvar via
   // formulário fecha o modal; salvar antes de imprimir não fecha.
@@ -150,15 +127,6 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     }
   });
 
-  useEffect(() => {
-    if (!predioAtual) return;
-    const channel = supabase.channel(`trocas_${predioAtual}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'trocas_sala', filter: `predio_id=eq.${predioAtual}` }, () => {
-            queryClient.invalidateQueries({ queryKey: ['trocas_sala', predioAtual] });
-        }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [predioAtual, queryClient]);
-
   // Relógio: a cada minuto compara o período/dia calculados (fuso de Brasília)
   // com o último valor visto, em vez de esperar o minuto exato de início de
   // período — assim o highlight também LIMPA em intervalos longos (13h–14h) e
@@ -185,7 +153,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     return () => clearInterval(intervaloRelogio);
   }, [autoMode]);
 
-  // Limpeza automática de trocas de dias anteriores — roda uma vez por sessão em background
+  // Limpeza automática de trocas de semanas anteriores — roda uma vez por sessão em background
   useEffect(() => {
     if (!predioAtual) return;
     const limpar = async () => {

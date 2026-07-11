@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Component } from 'react';
+import { useState, useEffect, useMemo, useRef, Component } from 'react';
 import Topbar from './Topbar';
 import UploadCSV from './UploadPDF';
 import NextClasses from './NextClasses';
@@ -39,6 +39,9 @@ import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { supabase } from '../supabase';
 import { useQuery } from '@tanstack/react-query';
+import { useGrade } from '../hooks/useGrade';
+import { useTrocasSala } from '../hooks/useTrocasSala';
+import { computarChavesDeBlocos } from '../../backend_core/utils/timeHelpers';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
@@ -108,21 +111,32 @@ export default function Dashboard({ session }) {
   const predioId = predioAtivo || acesso?.predioId || '';
   const userId = session?.user?.id;
 
-  // Badges — usa useQuery com staleTime infinito para leitura reativa do cache
-  // sem disparar novo fetch (os dados já são mantidos pelos hooks MuralAvisos e Timeline)
+  // Badge de avisos — useQuery com staleTime infinito para leitura reativa do
+  // cache sem disparar novo fetch (o dado é mantido pelo MuralAvisos)
   const { data: avisosCache } = useQuery({
     queryKey: ['avisos', predioId, userId],
     enabled: false, // nunca faz fetch — só lê o que já está no cache
     staleTime: Infinity,
   });
-  const { data: trocasCache } = useQuery({
-    queryKey: ['trocas_sala', predioId],
-    enabled: false,
-    staleTime: Infinity,
-  });
   const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
-  // O cache da Timeline agrupa as trocas por SEMANA (não por dia)
-  const totalTrocasSemana = trocasCache ? Object.keys(trocasCache).length : 0;
+
+  // Badge de trocas — busca própria + Realtime (hook compartilhado com a
+  // Timeline): o número fica certo sem depender da aba Linha do Tempo já ter
+  // sido aberta e acompanha trocas criadas/removidas por outros usuários.
+  const trocasAtivas = useTrocasSala(predioId);
+  // Conta só trocas cuja aula ainda existe na grade atual (mesma regra de
+  // exibição da Timeline) — um re-import pode mover/remover aulas e deixar
+  // trocas órfãs no banco até a virada da semana.
+  const { dados: gradeData } = useGrade(predioId);
+  const chavesGrade = useMemo(
+    () => (gradeData?.grade ? computarChavesDeBlocos(gradeData.grade) : null),
+    [gradeData]
+  );
+  const totalTrocasSemana = useMemo(() => {
+    const chaves = Object.keys(trocasAtivas);
+    if (!chavesGrade) return chaves.length; // grade ainda carregando — usa o total bruto
+    return chaves.filter(c => chavesGrade.has(c)).length;
+  }, [trocasAtivas, chavesGrade]);
 
   // Notificação de aviso urgente em qualquer aba
   useEffect(() => {
