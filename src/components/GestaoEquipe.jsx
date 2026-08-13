@@ -108,8 +108,10 @@ export default function GestaoEquipe({ session, acesso }) {
             const confirmacao = await showConfirm(`Deseja enviar um convite de acesso para ${payload.email}?`, 'Confirmar Convite');
             if (!confirmacao) return;
             try {
-                await convidarMembro(payload);
-                toast.success("Convite enviado com sucesso! O usuário aparecerá na lista.");
+                // A mensagem vem do servidor: convite novo e reconvite de quem já
+                // tem cadastro são fluxos diferentes e o gestor precisa saber qual foi.
+                const resposta = await convidarMembro(payload);
+                toast.success(resposta?.message || "Convite enviado com sucesso! O usuário aparecerá na lista.");
                 resetarFormulario();
             } catch (err) {
                 toast.error("Erro ao convidar: " + err.message);

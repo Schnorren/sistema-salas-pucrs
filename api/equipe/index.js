@@ -205,6 +205,7 @@ async function handler(req, res) {
             );
 
             let userId;
+            let mensagem = 'Convite enviado! Verifique também a caixa de spam.';
 
             if (authError) {
                 // Usuário já existe no Auth (ex.: foi removido antes e reconvidado).
@@ -231,6 +232,18 @@ async function handler(req, res) {
                     permissoes: permissoesFinais
                 }, { onConflict: 'user_id' });
                 if (upErr) throw upErr;
+
+                // `inviteUserByEmail` não reenvia nada para quem já existe: o acesso
+                // seria concedido em silêncio e o gestor veria "convite enviado" sem
+                // e-mail nenhum ter saído. Manda um link de definição de senha — o
+                // front trata `type=recovery` na mesma tela do convite.
+                const { error: errRecuperacao } = await supabase.auth.resetPasswordForEmail(
+                    email,
+                    destino ? { redirectTo: destino } : undefined
+                );
+                mensagem = errRecuperacao
+                    ? `Acesso concedido, mas o e-mail com o link não pôde ser enviado (${(traduzirErroDeConvite(errRecuperacao) || errRecuperacao).message}). O usuário já tem cadastro e pode entrar pela tela de login.`
+                    : 'Este usuário já tinha cadastro: acesso concedido e link para definir a senha enviado por e-mail.';
             } else {
                 userId = authData.user.id;
                 const { error: insErr } = await supabase.from('usuarios_acessos').insert({
@@ -252,7 +265,7 @@ async function handler(req, res) {
                 entidadeId: userId, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null }
             });
 
-            return res.status(201).json({ success: true, message: "Convite enviado!" });
+            return res.status(201).json({ success: true, message: mensagem });
         } catch (error) {
             return responderErro(res, error);
         }
