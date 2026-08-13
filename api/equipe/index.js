@@ -1,8 +1,53 @@
 import supabase from '../../backend_core/config/supabase.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
-import { responderErro } from '../../backend_core/utils/http.js';
+import { responderErro, ErroPublico } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 import { sanitizarPermissoes } from '../../backend_core/utils/modulos.js';
+
+// O Auth grava e-mail sempre em minúsculas — normalizar evita 404 na busca
+// (view) e erro de validação no convite por espaço/maiúscula digitados.
+function normalizarEmail(email) {
+    return String(email || '').trim().toLowerCase();
+}
+
+const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Traduz o erro do GoTrue (Auth) numa mensagem segura e no status certo.
+// Sem isso qualquer falha do provedor de e-mail vira 500 "Erro interno" e o
+// gestor não descobre que só precisa esperar (rate limit) ou corrigir o e-mail.
+function traduzirErroDeConvite(authError) {
+    const msg = String(authError?.message || '');
+    const status = authError?.status;
+
+    if (status === 429 || /rate limit/i.test(msg)) {
+        return new ErroPublico(
+            'Limite de e-mails de convite do provedor atingido. Aguarde alguns minutos e tente novamente.',
+            429
+        );
+    }
+    if (status === 400 || /invalid/i.test(msg)) {
+        return new ErroPublico('E-mail inválido ou domínio inexistente. Confira o endereço.', 400);
+    }
+    if (/send|smtp|mail/i.test(msg)) {
+        return new ErroPublico(
+            'Não foi possível enviar o e-mail de convite (falha no provedor de e-mail). Tente novamente em instantes.',
+            502
+        );
+    }
+    return null; // desconhecido → 500 genérico + log, via responderErro
+}
+
+// Para onde o link do e-mail de convite deve levar. Sem isso o Supabase usa a
+// "Site URL" do dashboard, cujo default é http://localhost:3000 — o convidado
+// recebe um link quebrado. Defina APP_URL na Vercel; o fallback é o domínio de
+// produção do projeto. Nunca derive do header Host (seria open redirect).
+function urlDoApp() {
+    const bruta = process.env.APP_URL
+        || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
+    if (!bruta) return null;
+    const url = String(bruta).trim().replace(/\/+$/, '');
+    return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
 
 // Allowlist opcional de domínios de e-mail para convite.
 // Configure INVITE_EMAIL_DOMINIOS="pucrs.br,edu.pucrs.br" para restringir.
@@ -93,7 +138,9 @@ async function handler(req, res) {
             if (!isGestor) return res.status(403).json({ error: "Permissão negada." });
             if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
 
-            const { email, nome, permissoes, perfil_id } = req.body;
+            const { nome, permissoes, perfil_id } = req.body || {};
+            const email = normalizarEmail(req.body?.email);
+            if (!email) return res.status(400).json({ error: "E-mail obrigatório." });
 
             const { data: usuario, error: errBusca } = await supabase
                 .from('vw_equipe_predio')
@@ -137,16 +184,24 @@ async function handler(req, res) {
             if (!isGestor) return res.status(403).json({ error: "Permissão negada." });
             if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
 
-            const { email, nome, permissoes, perfil_id } = req.body;
+            const { nome, permissoes, perfil_id } = req.body || {};
+            const email = normalizarEmail(req.body?.email);
             if (!email) return res.status(400).json({ error: "E-mail obrigatório." });
+            if (!RE_EMAIL.test(email)) return res.status(400).json({ error: "E-mail inválido." });
             if (!emailPermitido(email)) {
                 return res.status(400).json({ error: "Domínio de e-mail não permitido para convite." });
             }
 
             const permissoesFinais = sanitizar(permissoes);
+            const destino = urlDoApp();
             const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
                 email,
-                { data: { nome: nome || 'Membro da Equipe' } }
+                {
+                    data: { nome: nome?.trim() || 'Membro da Equipe' },
+                    // Só envia redirectTo se houver URL configurada — senão o
+                    // Supabase cai na Site URL do dashboard (comportamento antigo).
+                    ...(destino ? { redirectTo: destino } : {})
+                }
             );
 
             let userId;
@@ -154,7 +209,9 @@ async function handler(req, res) {
             if (authError) {
                 // Usuário já existe no Auth (ex.: foi removido antes e reconvidado).
                 const jaExiste = authError.status === 422 || /already|registered|exists/i.test(authError.message || '');
-                if (!jaExiste) throw authError;
+                // Falhas do provedor de e-mail (rate limit, e-mail inválido, SMTP)
+                // viram mensagem explícita — nunca 500 genérico.
+                if (!jaExiste) throw traduzirErroDeConvite(authError) || authError;
 
                 const existente = await encontrarUsuarioAuthPorEmail(email);
                 if (!existente) return res.status(409).json({ error: "Usuário já cadastrado, mas não foi possível localizá-lo." });
@@ -182,7 +239,12 @@ async function handler(req, res) {
                     perfil_id: perfil_id || null,
                     permissoes: permissoesFinais
                 });
-                if (insErr) throw insErr;
+                if (insErr) {
+                    // Sem acesso gravado o convite é inútil e o usuário fica órfão no
+                    // Auth (e no reconvite cairia no caminho "já existe"). Desfaz.
+                    await supabase.auth.admin.deleteUser(userId).catch(() => {});
+                    throw insErr;
+                }
             }
 
             registrarAuditoria({
@@ -201,7 +263,7 @@ async function handler(req, res) {
             if (!isGestor) return res.status(403).json({ error: 'Permissão negada.' });
             if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
 
-            const { email } = req.body;
+            const email = normalizarEmail(req.body?.email);
             if (!email) return res.status(400).json({ error: 'E-mail obrigatório.' });
 
             const { data: usuario, error: errBusca } = await supabase
