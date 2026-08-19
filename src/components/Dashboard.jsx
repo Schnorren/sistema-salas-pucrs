@@ -50,6 +50,12 @@ export default function Dashboard({ session }) {
 
   const [activeTab, setActiveTab] = useState('map');
   const [showAdminMenu, setShowAdminMenu] = useState(false);
+  // Cabeçalho (topbar + busca + abas) minimizável — preferência persistida
+  // por navegador, igual ao tema (ver Topbar.jsx)
+  const [headerCollapsed, setHeaderCollapsed] = useState(() => localStorage.getItem('headerCollapsed') === '1');
+  useEffect(() => {
+    localStorage.setItem('headerCollapsed', headerCollapsed ? '1' : '0');
+  }, [headerCollapsed]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -229,173 +235,187 @@ export default function Dashboard({ session }) {
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <Topbar session={session} acesso={acesso} onAbrirPerfil={() => setActiveTab('perfil')} />
-
-      <div className="search-bar" ref={searchRef}>
-        <div className="search-input-wrap">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          <input
-            className="search-input"
-            placeholder={`Buscar por código, disciplina ou sala...`}
-            autoComplete="off"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
-          />
-          {searchQuery && (
-            <button className="search-clear vis" onClick={() => setSearchQuery('')}>×</button>
-          )}
-        </div>
-
-        {showDropdown && (
-          <div className="search-dropdown vis">
-            {isSearching ? (
-              <div className="sd-empty">Buscando na base...</div>
-            ) : searchResults.length === 0 ? (
-              <div className="sd-empty">Nenhum registro encontrado.</div>
-            ) : (
-              <>
-                {searchResults.map((res) => (
-                  <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
-                    <div className="sd-room">{res.sala}</div>
-                    <div className="sd-info">
-                      <div className="sd-class">{res.nome}</div>
-                      <div className="sd-meta">
-                        <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
-                        <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                        Per. {res.periodosFormatados}
-                        <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                        {res.horarioInicio} às {res.horarioFim}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
-              </>
-            )}
-          </div>
-        )}
-        <span className="search-hint">Busca inteligente em tempo real</span>
+      <div
+        className="header-toggle"
+        onClick={() => setHeaderCollapsed(!headerCollapsed)}
+        title={headerCollapsed ? 'Mostrar cabeçalho' : 'Minimizar cabeçalho'}
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ transform: headerCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </div>
 
-      <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-        <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
-          <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
-          <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
-            Linha do Tempo
-            {totalTrocasSemana > 0 && (
-              <span title="Trocas de sala ativas nesta semana" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
-                {totalTrocasSemana}
-              </span>
-            )}
-          </div>
-          <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
-
-          {canViewAvisos && (
-            <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>
-              Mural de Avisos
-              {totalAvisosPendentes > 0 && (
-                <span style={{ marginLeft: '6px', background: '#dc2626', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
-                  {totalAvisosPendentes}
-                </span>
+      {!headerCollapsed && (
+        <>
+          <Topbar session={session} acesso={acesso} onAbrirPerfil={() => setActiveTab('perfil')} />
+    
+          <div className="search-bar" ref={searchRef}>
+            <div className="search-input-wrap">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <input
+                className="search-input"
+                placeholder={`Buscar por código, disciplina ou sala...`}
+                autoComplete="off"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
+              />
+              {searchQuery && (
+                <button className="search-clear vis" onClick={() => setSearchQuery('')}>×</button>
               )}
             </div>
-          )}
-
-          {canViewEmprestimos && (
-            <div className={`navtab ${activeTab === 'emprestimos' ? 'active' : ''}`} onClick={() => setActiveTab('emprestimos')}>📦 Empréstimos</div>
-          )}
-
-          {isAdmin && (
-            <div className={`navtab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} style={{ color: activeTab === 'admin' ? '#fbbf24' : '', borderBottomColor: activeTab === 'admin' ? '#fbbf24' : '' }}>
-              🛡️ Painel Admin
-            </div>
-          )}
-        </div>
-
-        {isGestor && (
-          <div style={{ position: 'relative', padding: '10px 16px' }} ref={adminMenuRef}>
-            <button
-              onClick={() => setShowAdminMenu(!showAdminMenu)}
-              style={{
-                background: 'transparent', border: 'none',
-                color: isGestaoActive ? '#60a5fa' : '#9ca3af',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
-              }}
-            >
-              ⚙️ Gestão ▾
-            </button>
-
-            {showAdminMenu && (
-              <div style={{
-                position: 'absolute', top: '100%', right: '16px',
-                background: '#1e293b', border: '1px solid #334155',
-                borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                zIndex: 50, minWidth: '220px', overflow: 'hidden'
-              }}>
-
-                {canViewOperacional && (
+    
+            {showDropdown && (
+              <div className="search-dropdown vis">
+                {isSearching ? (
+                  <div className="sd-empty">Buscando na base...</div>
+                ) : searchResults.length === 0 ? (
+                  <div className="sd-empty">Nenhum registro encontrado.</div>
+                ) : (
                   <>
-                    <div
-                      onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'free' ? '#fff' : '#cbd5e1', background: activeTab === 'free' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                      onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
-                    >🚪 Salas Livres</div>
-
-                    <div
-                      onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
-                      style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'heat' ? '#fff' : '#cbd5e1', background: activeTab === 'heat' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                      onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
-                      onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
-                    >🔥 Ocupação Semanal</div>
+                    {searchResults.map((res) => (
+                      <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
+                        <div className="sd-room">{res.sala}</div>
+                        <div className="sd-info">
+                          <div className="sd-class">{res.nome}</div>
+                          <div className="sd-meta">
+                            <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
+                            <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                            Per. {res.periodosFormatados}
+                            <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                            {res.horarioInicio} às {res.horarioFim}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
                   </>
                 )}
-
-                {canViewRelatorios && (
-                  <div
-                    onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
-                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                    onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
-                    onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
-                  >📊 Histórico de Aulas (BI)</div>
+              </div>
+            )}
+            <span className="search-hint">Busca inteligente em tempo real</span>
+          </div>
+    
+          <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
+              <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
+              <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
+                Linha do Tempo
+                {totalTrocasSemana > 0 && (
+                  <span title="Trocas de sala ativas nesta semana" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                    {totalTrocasSemana}
+                  </span>
                 )}
-
-                {canEditGrade && (
-                  <div
-                    onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
-                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                    onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
-                    onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
-                  >🔄 Atualizar Grade CSV/PDF</div>
-                )}
-
-                {canViewEquipe && (
-                  <div
-                    onClick={() => { setActiveTab('equipe'); setShowAdminMenu(false); }}
-                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'equipe' ? '#fff' : '#cbd5e1', background: activeTab === 'equipe' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                    onMouseEnter={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = '#0f172a' }}
-                    onMouseLeave={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = 'transparent' }}
-                  >👥 Gestão de Equipe</div>
-                )}
-
-                {(canViewEmprestimos || canViewRelatorios) && (
-                  <div
-                    onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}
-                    style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports_emprestimos' ? '#fff' : '#cbd5e1', background: activeTab === 'reports_emprestimos' ? '#2563eb' : 'transparent' }}
-                    onMouseEnter={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = '#0f172a' }}
-                    onMouseLeave={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = 'transparent' }}
-                  >📊 Relatório de Empréstimos</div>
+              </div>
+              <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
+    
+              {canViewAvisos && (
+                <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>
+                  Mural de Avisos
+                  {totalAvisosPendentes > 0 && (
+                    <span style={{ marginLeft: '6px', background: '#dc2626', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                      {totalAvisosPendentes}
+                    </span>
+                  )}
+                </div>
+              )}
+    
+              {canViewEmprestimos && (
+                <div className={`navtab ${activeTab === 'emprestimos' ? 'active' : ''}`} onClick={() => setActiveTab('emprestimos')}>📦 Empréstimos</div>
+              )}
+    
+              {isAdmin && (
+                <div className={`navtab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} style={{ color: activeTab === 'admin' ? '#fbbf24' : '', borderBottomColor: activeTab === 'admin' ? '#fbbf24' : '' }}>
+                  🛡️ Painel Admin
+                </div>
+              )}
+            </div>
+    
+            {isGestor && (
+              <div style={{ position: 'relative', padding: '10px 16px' }} ref={adminMenuRef}>
+                <button
+                  onClick={() => setShowAdminMenu(!showAdminMenu)}
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: isGestaoActive ? '#60a5fa' : '#9ca3af',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+                    fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
+                  }}
+                >
+                  ⚙️ Gestão ▾
+                </button>
+    
+                {showAdminMenu && (
+                  <div style={{
+                    position: 'absolute', top: '100%', right: '16px',
+                    background: '#1e293b', border: '1px solid #334155',
+                    borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                    zIndex: 50, minWidth: '220px', overflow: 'hidden'
+                  }}>
+    
+                    {canViewOperacional && (
+                      <>
+                        <div
+                          onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
+                          style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'free' ? '#fff' : '#cbd5e1', background: activeTab === 'free' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                          onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
+                          onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
+                        >🚪 Salas Livres</div>
+    
+                        <div
+                          onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
+                          style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'heat' ? '#fff' : '#cbd5e1', background: activeTab === 'heat' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                          onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
+                          onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
+                        >🔥 Ocupação Semanal</div>
+                      </>
+                    )}
+    
+                    {canViewRelatorios && (
+                      <div
+                        onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
+                      >📊 Histórico de Aulas (BI)</div>
+                    )}
+    
+                    {canEditGrade && (
+                      <div
+                        onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
+                      >🔄 Atualizar Grade CSV/PDF</div>
+                    )}
+    
+                    {canViewEquipe && (
+                      <div
+                        onClick={() => { setActiveTab('equipe'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'equipe' ? '#fff' : '#cbd5e1', background: activeTab === 'equipe' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = 'transparent' }}
+                      >👥 Gestão de Equipe</div>
+                    )}
+    
+                    {(canViewEmprestimos || canViewRelatorios) && (
+                      <div
+                        onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports_emprestimos' ? '#fff' : '#cbd5e1', background: activeTab === 'reports_emprestimos' ? '#2563eb' : 'transparent' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = 'transparent' }}
+                      >📊 Relatório de Empréstimos</div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
         {renderTabContent()}
