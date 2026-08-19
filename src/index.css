@@ -99,6 +99,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13
 #app{display:none;flex-direction:column;height:100%;overflow:hidden;}
 
 
+.header-toggle{
+  display:flex;align-items:center;justify-content:center;
+  height:13px;background:var(--panel);border-bottom:1px solid var(--border);
+  cursor:pointer;flex-shrink:0;color:var(--muted);transition:background .15s,color .15s;
+}
+.header-toggle:hover{background:var(--panel2);color:var(--text);}
+
+
 .topbar{
   height:50px;background:var(--navy);display:flex;align-items:center;
   padding:0 20px;gap:16px;flex-shrink:0;border-bottom:2px solid var(--accent);
