@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "allow": ["Bash(npm run migrate)", "Bash(npm run migrate *)"]
+  }
+}
