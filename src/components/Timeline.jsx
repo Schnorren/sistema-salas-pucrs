@@ -714,11 +714,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                     <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
                         <div style={{ flex: 1 }}>
                             <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>PRÉDIO DESTINO</label>
-                            <input autoFocus type="number" placeholder="Ex: 32" value={formTroca.predio} onChange={e => setFormTroca({...formTroca, predio: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} required />
+                            <input autoFocus type="text" placeholder="Ex: 32 ou B2" value={formTroca.predio} onChange={e => setFormTroca({...formTroca, predio: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} required />
                         </div>
                         <div style={{ flex: 1 }}>
                             <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>SALA DESTINO</label>
-                            <input type="number" placeholder="Ex: 301" value={formTroca.sala} onChange={e => setFormTroca({...formTroca, sala: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} required />
+                            <input type="text" placeholder="Ex: 301 ou A101" value={formTroca.sala} onChange={e => setFormTroca({...formTroca, sala: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} required />
                         </div>
                     </div>
                     
