@@ -7,6 +7,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
 import { useTrocasSala } from '../hooks/useTrocasSala';
+import logoPucrs from '../assets/logos/pucrs.jpeg';
+import logoLiving360 from '../assets/logos/living360.jpeg';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -418,36 +420,25 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
               flex-direction: column;
             }
 
-            /* Cabeçalho PUCRS */
+            /* Cabeçalho — logos PUCRS + Living 360 */
             .header {
-              background: #003DA5;
-              padding: 20px 36px;
-              display: flex;
-              align-items: center;
-              gap: 18px;
-            }
-
-            .logo-circle {
-              width: 64px;
-              height: 64px;
               background: #fff;
-              border-radius: 50%;
+              padding: 18px 36px;
               display: flex;
               align-items: center;
-              justify-content: center;
-              flex-shrink: 0;
-              font-size: 10px;
-              font-weight: 900;
-              color: #003DA5;
-              letter-spacing: -0.5px;
-              text-align: center;
-              line-height: 1.1;
-              padding: 6px;
+              gap: 24px;
+              border-bottom: 4px solid #003DA5;
             }
 
-            .header-text { color: #fff; }
-            .header-title { font-size: 20px; font-weight: 900; letter-spacing: 0.5px; }
-            .header-sub { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+            .header-logo-pucrs { height: 48px; width: auto; display: block; }
+            .header-logo-living360 { height: 42px; width: auto; display: block; }
+
+            .header-divider-v {
+              width: 1px;
+              height: 42px;
+              background: #CBD5E1;
+              flex-shrink: 0;
+            }
 
             /* Faixa vermelha de atenção */
             .atencao-bar {
@@ -597,13 +588,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
         <body>
           <div class="page">
 
-            <!-- Cabeçalho PUCRS -->
+            <!-- Cabeçalho — logos PUCRS + Living 360 -->
             <div class="header">
-              <div class="logo-circle">PUC<br>RS</div>
-              <div class="header-text">
-                <div class="header-title">PUCRS</div>
-                <div class="header-sub">Pontifícia Universidade Católica do Rio Grande do Sul</div>
-              </div>
+              <img class="header-logo-pucrs" src="${logoPucrs}" alt="PUCRS" />
+              <div class="header-divider-v"></div>
+              <img class="header-logo-living360" src="${logoLiving360}" alt="Living 360" />
             </div>
 
             <!-- Faixa de atenção -->
