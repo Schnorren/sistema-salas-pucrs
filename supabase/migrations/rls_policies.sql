@@ -164,6 +164,9 @@ alter table salas             enable row level security;
 alter table grade             enable row level security;
 alter table sistema_modulos   enable row level security;
 alter table alunos_cache      enable row level security;
+-- Diretório de contatos: global (sem predio_id), lido só via /api/contatos.
+alter table contatos          enable row level security;
+alter table contato_cursos    enable row level security;
 
 -- ---------------------------------------------------------------------
 -- 8. Verificação — todas devem aparecer com rowsecurity = true
@@ -172,5 +175,5 @@ alter table alunos_cache      enable row level security;
 --   where schemaname = 'public'
 --   and tablename in ('usuarios_acessos','predios','perfis','avisos','trocas_sala',
 --     'emprestimo_categorias','emprestimo_itens','emprestimos_registro',
---     'salas','grade','sistema_modulos','alunos_cache')
+--     'salas','grade','sistema_modulos','alunos_cache','contatos','contato_cursos')
 --   order by tablename;

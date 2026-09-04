@@ -9,10 +9,13 @@ import WeeklyHeatmap from './WeeklyHeatmap';
 import HistoricalReports from './HistoricalReports';
 import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
+import MuralContatos from './MuralContatos';
 import AdminPanel from './AdminPanel';
 import GestaoEquipe from './GestaoEquipe';
 import MeuPerfil from './MeuPerfil';
 import RelatoriosEmprestimos from './RelatoriosEmprestimos';
+import { useContatos } from '../hooks/useContatos';
+import { buscarNoDiretorio } from '../utils/contatosBusca';
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -58,6 +61,8 @@ export default function Dashboard({ session }) {
   }, [headerCollapsed]);
 
   const [searchQuery, setSearchQuery] = useState('');
+  // Contato a destacar na aba Contatos quando o usuário clica num resultado da busca global
+  const [contatoFocado, setContatoFocado] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -77,8 +82,15 @@ export default function Dashboard({ session }) {
       return;
     }
 
+    // Contatos são filtrados em memória (useMemo abaixo), então o dropdown já
+    // pode abrir — não depende do fetch da grade nem de haver prédio ativo.
+    setShowDropdown(true);
+
     const delayDebounce = setTimeout(async () => {
-      if (!predioAtivo && !acesso?.predioId) return;
+      if (!predioAtivo && !acesso?.predioId) {
+        setSearchResults([]);
+        return;
+      }
 
       setIsSearching(true);
       try {
@@ -88,7 +100,6 @@ export default function Dashboard({ session }) {
         );
         const data = await response.json();
         setSearchResults(data);
-        setShowDropdown(true);
       } catch {
         // busca silencia erros — não interrompe o fluxo do usuário
       } finally {
@@ -116,6 +127,14 @@ export default function Dashboard({ session }) {
 
   const predioId = predioAtivo || acesso?.predioId || '';
   const userId = session?.user?.id;
+
+  // Diretório de contatos: mesma queryKey do MuralContatos, então a busca
+  // global filtra o cache existente sem disparar requisição nova.
+  const { diretorio: diretorioContatos } = useContatos(session, acesso);
+  const resultadosContatos = useMemo(
+    () => buscarNoDiretorio(diretorioContatos, searchQuery, 6),
+    [diretorioContatos, searchQuery]
+  );
 
   // Badge de avisos — useQuery com staleTime infinito para leitura reativa do
   // cache sem disparar novo fetch (o dado é mantido pelo MuralAvisos)
@@ -166,6 +185,14 @@ export default function Dashboard({ session }) {
     return () => { supabase.removeChannel(channel); };
   }, [predioId, toast]);
 
+  const handleSelectContato = (resultado) => {
+    setShowDropdown(false);
+    setSearchQuery('');
+    // O nonce garante que clicar duas vezes no mesmo contato role de novo até ele.
+    setContatoFocado({ id: resultado.contatoId, n: Date.now() });
+    setActiveTab('contatos');
+  };
+
   const handleSelectResult = (result) => {
     setShowDropdown(false);
     setSearchQuery('');
@@ -180,6 +207,7 @@ export default function Dashboard({ session }) {
       case 'next': return <NextClasses session={session} acesso={acesso} />;
       case 'avisos': return <MuralAvisos session={session} acesso={acesso} />;
       case 'emprestimos': return <MuralEmprestimos session={session} acesso={acesso} />;
+      case 'contatos': return <MuralContatos session={session} acesso={acesso} canEditContatos={canEditContatos} contatoFocado={contatoFocado} />;
       case 'free': return <div style={{ padding: 20 }}><FreeRooms session={session} acesso={acesso} /></div>;
       case 'heat': return <WeeklyHeatmap session={session} acesso={acesso} />;
       case 'reports': return <HistoricalReports session={session} acesso={acesso} />;
@@ -228,6 +256,9 @@ export default function Dashboard({ session }) {
   const canViewRelatorios = (acesso.permissoes?.includes('relatorios') || isAdmin) && hasPredioContext;
   const canEditGrade = (acesso.permissoes?.includes('edicao_grade') || isAdmin) && hasPredioContext;
   const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin) && hasPredioContext;
+  // Contatos: leitura livre para qualquer autenticado e sem gate de prédio
+  // (o diretório é institucional/global). Só a edição é gated.
+  const canEditContatos = acesso.permissoes?.includes('edicao_contatos') || isAdmin;
 
   const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
 
@@ -270,9 +301,9 @@ export default function Dashboard({ session }) {
     
             {showDropdown && (
               <div className="search-dropdown vis">
-                {isSearching ? (
+                {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 ? (
                   <div className="sd-empty">Buscando na base...</div>
-                ) : searchResults.length === 0 ? (
+                ) : searchResults.length === 0 && resultadosContatos.length === 0 ? (
                   <div className="sd-empty">Nenhum registro encontrado.</div>
                 ) : (
                   <>
@@ -291,7 +322,28 @@ export default function Dashboard({ session }) {
                         </div>
                       </div>
                     ))}
-                    <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
+                    {searchResults.length > 0 && (
+                      <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
+                    )}
+
+                    {resultadosContatos.length > 0 && (
+                      <>
+                        <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>CONTATOS</div>
+                        {resultadosContatos.map((res) => (
+                          <div key={res.chave} className="sd-item" onClick={() => handleSelectContato(res)}>
+                            <div className="sd-room">{res.tipo === 'curso' ? '🎓' : '📇'}</div>
+                            <div className="sd-info">
+                              <div className="sd-class">{res.titulo}</div>
+                              <div className="sd-meta">
+                                {res.subtitulo && <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.subtitulo}</span>}
+                                {res.subtitulo && res.telefone && <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>}
+                                {res.telefone}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -326,6 +378,9 @@ export default function Dashboard({ session }) {
               {canViewEmprestimos && (
                 <div className={`navtab ${activeTab === 'emprestimos' ? 'active' : ''}`} onClick={() => setActiveTab('emprestimos')}>📦 Empréstimos</div>
               )}
+    
+              {/* Visível para todos: o diretório de contatos não é gated por permissão nem por prédio. */}
+              <div className={`navtab ${activeTab === 'contatos' ? 'active' : ''}`} onClick={() => setActiveTab('contatos')}>📇 Contatos</div>
     
               {isAdmin && (
                 <div className={`navtab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} style={{ color: activeTab === 'admin' ? '#fbbf24' : '', borderBottomColor: activeTab === 'admin' ? '#fbbf24' : '' }}>
