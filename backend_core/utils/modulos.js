@@ -11,6 +11,7 @@ export const MODULOS = {
     RELATORIOS: 'relatorios',
     EDICAO_GRADE: 'edicao_grade',
     EQUIPE: 'equipe',
+    EDICAO_CONTATOS: 'edicao_contatos',
 };
 
 export const MODULOS_VALIDOS = Object.values(MODULOS);
