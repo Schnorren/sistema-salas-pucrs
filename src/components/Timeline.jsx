@@ -44,6 +44,35 @@ const descreverErroTroca = (err, fallback) => {
   return fallback;
 };
 
+// Um bloco de aula pode ter v\u00e1rios per\u00edodos consecutivos (ex: LMNP) e a troca
+// \u00e0s vezes vale s\u00f3 para uma parte deles (ex: s\u00f3 LM mudam de sala). O registro
+// salvo carrega essa sele\u00e7\u00e3o em periodos_str como lista separada por v\u00edrgula
+// ("L,M"). Registros de antes dessa feature (ou sem o campo) gravaram o
+// bloco inteiro concatenado sem v\u00edrgula (ex: "LMNP") \u2014 nesse formato nenhuma
+// parte bate exatamente com um c\u00f3digo de per\u00edodo do bloco, ent\u00e3o o filtro
+// abaixo fica vazio e ca\u00edmos no fallback "bloco inteiro" (mesmo
+// comportamento de antes da feature).
+const periodosAfetadosPelaTroca = (registro, periodosDoBloco) => {
+  if (!registro?.periodos_str) return periodosDoBloco;
+  const validos = registro.periodos_str.split(',').map(s => s.trim()).filter(p => periodosDoBloco.includes(p));
+  return validos.length ? validos : periodosDoBloco;
+};
+
+// Períodos efetivamente selecionados dentro do bloco (aula.periodos é a lista
+// completa e ordenada) + o intervalo de horário correspondente — usado tanto
+// para gravar (periodos_str/horario_str) quanto para exibir no modal/cartaz.
+// periodosStrDb vai separado por vírgula (formato inequívoco pro parser de
+// periodosAfetadosPelaTroca); periodosStr é a versão compacta pra exibição
+// ("LM", igual ao formato antigo do bloco inteiro).
+const calcularSelecaoPeriodos = (aula, periodosSelecionados) => {
+  const todos = aula?.periodos?.length ? aula.periodos : [aula?.periodo].filter(Boolean);
+  const selecionados = todos.filter(p => periodosSelecionados?.includes(p));
+  const usados = selecionados.length ? selecionados : todos; // nada selecionado -> bloco inteiro (não deveria ocorrer)
+  const primeiro = PERIODS.find(p => p.code === usados[0]);
+  const horarioStr = primeiro ? `${primeiro.lb} às ${PERIOD_END_TIMES[usados[usados.length - 1]] || primeiro.lb}` : aula?.horarioStr;
+  return { periodos: usados, periodosStrDb: usados.join(','), periodosStr: usados.join(''), horarioStr };
+};
+
 export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const { predioAtivo } = usePredio();
   const { toast, showConfirm } = useUI();
@@ -63,7 +92,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
 
   const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
   const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
-  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '' });
+  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '', periodosSelecionados: [] });
 
   useEffect(() => {
     if (initialDay) { setDay(initialDay); setAutoMode(false); } // eslint-disable-line react-hooks/set-state-in-effect
@@ -79,6 +108,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     // Recebe aula + form no payload (em vez de ler formTroca da closure):
     // evita gravar estado defasado quando a mutation é disparada fora do submit.
     mutationFn: async ({ aula, form }) => {
+        const { periodosStrDb, horarioStr } = calcularSelecaoPeriodos(aula, form.periodosSelecionados);
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
             aula_unique_key: aula.aulaUniqueKey,
@@ -89,8 +119,8 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
             nome_aula_editado: limpar(form.nomeAulaEditado),
             professor: limpar(form.professor) || null,
             cod_cred: limpar(form.codCred) || null,
-            periodos_str: aula.periodosStr,
-            horario_str: aula.horarioStr
+            periodos_str: periodosStrDb,
+            horario_str: horarioStr
         }, { onConflict: 'predio_id,aula_unique_key,semana' });
         if (error) throw error;
     },
@@ -252,6 +282,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
           const last = bloco[bloco.length - 1];
           const dadosBloco = {
             aulaUniqueKey: `${day}-${salaRef.numero}-${first.periodo}`,
+            periodos: bloco.map(m => m.periodo),
             periodosStr: bloco.map(m => m.periodo).join(''),
             horarioStr: `${first.horario} às ${PERIOD_END_TIMES[last.periodo] || last.horario}`,
             isSequenceAgora: bloco.some(m => m.isAgora)
@@ -308,8 +339,24 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
         nomeAulaEditado: registroExistente?.nome_aula_editado || nomeAutoDetectado,
         professor: registroExistente?.professor || '',
         codCred: registroExistente?.cod_cred || codAutoDetectado,
+        // Bloco (LMNP) começa todo selecionado; reabrir uma troca já salva com
+        // parte dos períodos restaura só aquela parte marcada.
+        periodosSelecionados: periodosAfetadosPelaTroca(registroExistente, slot.periodos),
     });
     setModalAvisoOpen(true);
+  };
+
+  // Marca/desmarca um período do bloco na seleção do form — nunca deixa
+  // desmarcar o último (sempre precisa sobrar pelo menos 1 período na troca).
+  const togglePeriodoTroca = (periodo) => {
+    setFormTroca(f => {
+      const jaSelecionado = f.periodosSelecionados.includes(periodo);
+      if (jaSelecionado && f.periodosSelecionados.length === 1) return f;
+      const periodosSelecionados = jaSelecionado
+        ? f.periodosSelecionados.filter(p => p !== periodo)
+        : [...f.periodosSelecionados, periodo];
+      return { ...f, periodosSelecionados };
+    });
   };
 
   const handleSalvarTroca = (e) => {
@@ -339,13 +386,16 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     // direto em Imprimir gerava cartaz com dados novos e grade/banco com os velhos.
     // Sem alterações, não grava: quem não tem 'edicao_grade' segue podendo reimprimir.
     const registro = trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
+    const { periodosStrDb, periodosStr: periodosStrSelecao, horarioStr: horarioStrSelecao } =
+        calcularSelecaoPeriodos(aulaSelecionadaParaTroca, formTroca.periodosSelecionados);
     const formDifereDoSalvo = !registro ||
         limpar(registro.predio_destino)    !== limpar(formTroca.predio) ||
         limpar(registro.sala_destino)      !== limpar(formTroca.sala) ||
         limpar(registro.motivo)            !== limpar(formTroca.motivo) ||
         limpar(registro.nome_aula_editado) !== limpar(formTroca.nomeAulaEditado) ||
         limpar(registro.professor)         !== limpar(formTroca.professor) ||
-        limpar(registro.cod_cred)          !== limpar(formTroca.codCred);
+        limpar(registro.cod_cred)          !== limpar(formTroca.codCred) ||
+        limpar(registro.periodos_str)      !== periodosStrDb;
     if (formDifereDoSalvo) {
         try {
             await salvarTrocaMutation.mutateAsync({ aula: aulaSelecionadaParaTroca, form: formTroca });
@@ -355,14 +405,15 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     }
 
     // Tudo que entra no HTML do cartaz passa por escapeHtml (dados vêm do
-    // form e de registros gravados por outros usuários).
+    // form e de registros gravados por outros usuários). Períodos/horário
+    // refletem só o subconjunto selecionado no form, não o bloco inteiro.
     const nomeAula      = escapeHtml(formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome);
     const codCred       = escapeHtml(limpar(formTroca.codCred));
     const professor     = escapeHtml(limpar(formTroca.professor));
     const predioDestino = escapeHtml(limpar(formTroca.predio));
     const salaDestino   = escapeHtml(limpar(formTroca.sala));
-    const periodos      = escapeHtml(aulaSelecionadaParaTroca.periodosStr);
-    const horario       = escapeHtml(aulaSelecionadaParaTroca.horarioStr);
+    const periodos      = escapeHtml(periodosStrSelecao);
+    const horario       = escapeHtml(horarioStrSelecao);
     const salaOrigem    = escapeHtml(aulaSelecionadaParaTroca.salaAtual);
     const diaSemana     = escapeHtml(aulaSelecionadaParaTroca.dia);
     // "Gerado em" no fuso da PUCRS, não no do browser (regra do projeto)
@@ -685,9 +736,43 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                         />
                         <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
                             <span>De: Sala {aulaSelecionadaParaTroca.salaAtual}</span>
-                            <span style={{ fontFamily: 'var(--mono)', fontWeight: 'bold' }}>Períodos {aulaSelecionadaParaTroca.periodosStr}</span>
+                            <span style={{ fontFamily: 'var(--mono)', fontWeight: 'bold' }}>
+                                Períodos {aulaSelecionadaParaTroca.periodos.filter(p => formTroca.periodosSelecionados.includes(p)).join('')}
+                            </span>
                         </div>
                     </div>
+
+                    {aulaSelecionadaParaTroca.periodos.length > 1 && (
+                        <div style={{ marginBottom: '15px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '8px' }}>
+                                PERÍODOS DESTA TROCA <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(desmarque os que continuam na sala de origem)</span>
+                            </label>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                {aulaSelecionadaParaTroca.periodos.map(p => {
+                                    const marcado = formTroca.periodosSelecionados.includes(p);
+                                    return (
+                                        <button
+                                            type="button"
+                                            key={p}
+                                            onClick={() => togglePeriodoTroca(p)}
+                                            title={marcado ? `Período ${p} muda de sala` : `Período ${p} permanece na sala de origem`}
+                                            style={{
+                                                minWidth: '36px', padding: '8px 10px', borderRadius: '6px', fontWeight: 'bold',
+                                                fontFamily: 'var(--mono)', fontSize: '13px', cursor: 'pointer',
+                                                border: marcado ? '1px solid var(--blue)' : '1px solid var(--border)',
+                                                background: marcado ? 'var(--blue)' : 'var(--panel2)',
+                                                color: marcado ? '#fff' : 'var(--muted)',
+                                                textDecoration: marcado ? 'none' : 'line-through',
+                                                transition: 'all .15s'
+                                            }}
+                                        >
+                                            {p}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
                         <div style={{ flex: 1 }}>
@@ -808,11 +893,17 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                   {linha.slots.map((slot) => {
                     const statusClass = !slot.ocupado ? 'empty' : (slot.tipo === 'Interno' ? 'int' : 'reg');
                     // Derivados por célula já vêm prontos do dataProcessed
-                    // (aulaParseada, aulaUniqueKey, periodosStr, horarioStr,
-                    // isSequenceAgora) — aqui só resta cruzar com o estado vivo.
+                    // (aulaParseada, aulaUniqueKey, periodos, periodosStr,
+                    // horarioStr, isSequenceAgora) — aqui só resta cruzar com o estado vivo.
                     const aula = slot.aulaParseada;
                     const isHovered = !!hoveredAulaId && hoveredAulaId === slot.aulaUniqueKey;
-                    const temTroca = slot.ocupado ? trocasAtivas[slot.aulaUniqueKey] : null;
+                    // O registro vale pro bloco inteiro, mas a troca pode cobrir só uma
+                    // parte dos períodos (ex: LM de um bloco LMNP) — só marca em vermelho
+                    // os períodos realmente afetados.
+                    const registroTroca = slot.ocupado ? trocasAtivas[slot.aulaUniqueKey] : null;
+                    const temTroca = registroTroca && periodosAfetadosPelaTroca(registroTroca, slot.periodos).includes(slot.periodo)
+                        ? registroTroca
+                        : null;
                     const isSequenceAgora = !!slot.isSequenceAgora;
 
                     const isSearchMatch = termoNormalizado && slot.ocupado && slot.nomeNorm.includes(termoNormalizado);
