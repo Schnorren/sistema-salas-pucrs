@@ -1,217 +1,364 @@
-import React, { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { KeyRound, TriangleAlert, Plus, History, Check, MessageSquare, Trash2, Search } from 'lucide-react';
 import { useAvisos } from '../hooks/useAvisos';
-import ModalNovoAviso from './ModalNovoAviso';
-import ModalConcluirAviso from './ModalConcluirAviso';
-import ModalHistoricoAvisos from './ModalHistoricoAvisos';
-import ModalComentarAviso from './ModalComentarAviso';
+import { useGrade } from '../hooks/useGrade';
+import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
+import { PERIODS, getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
+import { DIAS_SEMANA, blocosDoDia, normalizar, ordenarSalas } from '../utils/blocos';
+import Gaveta from './ui/Gaveta';
+import { Seg } from './ui/Seg';
+import { Carregando, Erro } from './ui/Estado';
 
-const pillStyle = {
-    fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#9ca3af',
-    border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap', fontWeight: 'bold'
+const PRIORIDADE = {
+  ALTA: { cls: 'alta', rotulo: 'Alta' },
+  NORMAL: { cls: 'media', rotulo: 'Normal' },
+  BAIXA: { cls: 'baixa', rotulo: 'Baixa' },
 };
+const prioDe = (p) => (PRIORIDADE[String(p || '').toUpperCase()] ? String(p).toUpperCase() : 'NORMAL');
+const dataBR = (iso) => (typeof iso === 'string' && iso.includes('-') ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
+const dataHora = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—');
+const hojeISO = () => { const d = getDataSaoPaulo(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-const prioStyle = {
-    ALTA: { color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.1)' },
-    NORMAL: { color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.1)' },
-    BAIXA: { color: '#9ca3af', border: '1px solid rgba(156, 163, 175, 0.3)', background: 'rgba(255,255,255,0.05)' },
+// O backend anexa cada nota ao fim da descrição como
+// "\n\n📌 [dd/mm/aaaa hh:mm - fulano]: texto". Para leitura, separa as notas.
+const separarNotas = (descricao) => {
+  const partes = String(descricao || '').split(/\n\n📌 \[/);
+  const corpo = partes.shift();
+  const notas = partes.map(p => {
+    const m = p.match(/^(.*?) - (.*?)\]: ([\s\S]*)$/);
+    return m ? { quando: m[1], quem: m[2], texto: m[3] } : { quando: '', quem: '', texto: p };
+  });
+  return { corpo, notas };
 };
 
 export default function MuralAvisos({ session, acesso }) {
-    const { showConfirm, toast } = useUI();
+  const { showConfirm, toast } = useUI();
+  const {
+    avisos, loading, error,
+    isCriando, isConcluindo, isComentando, isExcluindo,
+    criarAviso, concluirAviso, excluirAviso, adicionarComentario
+  } = useAvisos(session, acesso);
 
-    const {
-        avisos, loading, error,
-        isCriando, isConcluindo, isComentando, isExcluindo,
-        criarAviso, concluirAviso, excluirAviso, adicionarComentario
-    } = useAvisos(session, acesso);
+  const [filtro, setFiltro] = useState('todos');
+  const [novoAberto, setNovoAberto] = useState(false);
+  const [concluindo, setConcluindo] = useState(null);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [notaPara, setNotaPara] = useState(null);
+  const [nota, setNota] = useState('');
 
-    const [isModalNovoAvisoOpen, setIsModalNovoAvisoOpen] = useState(false);
-    const [avisoSelecionadoParaConcluir, setAvisoSelecionadoParaConcluir] = useState(null);
-    const [avisoSelecionadoParaComentar, setAvisoSelecionadoParaComentar] = useState(null);
-    const [isModalHistoricoOpen, setIsModalHistoricoOpen] = useState(false);
+  const chaves = avisos?.chaves || [];
+  const gerais = avisos?.gerais || [];
+  const altas = gerais.filter(a => prioDe(a.prioridade) === 'ALTA');
+  const chavesVisiveis = filtro === 'alta' ? [] : chaves;
+  const geraisVisiveis = filtro === 'chaves' ? [] : filtro === 'alta' ? altas : gerais;
 
-    const autorizacoesChaves = avisos?.chaves || [];
-    const avisosGerais = avisos?.gerais || [];
+  const entregarChave = async (aviso) => {
+    try {
+      await concluirAviso(aviso.id, 'Chave retirada na secretaria (Baixa Expressa)');
+      toast.success(`Chave da sala ${aviso.sala_id} entregue a ${aviso.aluno_nome}.`);
+    } catch (err) { toast.error(err.message || 'Não foi possível concluir o registro.'); }
+  };
 
-    const handleSalvarNovo = async (dados) => {
-        try {
-            await criarAviso(dados);
-            setIsModalNovoAvisoOpen(false);
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível salvar o registro.');
-        }
-    };
+  const excluir = async (id) => {
+    const ok = await showConfirm('O registro some do mural e do histórico.', 'Apagar registro', { confirmar: 'Apagar', perigo: true });
+    if (!ok) return;
+    try { await excluirAviso(id); } catch (err) { toast.error(err.message || 'Não foi possível apagar o registro.'); }
+  };
 
-    const handleConcluirChaveDireto = async (id) => {
-        try {
-            await concluirAviso(id, "Chave retirada na secretaria (Baixa Expressa)");
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível concluir o registro.');
-        }
-    };
+  const salvarNota = async (e) => {
+    e.preventDefault();
+    if (!nota.trim() || isComentando) return;
+    try {
+      await adicionarComentario(notaPara, nota.trim());
+      setNotaPara(null); setNota('');
+    } catch (err) { toast.error(err.message || 'Não foi possível salvar a nota.'); }
+  };
 
-    const handleConfirmarConclusaoGeral = async (obs) => {
-        if (!avisoSelecionadoParaConcluir) return;
-        try {
-            await concluirAviso(avisoSelecionadoParaConcluir.id, obs);
-            setAvisoSelecionadoParaConcluir(null);
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível concluir o registro.');
-        }
-    };
+  if (loading && !chaves.length && !gerais.length) return <Carregando texto="Carregando o mural…" />;
+  if (error) return <Erro texto={error} />;
 
-    const handleSalvarNota = async (nota) => {
-        if (!avisoSelecionadoParaComentar) return;
-        try {
-            await adicionarComentario(avisoSelecionadoParaComentar.id, nota);
-            setAvisoSelecionadoParaComentar(null);
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível salvar o comentário.');
-        }
-    };
-
-    const handleExcluir = async (id) => {
-        const confirmado = await showConfirm('Tem certeza que deseja apagar este registro permanentemente?', 'Apagar Registro');
-        if (!confirmado) return;
-        try {
-            await excluirAviso(id);
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível deletar o registro.');
-        }
-    };
-
-    if (loading && autorizacoesChaves.length === 0 && avisosGerais.length === 0) return <p style={{ padding: 24, color: '#9ca3af' }}>Carregando mural...</p>;
-    if (error) return <p style={{ padding: 24, color: '#ef4444' }}>{error}</p>;
-
-    return (
-        <div style={{ padding: '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Mural de Operações</h2>
-                <button onClick={() => setIsModalNovoAvisoOpen(true)} disabled={isCriando} style={{
-                    padding: '8px 16px', background: '#3b82f6', color: '#fff',
-                    border: 'none', borderRadius: '8px', cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
-                    transition: 'background 0.2s'
-                }} onMouseOver={e => e.currentTarget.style.background = '#2563eb'} onMouseOut={e => e.currentTarget.style.background = '#3b82f6'}>
-                    <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span> Novo registro
-                </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', flex: 1 }}>
-
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>🔑</div>
-                        <h3 style={{ fontSize: '15px', fontWeight: 'bold', margin: 0, color: '#e2e8f0' }}>Autorizações de Chaves</h3>
-                        <span style={{ ...pillStyle, background: 'rgba(255,255,255,0.1)', color: '#fff' }}>{autorizacoesChaves.length}</span>
-                    </div>
-
-                    {autorizacoesChaves.length === 0 ? (
-                        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#64748b', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                            Nenhuma autorização pendente.
-                        </div>
-                    ) : autorizacoesChaves.map(aviso => {
-                        const dataFormatada = (typeof aviso.data_prevista === 'string' && aviso.data_prevista.includes('-'))
-                            ? aviso.data_prevista.split('-').reverse().join('/')
-                            : '--/--/----';
-
-                        return (
-                            <div key={aviso.id} style={{ background: '#1e293b', border: '1px solid #334155', borderLeft: '4px solid #3b82f6', borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' }}>{aviso.aluno_nome}</div>
-                                    <button onClick={() => handleExcluir(aviso.id)} disabled={isExcluindo} style={{ background: 'transparent', border: 'none', cursor: isExcluindo ? 'not-allowed' : 'pointer', opacity: isExcluindo ? 0.3 : 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => { if (!isExcluindo) e.currentTarget.style.opacity = 1 }} onMouseOut={e => { e.currentTarget.style.opacity = isExcluindo ? 0.3 : 0.5 }} title="Excluir Permanentemente">🗑️</button>
-                                </div>
-
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-                                    <span style={pillStyle}>{aviso.sala_id}</span>
-                                    <span style={pillStyle}>{aviso.disciplina}</span>
-                                    <span style={pillStyle}>{dataFormatada}</span>
-                                    <span style={{ ...pillStyle, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Per. {aviso.periodo}</span>
-                                </div>
-
-                                <button onClick={() => handleConcluirChaveDireto(aviso.id)} disabled={isConcluindo} style={{ padding: '8px 16px', background: 'transparent', color: isConcluindo ? '#475569' : '#60a5fa', border: `1px solid ${isConcluindo ? '#334155' : '#3b82f6'}`, borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
-                                    {isConcluindo ? 'Processando...' : '✓ Entregar chave'}
-                                </button>
-                            </div>
-                        );
-                    })}
-                </div>
-
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>⚠️</div>
-                        <h3 style={{ fontSize: '15px', fontWeight: 'bold', margin: 0, color: '#e2e8f0' }}>Avisos e Intercorrências</h3>
-                        <span style={{ ...pillStyle, background: 'rgba(255,255,255,0.1)', color: '#fff' }}>{avisosGerais.length}</span>
-                    </div>
-
-                    {avisosGerais.length === 0 ? (
-                        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#64748b', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                            Nenhum aviso ativo.
-                        </div>
-                    ) : avisosGerais.map(aviso => {
-                        const prioBruta = typeof aviso.prioridade === 'string' ? aviso.prioridade.toUpperCase() : 'NORMAL';
-                        const prio = ['ALTA', 'NORMAL', 'BAIXA'].includes(prioBruta) ? prioBruta : 'NORMAL';
-                        const borderLeftColor = prio === 'ALTA' ? '#ef4444' : prio === 'BAIXA' ? '#64748b' : '#f59e0b';
-                        const currentPrioStyle = prioStyle[prio] || prioStyle['NORMAL'];
-                        const abertoEm = aviso.created_at
-                            ? new Date(aviso.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' })
-                            : null;
-
-                        return (
-                            <div key={aviso.id} style={{ background: '#1e293b', border: '1px solid #334155', borderLeft: `4px solid ${borderLeftColor}`, borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' }}>{aviso.titulo}</span>
-                                        <span style={{ ...pillStyle, ...currentPrioStyle }}>
-                                            {prio.charAt(0) + prio.slice(1).toLowerCase()}
-                                        </span>
-                                        {abertoEm && <span style={pillStyle} title="Data de abertura do aviso">Aberto em {abertoEm}</span>}
-                                    </div>
-                                    <button onClick={() => handleExcluir(aviso.id)} disabled={isExcluindo} style={{ background: 'transparent', border: 'none', cursor: isExcluindo ? 'not-allowed' : 'pointer', opacity: isExcluindo ? 0.3 : 0.5, fontSize: '14px', padding: '4px' }} onMouseOver={e => { if (!isExcluindo) e.currentTarget.style.opacity = 1 }} onMouseOut={e => { e.currentTarget.style.opacity = isExcluindo ? 0.3 : 0.5 }} title="Excluir Permanentemente">🗑️</button>
-                                </div>
-
-                                <p style={{ fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6', whiteSpace: 'pre-wrap', margin: '0 0 16px 0' }}>{aviso.descricao}</p>
-
-                                <div style={{ display: 'flex', gap: '10px' }}>
-                                    <button onClick={() => setAvisoSelecionadoParaConcluir(aviso)} disabled={isConcluindo} style={{ flex: 1, padding: '8px', background: isConcluindo ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)', color: isConcluindo ? '#475569' : '#e2e8f0', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
-                                        {isConcluindo ? 'Processando...' : '✓ Marcar resolvido'}
-                                    </button>
-                                    <button onClick={() => setAvisoSelecionadoParaComentar(aviso)} style={{ flex: 1, padding: '8px', background: 'transparent', color: '#94a3b8', border: '1px dashed #475569', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }} onMouseOver={e => { e.currentTarget.style.color = '#e2e8f0'; e.currentTarget.style.borderColor = '#94a3b8' }} onMouseOut={e => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = '#475569' }}>
-                                        💬 Adicionar Nota
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            <div style={{ marginTop: '40px', paddingBottom: '20px', display: 'flex', justifyContent: 'center' }}>
-                <button
-                    onClick={() => setIsModalHistoricoOpen(true)}
-                    style={{
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
-                        color: '#64748b', fontSize: '13px', padding: '8px 16px', borderRadius: '6px',
-                        cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px'
-                    }}
-                    onMouseOver={e => { e.currentTarget.style.color = '#cbd5e1'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
-                    onMouseOut={e => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
-                >
-                    <span>📋</span> Visualizar histórico de auditoria (Registros encerrados)
-                </button>
-            </div>
-
-            {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} isPending={isCriando} />}
-            {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} isPending={isConcluindo} />}
-            {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} isPending={isComentando} />}
-
-            {isModalHistoricoOpen && <ModalHistoricoAvisos onClose={() => setIsModalHistoricoOpen(false)} session={session} acesso={acesso} />}
+  return (
+    <div className="pg">
+      <div className="pg-hd">
+        <div><h1 className="t-pg">Avisos</h1><p className="sub">Autorizações de chave e intercorrências do prédio</p></div>
+        <div className="pg-acoes">
+          <button className="btn" onClick={() => setHistoricoAberto(true)}><History size={16} />Histórico</button>
+          <button className="btn pri" onClick={() => setNovoAberto(true)} disabled={isCriando}><Plus size={16} />Novo registro</button>
         </div>
-    );
+      </div>
+
+      <div className="filtros" role="group" aria-label="Filtrar">
+        {[['todos', 'Todos', chaves.length + gerais.length], ['chaves', 'Chaves', chaves.length], ['alta', 'Prioridade alta', altas.length]].map(([v, l, n]) => (
+          <button key={v} className="f-chip" aria-pressed={filtro === v} onClick={() => setFiltro(v)}>{l} <span className="cont">{n}</span></button>
+        ))}
+      </div>
+
+      <div className="avisos">
+        <section>
+          <div className="sec-hd"><KeyRound size={18} /><h2 className="t-sec">Autorizações de chave</h2><span className="cont">{chavesVisiveis.length}</span></div>
+          <div className="pilha">
+            {chavesVisiveis.length === 0 && <div className="vazio">Nenhuma autorização pendente.</div>}
+            {chavesVisiveis.map(a => (
+              <article key={a.id} className="aviso chave">
+                <div className="aviso-top">
+                  <b>{a.aluno_nome}</b>
+                  <button className="icon-btn" onClick={() => excluir(a.id)} disabled={isExcluindo} aria-label="Apagar autorização" title="Apagar"><Trash2 size={15} /></button>
+                </div>
+                <div className="meta-linha">
+                  <span>Sala <b className="mono">{a.sala_id}</b></span>
+                  {a.disciplina && <span><b>{a.disciplina}</b></span>}
+                  <span>{a.data_prevista === hojeISO() ? 'Hoje' : dataBR(a.data_prevista)}</span>
+                  {a.periodo && <span>Per. <b className="mono">{a.periodo}</b></span>}
+                </div>
+                {a.created_at && <div className="meta-linha"><span>Registrada em {dataHora(a.created_at)}</span></div>}
+                <div className="acoes-linha">
+                  <button className="btn pri sm" onClick={() => entregarChave(a)} disabled={isConcluindo}><Check size={14} />{isConcluindo ? 'Registrando…' : 'Entregar chave'}</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <div className="sec-hd"><TriangleAlert size={18} /><h2 className="t-sec">Avisos e intercorrências</h2><span className="cont">{geraisVisiveis.length}</span></div>
+          <div className="pilha">
+            {geraisVisiveis.length === 0 && <div className="vazio">Nenhum aviso ativo.</div>}
+            {geraisVisiveis.map(a => {
+              const p = PRIORIDADE[prioDe(a.prioridade)];
+              const { corpo, notas } = separarNotas(a.descricao);
+              return (
+                <article key={a.id} className={`aviso ${p.cls}`}>
+                  <div className="aviso-top">
+                    <b>{a.titulo}</b>
+                    <span className={`chip ${p.cls === 'baixa' ? 'contorno' : p.cls}`}>{p.rotulo}</span>
+                    <button className="icon-btn" onClick={() => excluir(a.id)} disabled={isExcluindo} aria-label="Apagar aviso" title="Apagar"><Trash2 size={15} /></button>
+                  </div>
+                  {corpo && <p>{corpo}</p>}
+                  <div className="meta-linha">
+                    {a.created_at && <span>Aberto em {dataHora(a.created_at)}</span>}
+                    <span>{notas.length} nota{notas.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {notas.map((n, i) => (
+                    <div key={i} className="nota">{n.quem && <><small>{n.quem} · {n.quando}</small><br /></>}{n.texto}</div>
+                  ))}
+                  {notaPara === a.id && (
+                    <form className="nota-form" onSubmit={salvarNota}>
+                      <input className="inp" autoFocus value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Escreva a nota e tecle Enter" maxLength={1000} aria-label="Nota" />
+                      <button className="btn pri" disabled={!nota.trim() || isComentando}>{isComentando ? 'Salvando…' : 'Salvar'}</button>
+                      <button type="button" className="btn" onClick={() => { setNotaPara(null); setNota(''); }}>Cancelar</button>
+                    </form>
+                  )}
+                  <div className="acoes-linha">
+                    <button className="btn sm" onClick={() => setConcluindo(a)} disabled={isConcluindo}><Check size={14} />Marcar resolvido</button>
+                    {notaPara !== a.id && <button className="btn fant sm" onClick={() => { setNotaPara(a.id); setNota(''); }}><MessageSquare size={14} />Adicionar nota</button>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      {novoAberto && (
+        <GavetaNovoAviso
+          isPending={isCriando}
+          onFechar={() => setNovoAberto(false)}
+          onSalvar={async (dados) => {
+            try { await criarAviso(dados); setNovoAberto(false); toast.success('Registro criado e visível para a equipe.'); }
+            catch (err) { toast.error(err.message || 'Não foi possível salvar o registro.'); }
+          }}
+        />
+      )}
+      {concluindo && (
+        <GavetaConcluir
+          aviso={concluindo} isPending={isConcluindo}
+          onFechar={() => setConcluindo(null)}
+          onConfirmar={async (obs) => {
+            try { await concluirAviso(concluindo.id, obs); setConcluindo(null); toast.success('Aviso concluído e movido para o histórico.'); }
+            catch (err) { toast.error(err.message || 'Não foi possível concluir o registro.'); }
+          }}
+        />
+      )}
+      {historicoAberto && <GavetaHistorico session={session} acesso={acesso} onFechar={() => setHistoricoAberto(false)} />}
+    </div>
+  );
+}
+
+// Novo registro. Na autorização de chave, sala + data puxam da grade as aulas
+// daquela sala no dia: escolher uma preenche disciplina e períodos.
+function GavetaNovoAviso({ onFechar, onSalvar, isPending }) {
+  const { predioAtivo } = usePredio();
+  const { toast } = useUI();
+  const [tipo, setTipo] = useState('CHAVE');
+  const [chave, setChave] = useState({ aluno_nome: '', sala_id: '', data_prevista: hojeISO(), disciplina: '', periodos: [] });
+  const [geral, setGeral] = useState({ titulo: '', prioridade: 'NORMAL', descricao: '' });
+  const [disciplinaManual, setDisciplinaManual] = useState(false);
+  const { dados: grade } = useGrade(predioAtivo || '');
+
+  const diaDaData = useMemo(() => {
+    const [y, m, d] = String(chave.data_prevista || '').split('-').map(Number);
+    if (!y) return null;
+    const dow = new Date(y, m - 1, d).getDay(); // data "pura", sem fuso
+    return DIAS_SEMANA[(dow + 6) % 7];
+  }, [chave.data_prevista]);
+
+  const salaDaGrade = useMemo(
+    () => ordenarSalas(grade?.salas).find(s => normalizar(s.numero) === normalizar(chave.sala_id))?.numero || null,
+    [grade, chave.sala_id]
+  );
+  const aulasDoDia = useMemo(
+    () => (salaDaGrade && diaDaData ? blocosDoDia(grade?.grade, diaDaData)[salaDaGrade] || [] : []),
+    [grade, salaDaGrade, diaDaData]
+  );
+
+  const escolherAula = (b) => {
+    setChave(c => ({ ...c, disciplina: b.titulo, periodos: [...b.periodos] }));
+    setDisciplinaManual(false);
+  };
+  const togglePer = (code) => setChave(c => {
+    const periodos = c.periodos.includes(code) ? c.periodos.filter(p => p !== code) : [...c.periodos, code];
+    // Mantém a ordem dos períodos da PUCRS (E1 depois de E) e preenche a
+    // disciplina pela grade enquanto o usuário não a editar à mão.
+    periodos.sort((a, b) => PERIODS.findIndex(p => p.code === a) - PERIODS.findIndex(p => p.code === b));
+    let disciplina = c.disciplina;
+    if (!disciplinaManual) {
+      const nomes = [...new Set(aulasDoDia.filter(b => b.periodos.some(p => periodos.includes(p))).map(b => b.titulo))];
+      disciplina = nomes.join(' / ');
+    }
+    return { ...c, periodos, disciplina };
+  });
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (isPending) return;
+    // Envia só os campos do tipo ativo (não vaza CHAVE num GERAL e vice-versa)
+    if (tipo === 'CHAVE') {
+      if (!chave.periodos.length) { toast.error('Selecione pelo menos um período.'); return; }
+      onSalvar({ tipo, aluno_nome: chave.aluno_nome, sala_id: chave.sala_id, disciplina: chave.disciplina, data_prevista: chave.data_prevista, periodo: chave.periodos.join('') });
+      return;
+    }
+    onSalvar({ tipo, titulo: geral.titulo, prioridade: geral.prioridade, descricao: geral.descricao });
+  };
+
+  return (
+    <Gaveta
+      titulo="Novo registro" sub="Fica visível para toda a equipe do prédio na hora." onFechar={onFechar}
+      rodape={<><span className="esp" /><button type="button" className="btn" onClick={onFechar}>Cancelar</button><button type="submit" form="form-aviso" className="btn pri" disabled={isPending}>{isPending ? 'Salvando…' : 'Salvar registro'}</button></>}
+    >
+      <form id="form-aviso" onSubmit={submit} style={{ display: 'contents' }}>
+        <Seg rotulo="Tipo de registro" valor={tipo} onChange={setTipo} opcoes={[['CHAVE', 'Autorização de chave'], ['GERAL', 'Aviso ou intercorrência']]} />
+        {tipo === 'CHAVE' ? (
+          <>
+            <div className="campo"><label htmlFor="na-aluno">Quem vai retirar a chave</label><input id="na-aluno" data-autofocus className="inp" required maxLength={120} placeholder="Ex.: Ana Beatriz Rocha" value={chave.aluno_nome} onChange={(e) => setChave({ ...chave, aluno_nome: e.target.value })} /></div>
+            <div className="linha-campos">
+              <div className="campo"><label htmlFor="na-sala">Sala</label><input id="na-sala" className="inp" required placeholder="Ex.: 302" value={chave.sala_id} onChange={(e) => setChave({ ...chave, sala_id: e.target.value })} /></div>
+              <div className="campo"><label htmlFor="na-data">Data</label><input id="na-data" className="inp" type="date" required value={chave.data_prevista} onChange={(e) => setChave({ ...chave, data_prevista: e.target.value })} /></div>
+            </div>
+            {salaDaGrade && diaDaData && (
+              <div className="campo">
+                <span className="rot">Aulas da sala {salaDaGrade} · {diaDaData.toLowerCase()} <span className="dica">· escolha uma para preencher</span></span>
+                {aulasDoDia.length === 0
+                  ? <span className="dica">Nenhuma aula na grade para esse dia. Preencha a disciplina e os períodos à mão.</span>
+                  : <div className="pilha" style={{ gap: 6 }}>{aulasDoDia.map(b => {
+                      const ativa = b.periodos.every(p => chave.periodos.includes(p)) && chave.disciplina === b.titulo;
+                      return (
+                        <button key={b.chave} type="button" className="item-btn" style={ativa ? { borderColor: 'var(--acao-texto)', background: 'var(--acao-suave)' } : undefined} onClick={() => escolherAula(b)}>
+                          <b>{b.titulo}</b><small>{b.periodosStr} · {b.inicio}–{b.fim}{b.codCred ? ` · ${b.codCred}` : ''}</small>
+                        </button>
+                      );
+                    })}</div>}
+              </div>
+            )}
+            <div className="campo">
+              <span className="rot">Períodos</span>
+              <div className="pers">
+                {PERIODS.map(p => <button key={p.code} type="button" className="per-chip" style={{ minWidth: 40, height: 32 }} aria-pressed={chave.periodos.includes(p.code)} onClick={() => togglePer(p.code)} title={p.lb}>{p.code}</button>)}
+              </div>
+            </div>
+            <div className="campo"><label htmlFor="na-disc">Disciplina <span className="dica">{disciplinaManual ? 'editada à mão' : 'vem da grade; dá para editar'}</span></label><input id="na-disc" className="inp" required maxLength={200} placeholder="Escolha uma aula acima ou digite" value={chave.disciplina} onChange={(e) => { setDisciplinaManual(true); setChave({ ...chave, disciplina: e.target.value }); }} /></div>
+          </>
+        ) : (
+          <>
+            <div className="campo"><label htmlFor="na-titulo">Título</label><input id="na-titulo" data-autofocus className="inp" required maxLength={200} placeholder="Ex.: Projetor da sala 302 com defeito" value={geral.titulo} onChange={(e) => setGeral({ ...geral, titulo: e.target.value })} /></div>
+            <div className="campo"><span className="rot">Prioridade</span><Seg rotulo="Prioridade" valor={geral.prioridade} onChange={(v) => setGeral({ ...geral, prioridade: v })} opcoes={[['ALTA', 'Alta'], ['NORMAL', 'Normal'], ['BAIXA', 'Baixa']]} /></div>
+            <div className="campo"><label htmlFor="na-desc">Descrição</label><textarea id="na-desc" className="inp" required rows={5} maxLength={4000} placeholder="O que aconteceu, onde, e o que já foi feito" value={geral.descricao} onChange={(e) => setGeral({ ...geral, descricao: e.target.value })} /></div>
+          </>
+        )}
+      </form>
+    </Gaveta>
+  );
+}
+
+function GavetaConcluir({ aviso, onFechar, onConfirmar, isPending }) {
+  const [obs, setObs] = useState('');
+  return (
+    <Gaveta
+      titulo="Marcar como resolvido" sub={aviso.titulo} onFechar={onFechar}
+      rodape={<><span className="esp" /><button type="button" className="btn" onClick={onFechar}>Cancelar</button><button type="button" className="btn pri" disabled={isPending} onClick={() => onConfirmar(obs.trim())}>{isPending ? 'Concluindo…' : 'Concluir aviso'}</button></>}
+    >
+      <div className="campo">
+        <label htmlFor="rs-obs">O que foi feito <span className="dica">opcional</span></label>
+        <textarea id="rs-obs" data-autofocus className="inp" rows={5} maxLength={1000} placeholder="Ex.: Técnico trocou o dreno às 11h." value={obs} onChange={(e) => setObs(e.target.value)} />
+        <span className="dica">Vai para o histórico de auditoria junto com a data de conclusão.</span>
+      </div>
+    </Gaveta>
+  );
+}
+
+async function parseResponse(res) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+  return json;
+}
+
+function GavetaHistorico({ session, acesso, onFechar }) {
+  const { predioAtivo } = usePredio();
+  const predioId = predioAtivo || acesso?.predioId || '';
+  const [aba, setAba] = useState('CHAVE');
+  const [busca, setBusca] = useState('');
+  const { data: historico, isLoading, error } = useQuery({
+    queryKey: ['avisos_historico', predioId],
+    queryFn: async () => {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos/historico`, {
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}`, 'x-predio-id': predioId }
+      });
+      return parseResponse(res);
+    },
+    enabled: !!predioId && !!session?.access_token,
+    staleTime: 60 * 1000 // histórico não muda rápido
+  });
+  const t = normalizar(busca);
+  const lista = (aba === 'CHAVE' ? historico?.chaves : historico?.gerais) || [];
+  const filtrada = lista.filter(i => !t || normalizar(`${i.titulo || ''} ${i.aluno_nome || ''} ${i.sala_id || ''} ${i.obs_conclusao || ''}`).includes(t));
+
+  return (
+    <Gaveta titulo="Histórico de registros" sub="Autorizações e avisos já encerrados" onFechar={onFechar} larga
+      rodape={<><span className="esp" /><button className="btn" onClick={onFechar}>Fechar</button></>}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Seg rotulo="Tipo" valor={aba} onChange={setAba} opcoes={[['CHAVE', 'Autorizações de chave'], ['GERAL', 'Avisos e intercorrências']]} />
+        <div className="campo-busca" style={{ flex: 1, minWidth: 200 }}><Search size={16} /><input className="inp" data-autofocus placeholder="Buscar por título, aluno ou sala" value={busca} onChange={(e) => setBusca(e.target.value)} /></div>
+      </div>
+      {isLoading ? <Carregando texto="Carregando o histórico…" />
+        : error ? <Erro texto={error.message} />
+          : filtrada.length === 0 ? <div className="vazio">Nenhum registro encontrado.</div>
+            : (
+              <div className="tabela-wrap">
+                <table className="dados">
+                  <thead><tr><th>Referência</th><th>Concluído em</th>{aba === 'GERAL' && <th>Observação final</th>}</tr></thead>
+                  <tbody>
+                    {filtrada.map(i => (
+                      <tr key={i.id}>
+                        <td>{i.tipo === 'CHAVE' ? <><b>Sala {i.sala_id}</b> · {i.aluno_nome}</> : <b>{i.titulo}</b>}</td>
+                        <td className="num" style={{ whiteSpace: 'nowrap' }}>{dataHora(i.concluido_em)}</td>
+                        {aba === 'GERAL' && <td style={{ color: 'var(--text-2)' }}>{i.obs_conclusao || '—'}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+    </Gaveta>
+  );
 }

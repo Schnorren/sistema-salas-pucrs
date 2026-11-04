@@ -9,7 +9,9 @@ async function parseResponse(res) {
     return json;
 }
 
-export const useAvisos = (session, acesso) => {
+// `ativo: false` desliga fetch e Realtime (a Planta usa o hook só para quem tem
+// o módulo avisos — sem ele a API responderia 403).
+export const useAvisos = (session, acesso, { ativo = true } = {}) => {
     const queryClient = useQueryClient();
     const { predioAtivo } = usePredio();
     const token = session?.access_token;
@@ -28,7 +30,7 @@ export const useAvisos = (session, acesso) => {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, { headers: getHeaders() });
             return parseResponse(res);
         },
-        enabled: !!predioId && !!userId
+        enabled: ativo && !!predioId && !!userId
     });
 
     const invalidar = () => {
@@ -40,7 +42,7 @@ export const useAvisos = (session, acesso) => {
 
     // Realtime — qualquer alteração na tabela avisos atualiza o mural automaticamente
     useEffect(() => {
-        if (!predioId) return;
+        if (!predioId || !ativo) return;
 
         const channel = supabase
             .channel(`avisos_${predioId}`)
@@ -51,7 +53,7 @@ export const useAvisos = (session, acesso) => {
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, [predioId, userId, queryClient]);
+    }, [predioId, userId, queryClient, ativo]);
 
     const criarMutation = useMutation({
         mutationFn: async (dadosAviso) => {
