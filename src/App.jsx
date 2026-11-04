@@ -55,8 +55,9 @@ export default function App() {
 
   if (isAuthLoading) {
     return (
-      <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: '#f0ede8', color: '#1c2b4a', fontWeight: 'bold' }}>
-        Iniciando sistema...
+      <div className="sx app" style={{ alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+        <span className="selo" aria-hidden="true" />
+        <span className="sub">Iniciando o sistema…</span>
       </div>
     )
   }

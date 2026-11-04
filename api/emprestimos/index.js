@@ -79,10 +79,21 @@ async function handler(req, res) {
         }
     }
 
+    // Login compartilhado na recepção: o front manda o nome do computador
+    // (x-balcao, salvo no navegador de cada máquina) para o registro dizer
+    // QUAL balcão atendeu, não só qual conta. URL-encoded, curto e sem controle.
+    const responsavel = () => {
+        const email = req.user?.email || 'Sistema';
+        let balcao = '';
+        try { balcao = decodeURIComponent(String(req.headers['x-balcao'] || '')); } catch { balcao = ''; }
+        balcao = [...balcao].filter(c => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127).join('').trim().slice(0, 30);
+        return balcao ? `${email} · ${balcao}` : email;
+    };
+
     if (req.method === 'POST' && caminho1 === 'retirar') {
         try {
             const body = req.body || {};
-            const respRetirada = req.user?.email || 'Sistema';
+            const respRetirada = responsavel();
             // Campos explícitos — o spread do body permitiria injetar chaves extras no service
             const resultado = await service.registrarRetirada({
                 itemId: body.itemId,
@@ -106,7 +117,7 @@ async function handler(req, res) {
     if (req.method === 'POST' && caminho1 === 'devolver' && caminho2) {
         try {
             const id = caminho2;
-            const respDevolucao = req.user?.email || 'Sistema';
+            const respDevolucao = responsavel();
 
             const resultado = await service.registrarDevolucao({
                 emprestimoId: id,

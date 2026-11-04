@@ -1,38 +1,24 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Search, Phone, Mail, MessageCircle, MapPin, Clock, Pencil, Plus, Trash2, GraduationCap } from 'lucide-react';
 import { useContatos } from '../hooks/useContatos';
 import { useUI } from '../contexts/UIContext';
 import { buscarNoDiretorio, normalizarTexto } from '../utils/contatosBusca';
 import ModalEditarContato from './ModalEditarContato';
 import ModalCursosContato from './ModalCursosContato';
-
-const pillStyle = {
-    fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
-    background: 'rgba(255,255,255,0.05)', color: '#9ca3af',
-    border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap', fontWeight: 'bold'
-};
-
-const cardStyle = {
-    background: '#1e293b', border: '1px solid #334155', borderLeft: '4px solid #3b82f6',
-    borderRadius: '8px', padding: '16px', marginBottom: '16px',
-    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-};
-
-const linkStyle = {
-    color: '#60a5fa', textDecoration: 'none', fontSize: '13px', fontWeight: 'bold'
-};
-
-const botaoIconeStyle = {
-    background: 'transparent', border: 'none', cursor: 'pointer',
-    opacity: 0.5, fontSize: '13px', padding: '2px 4px', lineHeight: 1
-};
+import Copiar from './ui/Copiar';
+import { Carregando, Erro } from './ui/Estado';
 
 // Só dígitos, com DDI do Brasil — formato que o wa.me espera.
 function linkWhatsapp(numero) {
     const digitos = String(numero || '').replace(/\D/g, '');
-    if (digitos.length < 10) return null;
-    return `https://wa.me/55${digitos}`;
+    return digitos.length < 10 ? null : `https://wa.me/55${digitos}`;
 }
+const telHref = (t) => `tel:${String(t).replace(/\D/g, '')}`;
+const TIPO = { escola: 'Escola', local: 'Local', unidade: 'Unidade', servico: 'Serviço' };
 
+// Diretório institucional (global, sem prédio): lista à esquerda, detalhe à
+// direita. A busca é client-side e usa a MESMA regra da busca global
+// (utils/contatosBusca.js).
 export default function MuralContatos({ session, acesso, canEditContatos, contatoFocado }) {
     const { showConfirm, toast } = useUI();
     const {
@@ -42,333 +28,108 @@ export default function MuralContatos({ session, acesso, canEditContatos, contat
     } = useContatos(session, acesso);
 
     const [busca, setBusca] = useState('');
-    const [expandidos, setExpandidos] = useState({});
+    const [selId, setSelId] = useState(null);
+    const [filhoFoco, setFilhoFoco] = useState(null);
     const [contatoEmEdicao, setContatoEmEdicao] = useState(null); // { modo, contato, paiId, tipo }
     const [contatoDeCursos, setContatoDeCursos] = useState(null);
-    const refsCards = useRef({});
+    const detRef = useRef(null);
 
-    const raizes = useMemo(
-        () => [...(diretorio.escolas || []), ...(diretorio.locais || [])],
-        [diretorio]
-    );
+    const grupos = useMemo(() => [
+        { rotulo: 'Prédios e locais', itens: diretorio.locais || [] },
+        { rotulo: 'Escolas da PUCRS', itens: diretorio.escolas || [] },
+    ], [diretorio]);
+    const raizes = useMemo(() => [...(diretorio.locais || []), ...(diretorio.escolas || [])], [diretorio]);
 
-    // Vem da busca global do Dashboard como { id, n } — o `n` muda a cada clique
-    // para que reabrir o mesmo contato volte a rolar até ele.
-    const focoId = contatoFocado?.id || null;
-
-    // Card em foco começa aberto, mas o clique do usuário no toggle prevalece
-    // (por isso a expansão é derivada, e não gravada por um efeito).
-    const estaExpandido = (id) => (id in expandidos ? expandidos[id] : id === focoId);
-
+    // Vem da busca global (/contatos?id=) como { id, n }: o n muda a cada clique
     useEffect(() => {
-        if (!contatoFocado) return;
-        refsCards.current[contatoFocado.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, [contatoFocado, raizes]);
+        if (contatoFocado?.id) { setSelId(contatoFocado.id); setBusca(''); } // eslint-disable-line react-hooks/set-state-in-effect
+    }, [contatoFocado]);
+    useEffect(() => { detRef.current?.scrollTo({ top: 0 }); }, [selId]);
 
-    const resultados = useMemo(() => buscarNoDiretorio(diretorio, busca, 50), [diretorio, busca]);
-    const buscando = normalizarTexto(busca).length >= 2;
+    const termo = normalizarTexto(busca);
+    const buscando = termo.length >= 2;
+    const resultados = useMemo(() => (buscando ? buscarNoDiretorio(diretorio, busca, 40) : []), [diretorio, busca, buscando]);
+    const idsDosResultados = useMemo(() => new Set(resultados.map(r => r.contatoId)), [resultados]);
 
-    const copiar = async (texto) => {
+    const sel = raizes.find(r => r.id === selId) || raizes[0] || null;
+
+    const salvar = async (dados) => {
         try {
-            await navigator.clipboard.writeText(texto);
-            toast.success(`Copiado: ${texto}`);
-        } catch {
-            toast.error('Não foi possível copiar.');
-        }
-    };
-
-    const handleSalvarContato = async (dados) => {
-        try {
-            if (contatoEmEdicao?.modo === 'editar') {
-                await atualizarContato(contatoEmEdicao.contato.id, dados);
-                toast.success('Contato atualizado.');
-            } else {
-                await criarContato(dados);
-                toast.success('Contato criado.');
-            }
+            if (contatoEmEdicao?.modo === 'editar') { await atualizarContato(contatoEmEdicao.contato.id, dados); toast.success('Contato atualizado.'); }
+            else { await criarContato(dados); toast.success('Contato criado.'); }
             setContatoEmEdicao(null);
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível salvar o contato.');
-        }
+        } catch (err) { toast.error(err.message || 'Não foi possível salvar o contato.'); }
+    };
+    const excluir = async (contato) => {
+        const n = (contato.filhos || []).length;
+        const ok = await showConfirm(`Excluir "${contato.nome}" permanentemente?${n ? ` Isso também remove os ${n} itens vinculados.` : ''}`, 'Excluir contato', { confirmar: 'Excluir', perigo: true });
+        if (!ok) return;
+        try { await excluirContato(contato.id); toast.success('Contato excluído.'); } catch (err) { toast.error(err.message || 'Não foi possível excluir o contato.'); }
     };
 
-    const handleExcluir = async (contato) => {
-        const temFilhos = (contato.filhos || []).length > 0;
-        const aviso = temFilhos
-            ? ` Isso também remove os ${contato.filhos.length} itens vinculados a ele.`
-            : '';
-        const confirmado = await showConfirm(
-            `Excluir "${contato.nome}" permanentemente?${aviso}`, 'Excluir contato'
-        );
-        if (!confirmado) return;
-        try {
-            await excluirContato(contato.id);
-            toast.success('Contato excluído.');
-        } catch (err) {
-            toast.error(err.message || 'Não foi possível excluir o contato.');
-        }
-    };
+    if (loading && raizes.length === 0) return <Carregando texto="Carregando o diretório…" />;
+    if (error) return <Erro texto={error} />;
 
-    if (loading && raizes.length === 0) {
-        return <p style={{ padding: 24, color: '#9ca3af' }}>Carregando contatos...</p>;
-    }
-    if (error) return <p style={{ padding: 24, color: '#ef4444' }}>{error}</p>;
-
-    // --- blocos de render reaproveitados -------------------------------------
-
-    const renderContato = (contato) => {
-        const telefones = contato.telefones || [];
-        const emails = contato.emails || [];
-        const wpp = linkWhatsapp(contato.whatsapp);
-
-        return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {contato.descricao && (
-                    <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>{contato.descricao}</div>
-                )}
-                {contato.endereco && (
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>📍 {contato.endereco}</div>
-                )}
-
-                {telefones.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: '#64748b' }}>☎️</span>
-                        {telefones.map(tel => (
-                            <span key={tel} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <a href={`tel:${tel.replace(/\D/g, '')}`} style={linkStyle}>{tel}</a>
-                                <button onClick={() => copiar(tel)} style={botaoIconeStyle} title="Copiar telefone"
-                                    onMouseOver={e => e.currentTarget.style.opacity = 1}
-                                    onMouseOut={e => e.currentTarget.style.opacity = 0.5}>⧉</button>
-                            </span>
-                        ))}
-                    </div>
-                )}
-
-                {emails.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: '#64748b' }}>✉️</span>
-                        {emails.map(mail => (
-                            <span key={mail} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <a href={`mailto:${mail}`} style={{ ...linkStyle, fontWeight: 'normal' }}>{mail}</a>
-                                <button onClick={() => copiar(mail)} style={botaoIconeStyle} title="Copiar e-mail"
-                                    onMouseOver={e => e.currentTarget.style.opacity = 1}
-                                    onMouseOut={e => e.currentTarget.style.opacity = 0.5}>⧉</button>
-                            </span>
-                        ))}
-                    </div>
-                )}
-
-                {wpp && (
-                    <div>
-                        <a href={wpp} target="_blank" rel="noreferrer"
-                            style={{ ...linkStyle, color: '#4ade80' }}>💬 WhatsApp {contato.whatsapp}</a>
-                    </div>
-                )}
-
-                {contato.horarios && (
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>🕒 {contato.horarios}</div>
-                )}
-            </div>
-        );
-    };
-
-    const renderFilho = (filho) => (
-        <div key={filho.id} style={{
-            background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '8px', padding: '12px', marginTop: '10px'
-        }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#e2e8f0' }}>
-                    {filho.referencia && <span style={{ ...pillStyle, marginRight: '8px' }}>{filho.referencia}</span>}
-                    {filho.nome}
-                </div>
-                {canEditContatos && (
-                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
-                        <button onClick={() => setContatoEmEdicao({ modo: 'editar', contato: filho })}
-                            style={botaoIconeStyle} title="Editar"
-                            onMouseOver={e => e.currentTarget.style.opacity = 1}
-                            onMouseOut={e => e.currentTarget.style.opacity = 0.5}>✏️</button>
-                        <button onClick={() => handleExcluir(filho)} disabled={isExcluindo}
-                            style={botaoIconeStyle} title="Excluir"
-                            onMouseOver={e => e.currentTarget.style.opacity = 1}
-                            onMouseOut={e => e.currentTarget.style.opacity = 0.5}>🗑️</button>
-                    </div>
-                )}
-            </div>
-            {renderContato(filho)}
-        </div>
-    );
-
-    const renderCard = (raiz) => {
-        const expandido = estaExpandido(raiz.id);
-        const filhos = raiz.filhos || [];
-        const cursos = raiz.cursos || [];
-        const tipoFilho = raiz.tipo === 'escola' ? 'unidade' : 'servico';
-        const rotuloFilhos = raiz.tipo === 'escola' ? 'unidades de atendimento' : 'serviços e espaços';
-
-        return (
-            <div key={raiz.id} ref={el => { refsCards.current[raiz.id] = el; }} style={cardStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' }}>{raiz.nome}</div>
-                    {canEditContatos && (
-                        <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
-                            <button onClick={() => setContatoEmEdicao({ modo: 'editar', contato: raiz })}
-                                style={botaoIconeStyle} title="Editar contato"
-                                onMouseOver={e => e.currentTarget.style.opacity = 1}
-                                onMouseOut={e => e.currentTarget.style.opacity = 0.5}>✏️</button>
-                            <button onClick={() => handleExcluir(raiz)} disabled={isExcluindo}
-                                style={botaoIconeStyle} title="Excluir contato"
-                                onMouseOver={e => e.currentTarget.style.opacity = 1}
-                                onMouseOut={e => e.currentTarget.style.opacity = 0.5}>🗑️</button>
-                        </div>
-                    )}
-                </div>
-
-                {renderContato(raiz)}
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px', alignItems: 'center' }}>
-                    {(filhos.length > 0 || cursos.length > 0) && (
-                        <button onClick={() => setExpandidos(p => ({ ...p, [raiz.id]: !expandido }))}
-                            style={{
-                                ...pillStyle, cursor: 'pointer',
-                                background: expandido ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
-                                color: expandido ? '#60a5fa' : '#9ca3af'
-                            }}>
-                            {expandido ? '▾' : '▸'} {filhos.length > 0 ? `${filhos.length} ${rotuloFilhos}` : ''}
-                            {filhos.length > 0 && cursos.length > 0 ? ' · ' : ''}
-                            {cursos.length > 0 ? `${cursos.length} cursos` : ''}
-                        </button>
-                    )}
-                    {canEditContatos && (
-                        <>
-                            <button onClick={() => setContatoEmEdicao({ modo: 'criar', paiId: raiz.id, tipo: tipoFilho })}
-                                style={{ ...pillStyle, cursor: 'pointer' }}>+ item</button>
-                            <button onClick={() => setContatoDeCursos(raiz)}
-                                style={{ ...pillStyle, cursor: 'pointer' }}>Gerenciar cursos</button>
-                        </>
-                    )}
-                </div>
-
-                {expandido && (
-                    <div style={{ marginTop: '8px' }}>
-                        {filhos.map(renderFilho)}
-
-                        {cursos.length > 0 && (
-                            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '8px' }}>
-                                    CURSOS ATENDIDOS
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {cursos.map(curso => (
-                                        <span key={curso.id} style={{ ...pillStyle, fontWeight: 'normal' }}>{curso.nome}</span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        );
-    };
+    const escolher = (id, filhoId = null) => { setSelId(id); setFilhoFoco(filhoId); };
 
     return (
-        <div style={{ padding: '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
-                <div>
-                    <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Contatos PUCRS</h2>
-                    <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0' }}>
-                        Escolas, unidades de atendimento e serviços. Busque pelo nome do curso para saber a quem transferir.
-                    </p>
-                </div>
-                {canEditContatos && (
-                    <button onClick={() => setContatoEmEdicao({ modo: 'criar', tipo: 'escola' })} disabled={isSalvando} style={{
-                        padding: '8px 16px', background: '#3b82f6', color: '#fff',
-                        border: 'none', borderRadius: '8px', cursor: 'pointer',
-                        fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px'
-                    }} onMouseOver={e => e.currentTarget.style.background = '#2563eb'}
-                        onMouseOut={e => e.currentTarget.style.background = '#3b82f6'}>
-                        <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span> Novo contato
-                    </button>
-                )}
-            </div>
-
-            <input
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Buscar por curso, Escola, serviço, telefone ou e-mail..."
-                style={{
-                    width: '100%', padding: '12px 16px', border: '1px solid #334155',
-                    borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', outline: 'none',
-                    background: '#0f172a', color: '#f1f5f9', boxSizing: 'border-box', marginBottom: '20px'
-                }}
-            />
-
-            {buscando ? (
-                <div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                        {resultados.length} resultado(s) para “{busca}”
+        <div className="contatos">
+            <aside className="ct-lista" aria-label="Diretório">
+                <div className="ct-busca">
+                    <div className="campo-busca" style={{ minWidth: 0 }}>
+                        <Search size={16} />
+                        <input className="inp" autoFocus placeholder="Escola, curso, setor ou telefone" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar no diretório" />
                     </div>
-                    {resultados.length === 0 ? (
-                        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#64748b', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                            Nada encontrado.
-                        </div>
-                    ) : resultados.map(r => (
-                        <div key={r.chave} style={{ ...cardStyle, padding: '12px 16px', marginBottom: '10px', borderLeftColor: r.tipo === 'curso' ? '#a78bfa' : '#3b82f6' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                                <div>
-                                    <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#f8fafc' }}>
-                                        {r.tipo === 'curso' && <span style={{ ...pillStyle, marginRight: '8px', color: '#a78bfa' }}>CURSO</span>}
-                                        {r.titulo}
-                                    </div>
-                                    {r.subtitulo && (
-                                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>→ {r.subtitulo}</div>
-                                    )}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    {r.telefone && (
-                                        <>
-                                            <a href={`tel:${r.telefone.replace(/\D/g, '')}`} style={linkStyle}>{r.telefone}</a>
-                                            <button onClick={() => copiar(r.telefone)} style={botaoIconeStyle} title="Copiar telefone"
-                                                onMouseOver={e => e.currentTarget.style.opacity = 1}
-                                                onMouseOut={e => e.currentTarget.style.opacity = 0.5}>⧉</button>
-                                        </>
-                                    )}
-                                    <button onClick={() => {
-                                        setBusca('');
-                                        setExpandidos(p => ({ ...p, [r.contatoId]: true }));
-                                        // O card só existe no DOM depois de sair da view de busca.
-                                        setTimeout(() => refsCards.current[r.contatoId]
-                                            ?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
-                                    }} style={{ ...pillStyle, cursor: 'pointer' }}>Ver ficha</button>
-                                </div>
-                            </div>
+                    {canEditContatos && <button className="btn sm" onClick={() => setContatoEmEdicao({ modo: 'criar', tipo: 'escola' })} disabled={isSalvando}><Plus size={14} />Novo contato</button>}
+                </div>
+                <div className="ct-itens">
+                    {buscando && (
+                        resultados.length === 0
+                            ? <div className="vazio" style={{ margin: 14 }}>Nada encontrado para “{busca}”.</div>
+                            : <>
+                                <div className="ct-grupo">{resultados.length} resultado{resultados.length > 1 ? 's' : ''}</div>
+                                {resultados.map(r => (
+                                    <button key={r.chave} className="ct-item" aria-current={sel?.id === r.contatoId} onClick={() => escolher(r.contatoId, r.tipo === 'contato' && r.subtitulo ? r.chave.replace('contato-', '') : null)}>
+                                        <b>{r.titulo}</b>
+                                        <small>{r.tipo === 'curso' ? `Curso → ${r.subtitulo}` : r.subtitulo || ''}{r.telefone ? ` · ${r.telefone}` : ''}</small>
+                                    </button>
+                                ))}
+                            </>
+                    )}
+                    {!buscando && grupos.map(g => g.itens.length > 0 && (
+                        <div key={g.rotulo}>
+                            <div className="ct-grupo">{g.rotulo}</div>
+                            {g.itens.map(c => (
+                                <button key={c.id} className="ct-item" aria-current={sel?.id === c.id} onClick={() => escolher(c.id)}>
+                                    <b>{c.nome}</b>
+                                    <small>{[(c.telefones || [])[0], (c.filhos || []).length ? `${c.filhos.length} ${c.tipo === 'escola' ? 'unidades' : 'serviços'}` : null, (c.cursos || []).length ? `${c.cursos.length} cursos` : null].filter(Boolean).join(' · ')}</small>
+                                </button>
+                            ))}
                         </div>
                     ))}
                 </div>
-            ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '0 24px', alignItems: 'start' }}>
-                    {raizes.length === 0 ? (
-                        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#64748b', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                            Nenhum contato cadastrado.
-                        </div>
-                    ) : raizes.map(renderCard)}
-                </div>
-            )}
+            </aside>
+
+            <section className="ct-det" ref={detRef}>
+                {!sel ? <div className="vazio">Nenhum contato cadastrado.</div> : (
+                    <Detalhe
+                        contato={sel} filhoFoco={filhoFoco} destacar={buscando && idsDosResultados.has(sel.id) ? termo : ''}
+                        canEdit={canEditContatos} isExcluindo={isExcluindo}
+                        onEditar={(c) => setContatoEmEdicao({ modo: 'editar', contato: c })}
+                        onNovoFilho={() => setContatoEmEdicao({ modo: 'criar', paiId: sel.id, tipo: sel.tipo === 'escola' ? 'unidade' : 'servico' })}
+                        onExcluir={excluir}
+                        onCursos={() => setContatoDeCursos(sel)}
+                    />
+                )}
+            </section>
 
             {contatoEmEdicao && (
                 <ModalEditarContato
-                    modo={contatoEmEdicao.modo}
-                    contato={contatoEmEdicao.contato}
-                    paiId={contatoEmEdicao.paiId}
-                    tipoInicial={contatoEmEdicao.tipo}
-                    raizes={raizes}
-                    isPending={isSalvando}
-                    onClose={() => setContatoEmEdicao(null)}
-                    onSave={handleSalvarContato}
+                    modo={contatoEmEdicao.modo} contato={contatoEmEdicao.contato} paiId={contatoEmEdicao.paiId}
+                    tipoInicial={contatoEmEdicao.tipo} raizes={raizes} isPending={isSalvando}
+                    onClose={() => setContatoEmEdicao(null)} onSave={salvar}
                 />
             )}
-
             {contatoDeCursos && (
                 <ModalCursosContato
                     contato={raizes.find(r => r.id === contatoDeCursos.id) || contatoDeCursos}
@@ -377,6 +138,83 @@ export default function MuralContatos({ session, acesso, canEditContatos, contat
                     onAdicionar={(nome) => adicionarCurso(contatoDeCursos.id, nome)}
                     onRemover={(cursoId) => removerCurso(cursoId)}
                 />
+            )}
+        </div>
+    );
+}
+
+function Campos({ contato }) {
+    const tels = contato.telefones || [];
+    const mails = contato.emails || [];
+    const wpp = linkWhatsapp(contato.whatsapp);
+    return (
+        <div className="ct-info">
+            {tels.length > 0 && <div className="ct-campo"><Phone size={16} /><div style={{ minWidth: 0 }}><span className="rot">Telefone</span><div className="val">{tels.map(t => <div key={t}><Copiar valor={t} href={telHref(t)} /></div>)}</div></div></div>}
+            {mails.length > 0 && <div className="ct-campo"><Mail size={16} /><div style={{ minWidth: 0 }}><span className="rot">E-mail</span><div className="val">{mails.map(m => <div key={m}><Copiar valor={m} href={`mailto:${m}`} /></div>)}</div></div></div>}
+            {wpp && <div className="ct-campo"><MessageCircle size={16} /><div style={{ minWidth: 0 }}><span className="rot">WhatsApp</span><div className="val"><Copiar valor={contato.whatsapp} /><div><a className="btn fant sm" style={{ paddingLeft: 0 }} href={wpp} target="_blank" rel="noreferrer">Abrir conversa</a></div></div></div></div>}
+            {contato.endereco && <div className="ct-campo"><MapPin size={16} /><div style={{ minWidth: 0 }}><span className="rot">Endereço</span><div className="val">{contato.endereco}</div></div></div>}
+            {contato.horarios && <div className="ct-campo"><Clock size={16} /><div style={{ minWidth: 0 }}><span className="rot">Horário</span><div className="val">{contato.horarios}</div></div></div>}
+        </div>
+    );
+}
+
+function Detalhe({ contato, filhoFoco, destacar, canEdit, isExcluindo, onEditar, onNovoFilho, onExcluir, onCursos }) {
+    const filhos = contato.filhos || [];
+    const cursos = contato.cursos || [];
+    const refs = useRef({});
+    useEffect(() => { if (filhoFoco) refs.current[filhoFoco]?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, [filhoFoco, contato.id]);
+    const rotuloFilhos = contato.tipo === 'escola' ? 'Unidades de atendimento' : 'Serviços e espaços';
+    return (
+        <div className="ct-det-in">
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 260 }}>
+                    <span className="chip contorno">{TIPO[contato.tipo] || contato.tipo}</span>
+                    <h1 className="ct-tit">{contato.nome}</h1>
+                    {contato.descricao && <p className="sub" style={{ fontSize: 14, marginTop: 6, maxWidth: '70ch', whiteSpace: 'pre-wrap' }}>{contato.descricao}</p>}
+                </div>
+                {canEdit && (
+                    <div className="acoes-linha">
+                        <button className="btn" onClick={() => onEditar(contato)}><Pencil size={15} />Editar</button>
+                        <button className="btn" onClick={onNovoFilho}><Plus size={15} />{contato.tipo === 'escola' ? 'Unidade' : 'Serviço'}</button>
+                        {contato.tipo === 'escola' && <button className="btn" onClick={onCursos}><GraduationCap size={15} />Cursos</button>}
+                        <button className="icon-btn" style={{ width: 36, height: 36 }} onClick={() => onExcluir(contato)} disabled={isExcluindo} aria-label="Excluir contato" title="Excluir"><Trash2 size={16} /></button>
+                    </div>
+                )}
+            </div>
+
+            <Campos contato={contato} />
+
+            {filhos.length > 0 && (
+                <section>
+                    <div className="sec-hd"><h2 className="t-sec">{rotuloFilhos}</h2><span className="cont">{filhos.length}</span></div>
+                    <div className="sub-lista">
+                        {filhos.map(f => (
+                            <div key={f.id} ref={el => { refs.current[f.id] = el; }} className={`sub-item ${filhoFoco === f.id ? 'foco' : ''}`}>
+                                <b>{f.referencia && <span className="ref" title="Número no mapa do prédio">{f.referencia}</span>}{f.nome}</b>
+                                <small>{[f.descricao, f.endereco, f.horarios].filter(Boolean).join(' · ')}</small>
+                                {canEdit && (
+                                    <div className="acoes-linha" style={{ gridColumn: 1 }}>
+                                        <button className="btn fant sm" style={{ paddingLeft: 0 }} onClick={() => onEditar(f)}><Pencil size={13} />Editar</button>
+                                        <button className="btn fant sm" style={{ color: 'var(--alta)' }} onClick={() => onExcluir(f)} disabled={isExcluindo}><Trash2 size={13} />Excluir</button>
+                                    </div>
+                                )}
+                                <div className="contato-rapido">
+                                    {(f.telefones || []).map(t => <Copiar key={t} valor={t} href={telHref(t)} />)}
+                                    {(f.emails || []).map(m => <small key={m}>{m}</small>)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {cursos.length > 0 && (
+                <section>
+                    <div className="sec-hd"><h2 className="t-sec">Cursos desta Escola</h2><span className="cont">{cursos.length}</span><span className="dica">quem ligar sobre estes cursos, transfira para cá</span></div>
+                    <div className="cursos">
+                        {cursos.map(c => <span key={c.id} className="chip contorno" style={destacar && normalizarTexto(c.nome).includes(destacar) ? { borderColor: 'var(--acao-texto)', background: 'var(--acao-suave)', color: 'var(--text)' } : undefined}>{c.nome}</span>)}
+                    </div>
+                </section>
             )}
         </div>
     );

@@ -1,107 +1,107 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_TIMES, PERIOD_END_TIMES, getDiaAtual, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod } from '../../backend_core/utils/timeHelpers';
+import { IDX_PERIODO, blocosDoDia, ordenarSalas, andarDaSala, rotuloAndar, janelasLivres, blocoNoPeriodo } from '../utils/blocos';
+import { SegDias } from './ui/Seg';
+import { Carregando, Erro, SemPredio } from './ui/Estado';
 
-const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-
-
+// Salas livres: localizador por faixa de períodos + disponibilidade do dia.
 export default function FreeRooms({ acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
 
-  const [day, setDay] = useState(getDiaAtual());
+  const atual = getCurrentPeriod() || 'A';
+  const [dia, setDia] = useState(getDiaAtual());
+  const [de, setDe] = useState(atual);
+  const [ate, setAte] = useState(PERIODS[Math.min(PERIODS.length - 1, IDX_PERIODO[atual] + 1)].code);
 
-  useEffect(() => {
-    const intervalo = setInterval(() => {
-      const agora = new Date();
-      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-      if (PERIOD_TIMES.includes(horaStr)) {
-        setDay(prev => {
-          const hoje = getDiaAtual();
-          return prev !== hoje ? hoje : prev;
-        });
-      }
-    }, 60000);
-    return () => clearInterval(intervalo);
-  }, []);
-  const dataProcessed = useMemo(() => {
-    if (!rawGradeData || !rawGradeData.salas || !rawGradeData.grade) return [];
+  const salas = useMemo(() => ordenarSalas(rawGradeData?.salas), [rawGradeData]);
+  const blocos = useMemo(() => blocosDoDia(rawGradeData?.grade, dia), [rawGradeData, dia]);
 
-    const aulasDoDia = rawGradeData.grade.filter(d =>
-      d.dia_semana?.toLowerCase().includes(day.toLowerCase())
-    );
+  const a = IDX_PERIODO[de];
+  const b = Math.max(IDX_PERIODO[ate], a);
+  const livres = useMemo(() => salas.filter(s => {
+    const lista = blocos[s.numero] || [];
+    return !lista.some(x => x.idxFim >= a && x.idxIni <= b);
+  }).map(s => {
+    const prox = (blocos[s.numero] || []).find(x => x.idxIni > b);
+    return { s, ate: prox ? prox.inicio : null };
+  }), [salas, blocos, a, b]);
 
-    const salasLivres = rawGradeData.salas.map(salaRef => {
-      const aulasDaSala = aulasDoDia.filter(d => {
-        const numSala = d.salas?.numero || d.sala;
-        return numSala === salaRef.numero;
-      });
-      const freePeriods = PERIODS.filter(p => {
-        const isOccupied = aulasDaSala.some(aula => {
-          const code = extractPeriodCode(aula.periodo);
-          return code === p.code;
-        });
-        return !isOccupied;
-      });
+  if (!predioAtual) return <SemPredio />;
+  if (loading && !rawGradeData) return <Carregando texto="Carregando a disponibilidade…" />;
+  if (error) return <Erro texto={error} />;
 
-      return {
-        sala: salaRef.numero,
-        quantidadeLivres: freePeriods.length,
-        periodos: freePeriods.map(f => ({
-          code: f.code,
-          label: f.lb,
-          fim: PERIOD_END_TIMES[f.code] || ''
-        }))
-      };
-    });
-    return salasLivres
-      .filter(s => s.quantidadeLivres > 0)
-      .sort((a, b) => a.sala.localeCompare(b.sala, undefined, { numeric: true }));
-
-  }, [rawGradeData, day]);
-
-  if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
-  if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ Erro: {error}</div>;
+  const mudarDe = (v) => { setDe(v); if (IDX_PERIODO[ate] < IDX_PERIODO[v]) setAte(v); };
+  const mudarAte = (v) => { setAte(v); if (IDX_PERIODO[de] > IDX_PERIODO[v]) setDe(v); };
 
   return (
-    <div className="view active" id="vFree" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-
-      <div className="toolbar">
-        <label>Dia:</label>
-        <select value={day} onChange={e => setDay(e.target.value)}>
-          {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+    <div className="pg">
+      <div className="pg-hd">
+        <div><h1 className="t-pg">Salas livres</h1><p className="sub">Encontre uma sala para remanejar uma aula ou atender um pedido de reserva</p></div>
       </div>
 
-      <div className="free-body" id="freeBody" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-        {loading ? (
-          <div className="empty-st">Baixando matriz de disponibilidade da CDN...</div>
-        ) : dataProcessed.length === 0 ? (
-          <div className="empty-st">Nenhuma sala livre encontrada para este dia. (Prédio 100% ocupado!)</div>
-        ) : (
-          dataProcessed.map(sala => (
-            <div key={sala.sala} className="free-card">
-              <div className="free-summary">
-                <div className="free-room-title">Sala {sala.sala}</div>
-                <div className="free-badge">{sala.quantidadeLivres} períodos livres</div>
-              </div>
-              <div className="free-content">
-                {sala.periodos.map(p => (
-                  <div key={p.code} className="free-slot">
-                    <div className="free-slot-code">{p.code}</div>
-                    <div>{p.label} até {p.fim}</div>
-                  </div>
-                ))}
-              </div>
+      <section className="card">
+        <div className="finder">
+          <div className="campo"><span className="rot">Dia</span><SegDias valor={dia} onChange={setDia} /></div>
+          <div className="campo"><label htmlFor="lv-de">Do período</label>
+            <select id="lv-de" className="inp" value={de} onChange={(e) => mudarDe(e.target.value)}>{PERIODS.map(p => <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>)}</select>
+          </div>
+          <div className="campo"><label htmlFor="lv-ate">Até o período</label>
+            <select id="lv-ate" className="inp" value={ate} onChange={(e) => mudarAte(e.target.value)}>{PERIODS.map(p => <option key={p.code} value={p.code}>{p.code} · até {PERIOD_END_TIMES[p.code]}</option>)}</select>
+          </div>
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div style={{ fontSize: 24, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{livres.length} <span style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>salas livres</span></div>
+            <div className="sub" style={{ margin: 0 }}>{dia.toLowerCase()}, {PERIODS[a].lb}–{PERIOD_END_TIMES[PERIODS[b].code]}</div>
+          </div>
+        </div>
+        <div className="card-bd" style={{ borderTop: '1px solid var(--line)' }}>
+          {livres.length === 0 ? <div className="vazio">Nenhuma sala livre nessa faixa. Tente períodos vizinhos.</div> : (
+            <div className="res-livres">
+              {livres.map(({ s, ate: limite }) => (
+                <div key={s.numero} className="livre-tile"><b>{s.numero}</b><small>{rotuloAndar(andarDaSala(s))} · {limite ? `livre até ${limite}` : 'livre até o fim do dia'}</small></div>
+              ))}
             </div>
-          ))
-        )}
+          )}
+        </div>
+      </section>
 
-      </div>
+      <section>
+        <div className="sec-hd">
+          <h2 className="t-sec">Disponibilidade do dia</h2>
+          <span className="legenda" style={{ marginLeft: 10 }}>
+            <span><i className="lg" style={{ '--c': 'transparent', '--b': 'var(--livre-bg)', border: '1px solid var(--livre)' }} />livre</span>
+            <span><i className="lg" style={{ '--c': 'transparent', '--b': 'var(--ocup-bg)' }} />com aula</span>
+          </span>
+        </div>
+        <div className="tabela-wrap">
+          <table className="dados">
+            <thead><tr><th style={{ width: 70 }}>Sala</th><th><div className="faixa-esc">{PERIODS.map(p => <span key={p.code}>{p.code}</span>)}</div></th><th>Janelas livres</th></tr></thead>
+            <tbody>
+              {salas.map(s => {
+                const lista = blocos[s.numero] || [];
+                const jan = janelasLivres(lista);
+                return (
+                  <tr key={s.numero}>
+                    <td className="mono" style={{ fontWeight: 600 }}>{s.numero}</td>
+                    <td>
+                      <div className="faixa">
+                        {PERIODS.map((p, i) => {
+                          const bl = blocoNoPeriodo(lista, p.code);
+                          return <i key={p.code} className={`${bl ? '' : 'l'} ${i >= a && i <= b ? 'sel' : ''}`} data-tt={`${s.numero} · ${p.code} ${p.lb}–${PERIOD_END_TIMES[p.code]}\n${bl ? bl.titulo : 'Livre'}`} />;
+                        })}
+                      </div>
+                    </td>
+                    <td style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{jan.length ? jan.map(j => `${j.inicio}–${j.termino}`).join(' · ') : <span style={{ color: 'var(--muted)' }}>sem janelas</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

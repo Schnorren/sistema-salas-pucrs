@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '../supabase';
+import { lerBalcao } from '../utils/balcao';
 
 // Lê o corpo do erro da resposta HTTP e lança com a mensagem correta do servidor
 async function parseResponse(res) {
@@ -17,7 +18,9 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
     const getHeaders = () => ({
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
-        'x-predio-id': predioId || ''
+        'x-predio-id': predioId || '',
+        // Nome deste computador (login compartilhado na recepção) — ver utils/balcao.js
+        'x-balcao': encodeURIComponent(lerBalcao())
     });
 
     // userId na queryKey evita colisão de cache entre usuários de prédios diferentes
