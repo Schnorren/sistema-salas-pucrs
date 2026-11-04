@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef, Component } from 'react';
+import { Routes, Route, Navigate, NavLink, Link, matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { ROTAS } from '../rotas';
 import Topbar from './Topbar';
 import UploadCSV from './UploadPDF';
 import NextClasses from './NextClasses';
@@ -51,7 +53,11 @@ export default function Dashboard({ session }) {
   const { predioAtivo } = usePredio();
   const { toast } = useUI();
 
-  const [activeTab, setActiveTab] = useState('map');
+  // A tela ativa vem da URL (ver src/rotas.js), não de estado local.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   // Cabeçalho (topbar + busca + abas) minimizável — preferência persistida
   // por navegador, igual ao tema (ver Topbar.jsx)
@@ -61,8 +67,14 @@ export default function Dashboard({ session }) {
   }, [headerCollapsed]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  // Contato a destacar na aba Contatos quando o usuário clica num resultado da busca global
-  const [contatoFocado, setContatoFocado] = useState(null);
+  // Contato a destacar na aba Contatos (/contatos?id=..., vem da busca global).
+  // A `key` da location muda a cada navegação, então clicar de novo no mesmo
+  // resultado gera um objeto novo e o MuralContatos volta a rolar até o card.
+  const idContatoFocado = searchParams.get('id');
+  const contatoFocado = useMemo(
+    () => (idContatoFocado ? { id: idContatoFocado, n: location.key } : null),
+    [idContatoFocado, location.key]
+  );
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -122,8 +134,6 @@ export default function Dashboard({ session }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const [timelineSearch, setTimelineSearch] = useState({ day: null, filtro: '' });
 
   const predioId = predioAtivo || acesso?.predioId || '';
   const userId = session?.user?.id;
@@ -188,41 +198,13 @@ export default function Dashboard({ session }) {
   const handleSelectContato = (resultado) => {
     setShowDropdown(false);
     setSearchQuery('');
-    // O nonce garante que clicar duas vezes no mesmo contato role de novo até ele.
-    setContatoFocado({ id: resultado.contatoId, n: Date.now() });
-    setActiveTab('contatos');
+    navigate(`${ROTAS.contatos}?${new URLSearchParams({ id: resultado.contatoId })}`);
   };
 
   const handleSelectResult = (result) => {
     setShowDropdown(false);
     setSearchQuery('');
-    setTimelineSearch({ day: result.dia_semana, filtro: result.sala });
-    setActiveTab('tl');
-  };
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'map': return <LiveMap session={session} acesso={acesso} />;
-      case 'tl': return <ErrorBoundary key="tl"><Timeline session={session} acesso={acesso} initialDay={timelineSearch.day} initialFiltro={timelineSearch.filtro} /></ErrorBoundary>;
-      case 'next': return <NextClasses session={session} acesso={acesso} />;
-      case 'avisos': return <MuralAvisos session={session} acesso={acesso} />;
-      case 'emprestimos': return <MuralEmprestimos session={session} acesso={acesso} />;
-      case 'contatos': return <MuralContatos session={session} acesso={acesso} canEditContatos={canEditContatos} contatoFocado={contatoFocado} />;
-      case 'free': return <div style={{ padding: 20 }}><FreeRooms session={session} acesso={acesso} /></div>;
-      case 'heat': return <WeeklyHeatmap session={session} acesso={acesso} />;
-      case 'reports': return <HistoricalReports session={session} acesso={acesso} />;
-      case 'reports_emprestimos': return <RelatoriosEmprestimos session={session} acesso={acesso} />;
-      case 'equipe': return <GestaoEquipe session={session} acesso={acesso} />;
-      case 'perfil': return <MeuPerfil session={session} onClose={() => setActiveTab('map')} />;
-      case 'upload':
-        return (
-          <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-            <UploadCSV session={session} acesso={acesso} onUploadSuccess={() => {}} />
-          </div>
-        );
-      case 'admin': return <AdminPanel session={session} acesso={acesso} />;
-      default: return <LiveMap session={session} acesso={acesso} />;
-    }
+    navigate(`${ROTAS.linhaDoTempo}?${new URLSearchParams({ dia: result.dia_semana, filtro: result.sala })}`);
   };
 
   if (acesso.loading) {
@@ -262,7 +244,23 @@ export default function Dashboard({ session }) {
 
   const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
 
-  const isGestaoActive = ['free', 'heat', 'reports', 'upload', 'equipe', 'reports_emprestimos'].includes(activeTab);
+  // Mesmo gating das abas, aplicado à URL: quem digita o endereço de uma tela
+  // sem permissão (ou sem prédio) volta para a Planta. É só UX — o backend
+  // barra de novo pelo withAuth.
+  const restrita = (permitido, elemento) => (permitido ? elemento : <Navigate to={ROTAS.planta} replace />);
+
+  const itensGestao = [
+    canViewOperacional && { to: ROTAS.salasLivres, rotulo: '🚪 Salas Livres' },
+    canViewOperacional && { to: ROTAS.ocupacao, rotulo: '🔥 Ocupação Semanal' },
+    canViewRelatorios && { to: ROTAS.historicoAulas, rotulo: '📊 Histórico de Aulas (BI)' },
+    canEditGrade && { to: ROTAS.atualizarGrade, rotulo: '🔄 Atualizar Grade CSV/PDF' },
+    canViewEquipe && { to: ROTAS.equipe, rotulo: '👥 Gestão de Equipe' },
+    (canViewEmprestimos || canViewRelatorios) && { to: ROTAS.relatorioEmprestimos, rotulo: '📊 Relatório de Empréstimos' },
+  ]
+    .filter(Boolean)
+    .map(item => ({ ...item, ativo: Boolean(matchPath(item.to, location.pathname)) }));
+
+  const isGestaoActive = itensGestao.some(item => item.ativo);
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
@@ -278,7 +276,7 @@ export default function Dashboard({ session }) {
 
       {!headerCollapsed && (
         <>
-          <Topbar session={session} acesso={acesso} onAbrirPerfil={() => setActiveTab('perfil')} />
+          <Topbar session={session} acesso={acesso} onAbrirPerfil={() => navigate(ROTAS.perfil)} />
     
           <div className="search-bar" ref={searchRef}>
             <div className="search-input-wrap">
@@ -353,39 +351,44 @@ export default function Dashboard({ session }) {
     
           <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
-              <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
-              <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
+              {/* NavLink acrescenta a classe "active" sozinho quando a URL bate. */}
+              <NavLink to={ROTAS.planta} end className="navtab">Planta ao Vivo</NavLink>
+              <NavLink to={ROTAS.linhaDoTempo} className="navtab">
                 Linha do Tempo
                 {totalTrocasSemana > 0 && (
                   <span title="Trocas de sala ativas nesta semana" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
                     {totalTrocasSemana}
                   </span>
                 )}
-              </div>
-              <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
-    
+              </NavLink>
+              <NavLink to={ROTAS.proximasAulas} className="navtab">Próximas Aulas</NavLink>
+
               {canViewAvisos && (
-                <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>
+                <NavLink to={ROTAS.avisos} className="navtab">
                   Mural de Avisos
                   {totalAvisosPendentes > 0 && (
                     <span style={{ marginLeft: '6px', background: '#dc2626', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
                       {totalAvisosPendentes}
                     </span>
                   )}
-                </div>
+                </NavLink>
               )}
-    
+
               {canViewEmprestimos && (
-                <div className={`navtab ${activeTab === 'emprestimos' ? 'active' : ''}`} onClick={() => setActiveTab('emprestimos')}>📦 Empréstimos</div>
+                <NavLink to={ROTAS.emprestimos} className="navtab">📦 Empréstimos</NavLink>
               )}
-    
+
               {/* Visível para todos: o diretório de contatos não é gated por permissão nem por prédio. */}
-              <div className={`navtab ${activeTab === 'contatos' ? 'active' : ''}`} onClick={() => setActiveTab('contatos')}>📇 Contatos</div>
-    
+              <NavLink to={ROTAS.contatos} className="navtab">📇 Contatos</NavLink>
+
               {isAdmin && (
-                <div className={`navtab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} style={{ color: activeTab === 'admin' ? '#fbbf24' : '', borderBottomColor: activeTab === 'admin' ? '#fbbf24' : '' }}>
+                <NavLink
+                  to={ROTAS.admin}
+                  className="navtab"
+                  style={({ isActive }) => (isActive ? { color: '#fbbf24', borderBottomColor: '#fbbf24' } : undefined)}
+                >
                   🛡️ Painel Admin
-                </div>
+                </NavLink>
               )}
             </div>
     
@@ -410,60 +413,22 @@ export default function Dashboard({ session }) {
                     borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
                     zIndex: 50, minWidth: '220px', overflow: 'hidden'
                   }}>
-    
-                    {canViewOperacional && (
-                      <>
-                        <div
-                          onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
-                          style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'free' ? '#fff' : '#cbd5e1', background: activeTab === 'free' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                          onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
-                          onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
-                        >🚪 Salas Livres</div>
-    
-                        <div
-                          onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
-                          style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'heat' ? '#fff' : '#cbd5e1', background: activeTab === 'heat' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                          onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
-                          onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
-                        >🔥 Ocupação Semanal</div>
-                      </>
-                    )}
-    
-                    {canViewRelatorios && (
-                      <div
-                        onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
-                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                        onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
-                        onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
-                      >📊 Histórico de Aulas (BI)</div>
-                    )}
-    
-                    {canEditGrade && (
-                      <div
-                        onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
-                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                        onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
-                        onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
-                      >🔄 Atualizar Grade CSV/PDF</div>
-                    )}
-    
-                    {canViewEquipe && (
-                      <div
-                        onClick={() => { setActiveTab('equipe'); setShowAdminMenu(false); }}
-                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'equipe' ? '#fff' : '#cbd5e1', background: activeTab === 'equipe' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
-                        onMouseEnter={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = '#0f172a' }}
-                        onMouseLeave={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = 'transparent' }}
-                      >👥 Gestão de Equipe</div>
-                    )}
-    
-                    {(canViewEmprestimos || canViewRelatorios) && (
-                      <div
-                        onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}
-                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports_emprestimos' ? '#fff' : '#cbd5e1', background: activeTab === 'reports_emprestimos' ? '#2563eb' : 'transparent' }}
-                        onMouseEnter={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = '#0f172a' }}
-                        onMouseLeave={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = 'transparent' }}
-                      >📊 Relatório de Empréstimos</div>
-                    )}
+                    {itensGestao.map(({ to, rotulo, ativo }, i) => (
+                      <Link
+                        key={to}
+                        to={to}
+                        onClick={() => setShowAdminMenu(false)}
+                        style={{
+                          display: 'block', textDecoration: 'none',
+                          padding: '14px 16px', cursor: 'pointer', fontSize: '13px',
+                          color: ativo ? '#fff' : '#cbd5e1',
+                          background: ativo ? '#2563eb' : 'transparent',
+                          borderBottom: i < itensGestao.length - 1 ? '1px solid #334155' : 'none'
+                        }}
+                        onMouseEnter={(e) => { if (!ativo) e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (!ativo) e.currentTarget.style.background = 'transparent' }}
+                      >{rotulo}</Link>
+                    ))}
                   </div>
                 )}
               </div>
@@ -473,7 +438,41 @@ export default function Dashboard({ session }) {
       )}
 
       <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
-        {renderTabContent()}
+        <Routes>
+          <Route path={ROTAS.planta} element={<LiveMap session={session} acesso={acesso} />} />
+          <Route
+            path={ROTAS.linhaDoTempo}
+            element={
+              <ErrorBoundary>
+                {/* ?dia=&filtro= vem da busca global (link compartilhável) */}
+                <Timeline session={session} acesso={acesso} initialDay={searchParams.get('dia')} initialFiltro={searchParams.get('filtro')} />
+              </ErrorBoundary>
+            }
+          />
+          <Route path={ROTAS.proximasAulas} element={<NextClasses session={session} acesso={acesso} />} />
+          <Route path={ROTAS.avisos} element={restrita(canViewAvisos, <MuralAvisos session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.emprestimos} element={restrita(canViewEmprestimos, <MuralEmprestimos session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.contatos} element={<MuralContatos session={session} acesso={acesso} canEditContatos={canEditContatos} contatoFocado={contatoFocado} />} />
+          <Route path={ROTAS.admin} element={restrita(isAdmin, <AdminPanel session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.perfil} element={<MeuPerfil session={session} onClose={() => navigate(ROTAS.planta)} />} />
+
+          <Route path={ROTAS.salasLivres} element={restrita(canViewOperacional, <div style={{ padding: 20 }}><FreeRooms session={session} acesso={acesso} /></div>)} />
+          <Route path={ROTAS.ocupacao} element={restrita(canViewOperacional, <WeeklyHeatmap session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.historicoAulas} element={restrita(canViewRelatorios, <HistoricalReports session={session} acesso={acesso} />)} />
+          <Route
+            path={ROTAS.atualizarGrade}
+            element={restrita(canEditGrade,
+              <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+                <UploadCSV session={session} acesso={acesso} onUploadSuccess={() => {}} />
+              </div>
+            )}
+          />
+          <Route path={ROTAS.equipe} element={restrita(canViewEquipe, <GestaoEquipe session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.relatorioEmprestimos} element={restrita(canViewEmprestimos || canViewRelatorios, <RelatoriosEmprestimos session={session} acesso={acesso} />)} />
+
+          {/* Endereço desconhecido → Planta */}
+          <Route path="*" element={<Navigate to={ROTAS.planta} replace />} />
+        </Routes>
       </div>
     </div>
   );
