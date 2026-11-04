@@ -22,8 +22,10 @@
   --text2:     #42403a;
   --muted:     #7a756c;
   --accent:    #c8973a;
-  --sans: 'IBM Plex Sans', sans-serif;
-  --mono: 'IBM Plex Mono', monospace;
+  /* Fontes do sistema (as que o app sempre exibiu na prática: o 'IBM Plex'
+     declarado antes nunca era carregado e caía nestas) */
+  --sans: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  --mono: Consolas, 'Courier New', monospace;
   --radius: 5px;
 }
 

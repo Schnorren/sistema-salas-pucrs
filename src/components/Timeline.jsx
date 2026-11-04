@@ -4,14 +4,19 @@ import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
 import { supabase } from '../supabase';
-import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
-import { IDX_PERIODO, blocosDoDia, ordenarSalas, andarDaSala, rotuloAndar, normalizar, periodosAfetadosPelaTroca, minutos } from '../utils/blocos';
+import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod } from '../../backend_core/utils/timeHelpers';
+import { IDX_PERIODO, blocosDoDia, ordenarSalas, andarDaSala, rotuloAndar, normalizar, periodosAfetadosPelaTroca } from '../utils/blocos';
 import { SegDias } from './ui/Seg';
 import { Carregando, Erro, SemPredio } from './ui/Estado';
 import GavetaTroca from './GavetaTroca';
 
-// Linha do tempo: grade sala × período do dia. Cada aula de vários períodos é
-// UM bloco (mesma regra de blocos das trocas); clicar abre o painel de troca.
+// Início de turno (tarde F, noite L): um respiro maior entre as colunas
+const PAUSAS = new Set(['F', 'L']);
+
+// Linha do tempo no layout do app antigo (preferido pela equipe): uma linha
+// por sala, uma célula por período ocupando a largura da tela, o nome da aula
+// repetido em cada período e o bloco inteiro aceso no hover. Clicar abre o
+// painel de troca de sala (mesma regra de blocos/chaves de utils/blocos.js).
 export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
@@ -21,23 +26,21 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const [day, setDay] = useState(initialDay || getDiaAtual());
   const [filtro, setFiltro] = useState(initialFiltro || '');
   const [autoMode, setAutoMode] = useState(!initialDay); // false se veio de busca/link
-  const [agora, setAgora] = useState(() => ({ per: getCurrentPeriod(), min: (() => { const d = getDataSaoPaulo(); return d.getHours() * 60 + d.getMinutes(); })() }));
+  const [perAgora, setPerAgora] = useState(getCurrentPeriod());
+  const [hoverKey, setHoverKey] = useState(null);
   const [blocoAberto, setBlocoAberto] = useState(null);
   const inputRef = useRef(null);
-  const wrapRef = useRef(null);
-  const colAgoraRef = useRef(null);
 
   useEffect(() => {
-    if (initialDay) { setDay(initialDay); setAutoMode(false); }
+    if (initialDay) { setDay(initialDay); setAutoMode(false); } // eslint-disable-line react-hooks/set-state-in-effect
     if (initialFiltro !== null && initialFiltro !== undefined) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
-  // Relógio (fuso de Brasília): atualiza a linha do "agora" e, em modo
+  // Relógio (fuso de Brasília): atualiza o período atual e, em modo
   // automático, vira o dia à meia-noite.
   useEffect(() => {
     const t = setInterval(() => {
-      const d = getDataSaoPaulo();
-      setAgora({ per: getCurrentPeriod(), min: d.getHours() * 60 + d.getMinutes() });
+      setPerAgora(getCurrentPeriod());
       if (autoMode) setDay(getDiaAtual());
     }, 30000);
     return () => clearInterval(t);
@@ -61,15 +64,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   }, [blocoAberto]);
 
   const isHoje = day === getDiaAtual();
-  const perAgora = isHoje ? agora.per : null;
-  const idxAgora = perAgora ? IDX_PERIODO[perAgora] : -1;
-
-  // Rola até o período atual só quando ele está fora da área visível
-  useEffect(() => {
-    const w = wrapRef.current, c = colAgoraRef.current;
-    if (!w || !c) return;
-    if (c.offsetLeft + c.offsetWidth > w.clientWidth) w.scrollLeft = Math.max(0, c.offsetLeft - 72 - c.offsetWidth * 2);
-  }, [rawGradeData, day, idxAgora]);
+  const idxAgora = isHoje && perAgora ? IDX_PERIODO[perAgora] : -1;
 
   const salas = useMemo(() => ordenarSalas(rawGradeData?.salas), [rawGradeData]);
   const blocos = useMemo(() => blocosDoDia(rawGradeData?.grade, day), [rawGradeData, day]);
@@ -89,50 +84,40 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   if (!salas.length) return <Erro titulo="Este prédio ainda não tem grade" texto="Importe o PDF em Gestão → Atualizar grade." />;
 
   const totalTrocas = Object.keys(trocasAtivas).length;
-  const pctAgora = idxAgora >= 0
-    ? Math.min(100, Math.max(0, ((agora.min - minutos(PERIODS[idxAgora].lb)) / (minutos(PERIOD_END_TIMES[perAgora]) - minutos(PERIODS[idxAgora].lb))) * 100))
-    : 0;
 
-  let linha = 2; // linha 1 = cabeçalho
-  const corpo = andares.map(({ a, salas: doAndar }) => {
-    const rAndar = linha++;
+  const celula = (s, p, i, bloco, salaBate) => {
+    const pausa = PAUSAS.has(p.code) ? 'lt-pausa' : '';
+    if (!bloco) {
+      return <div key={p.code} className={`lt-cell ${pausa} ${i === idxAgora ? 'now' : ''}`} title={`Livre · ${p.lb}–${PERIOD_END_TIMES[p.code]}`} />;
+    }
+    const registro = trocasAtivas[bloco.chave];
+    const afetados = registro ? periodosAfetadosPelaTroca(registro, bloco.periodos) : [];
+    const temTroca = registro && afetados.includes(p.code);
+    const blocoAgora = idxAgora >= bloco.idxIni && idxAgora <= bloco.idxFim;
+    const bate = termo && !salaBate && normalizar(`${bloco.nome} ${bloco.codCred}`).includes(termo);
+    const classes = [
+      'lt-cell', pausa,
+      temTroca ? 'trc' : bloco.interno ? 'int' : 'reg',
+      i === idxAgora ? 'now' : blocoAgora ? 'seq' : '',
+      hoverKey === bloco.chave ? 'hover' : '',
+      bate ? 'match' : '',
+    ].join(' ');
+    const dica = `${bloco.nome}\nPeríodos: ${bloco.periodosStr} · ${bloco.inicio}–${bloco.fim}${registro ? `\nTrocada para o prédio ${registro.predio_destino}, sala ${registro.sala_destino} (${afetados.join('')})` : ''}`;
     return (
-      <Fragment key={a}>
-        <div className="tl-andar" style={{ gridRow: rAndar }}><span>{rotuloAndar(a)}</span></div>
-        {doAndar.map(s => {
-          const r = linha++;
-          const salaBate = termo && normalizar(s.numero).includes(termo);
-          return (
-            <Fragment key={s.numero}>
-              <div className="tl-sala" style={{ gridRow: r }}>{s.numero}</div>
-              {PERIODS.map((p, i) => (
-                <div key={p.code} className={`tl-cel ${i === idxAgora ? 'agora' : ''} ${p.code === 'F' ? 'almoco' : ''}`} style={{ gridRow: r, gridColumn: i + 2 }} />
-              ))}
-              {(blocos[s.numero] || []).map(b => {
-                const t = trocasAtivas[b.chave];
-                const afetados = t ? periodosAfetadosPelaTroca(t, b.periodos) : [];
-                const parcial = t && afetados.length < b.periodos.length;
-                const bate = termo && !salaBate && normalizar(`${b.nome} ${b.codCred}`).includes(termo);
-                const dica = `${b.titulo}\n${b.codCred || 'uso interno'} · ${b.periodosStr} · ${b.inicio}–${b.fim}${t ? `\nTrocada para P${t.predio_destino} · ${t.sala_destino}${parcial ? ` (só ${afetados.join('')})` : ''}` : ''}`;
-                return (
-                  <button
-                    key={b.chave}
-                    className={`tl-b ${t ? 'trc' : b.interno ? 'int' : ''} ${bate ? 'match' : ''}`}
-                    style={{ gridRow: r, gridColumn: `${b.idxIni + 2} / span ${b.periodos.length}` }}
-                    onClick={() => setBlocoAberto(b)}
-                    title={dica}
-                  >
-                    <span className="tl-b-nome">{b.titulo}</span>
-                    <span className="tl-b-meta">{t ? `→ P${t.predio_destino} · ${t.sala_destino}${parcial ? ` (${afetados.join('')})` : ''}` : (b.codCred || 'interno')}</span>
-                  </button>
-                );
-              })}
-            </Fragment>
-          );
-        })}
-      </Fragment>
+      <button
+        key={p.code} type="button" className={classes} title={dica}
+        onClick={() => setBlocoAberto(bloco)}
+        onMouseEnter={() => setHoverKey(bloco.chave)}
+        onMouseLeave={() => setHoverKey(null)}
+        onFocus={() => setHoverKey(bloco.chave)}
+        onBlur={() => setHoverKey(null)}
+      >
+        {temTroca && <span className="lt-cell-troca">→ P{registro.predio_destino} · {registro.sala_destino}</span>}
+        <span className="lt-cell-nome">{bloco.nomeAula}</span>
+        {bloco.codCred && <span className="lt-cell-cod">{bloco.codCred}</span>}
+      </button>
     );
-  });
+  };
 
   return (
     <div className="pg cheia larga">
@@ -144,40 +129,54 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
         <div className="pg-acoes">
           <SegDias valor={day} onChange={(d) => { setDay(d); setAutoMode(false); }} />
           <button className={`aovivo ${autoMode && isHoje ? 'on' : ''}`} onClick={() => { setAutoMode(true); setDay(getDiaAtual()); }} title="Voltar para hoje e acompanhar o relógio">
-            <span className="pt" />Hoje
+            <span className="pt" />Ao vivo
           </button>
           <div className="campo-busca">
             <Search size={16} />
-            <input ref={inputRef} className="inp" placeholder="Filtrar sala ou disciplina" value={filtro} onChange={(e) => setFiltro(e.target.value)} autoComplete="off" aria-label="Filtrar sala ou disciplina" />
+            <input ref={inputRef} className="inp" placeholder="Pesquisar por disciplina ou sala" value={filtro} onChange={(e) => setFiltro(e.target.value)} autoComplete="off" aria-label="Pesquisar por disciplina ou sala" />
           </div>
         </div>
       </div>
 
       <div className="legenda">
-        <span><i className="lg" style={{ '--c': 'var(--ocup)', '--b': 'var(--ocup-bg)' }} />Aula</span>
-        <span><i className="lg" style={{ '--c': 'var(--int)', '--b': 'var(--int-bg)' }} />Uso interno</span>
-        <span><i className="lg trc" style={{ '--c': 'var(--troca)', '--b': 'var(--troca-bg)' }} />Trocada (destino no bloco)</span>
-        {idxAgora >= 0 && <span><i className="lg-agora" />Agora</span>}
-        <span style={{ color: 'var(--muted)' }}>‖ intervalo de almoço 13:00–14:00</span>
+        <span><i className="lg" style={{ '--c': 'var(--ocup)', '--b': 'var(--ocup-bg)' }} />Regular</span>
+        <span><i className="lg" style={{ '--c': 'var(--int)', '--b': 'var(--int-bg)' }} />Interno</span>
+        <span><i className="lg" style={{ '--c': 'var(--troca)', '--b': 'var(--troca-bg)' }} />Trocada (destino no topo da célula)</span>
+        <span><i className="lg" style={{ '--c': 'var(--ouro)', '--b': 'transparent', outline: '2px solid var(--ouro)', outlineOffset: -1 }} />Período atual</span>
       </div>
 
-      <div className="tl-wrap" ref={wrapRef}>
+      <div className="tl-wrap">
         {andares.length === 0 ? (
           <div className="vazio" style={{ margin: 20 }}>Nenhuma sala ou aula encontrada para “{filtro}”.</div>
         ) : (
-          <div className="tl">
-            <div className="tl-h tl-canto" style={{ gridRow: 1, gridColumn: 1 }}>Sala</div>
-            {PERIODS.map((p, i) => (
-              <div key={p.code} ref={i === idxAgora ? colAgoraRef : null} className={`tl-h ${i === idxAgora ? 'agora' : ''}`} style={{ gridRow: 1, gridColumn: i + 2 }}>
-                <b>{p.code}</b><span>{p.lb}–{PERIOD_END_TIMES[p.code]}</span>
+          <div className="lt-grade">
+            <div className="lt-hdr">
+              <div className="lt-rl">Sala</div>
+              <div className="lt-pers">
+                {PERIODS.map((p, i) => (
+                  <div key={p.code} className={`lt-phd ${PAUSAS.has(p.code) ? 'lt-pausa' : ''} ${i === idxAgora ? 'now' : ''}`}>
+                    <b>{p.code}</b>{p.lb}–{PERIOD_END_TIMES[p.code]}
+                  </div>
+                ))}
               </div>
+            </div>
+            {andares.map(({ a, salas: doAndar }) => (
+              <Fragment key={a}>
+                <div className="tl-andar">{rotuloAndar(a)}</div>
+                {doAndar.map(s => {
+                  const lista = blocos[s.numero] || [];
+                  const porPeriodo = PERIODS.map((_, i) => lista.find(b => i >= b.idxIni && i <= b.idxFim) || null);
+                  const salaBate = termo && normalizar(s.numero).includes(termo);
+                  const temAulaAgora = idxAgora >= 0 && Boolean(porPeriodo[idxAgora]);
+                  return (
+                    <div key={s.numero} className="lt-row">
+                      <div className={`lt-rn ${temAulaAgora ? 'on' : ''}`}>{s.numero}</div>
+                      <div className="lt-cells">{PERIODS.map((p, i) => celula(s, p, i, porPeriodo[i], salaBate))}</div>
+                    </div>
+                  );
+                })}
+              </Fragment>
             ))}
-            {corpo}
-            {idxAgora >= 0 && (
-              <div className="tl-agora" style={{ gridRow: `2 / span ${linha - 2}`, gridColumn: idxAgora + 2 }} aria-hidden="true">
-                <i style={{ left: `${pctAgora.toFixed(1)}%` }} />
-              </div>
-            )}
           </div>
         )}
       </div>
