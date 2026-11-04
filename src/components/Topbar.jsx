@@ -1,145 +1,116 @@
-import { useState, useEffect, useRef } from 'react';
-import { NavLink, Link } from 'react-router-dom';
-import { Search, ChevronDown, User, Moon, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import SeletorPredio from './SeletorPredio';
-import { useTema } from '../hooks/useTema';
-import { useMenu } from '../hooks/useMenu';
-import { getDataSaoPaulo, getCurrentPeriod } from '../../backend_core/utils/timeHelpers';
 
-// Relógio no fuso da PUCRS + período atual (regra do projeto: nunca o fuso do browser).
-function Relogio() {
-  const [agora, setAgora] = useState(() => getDataSaoPaulo());
-  useEffect(() => {
-    const t = setInterval(() => setAgora(getDataSaoPaulo()), 15000);
-    return () => clearInterval(t);
-  }, []);
-  const per = getCurrentPeriod();
-  const hh = String(agora.getHours()).padStart(2, '0');
-  const mm = String(agora.getMinutes()).padStart(2, '0');
-  const data = agora.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
-  return (
-    <div className="relogio" title={`${data} · horário de Brasília`}>
-      <span className="vivo" aria-hidden="true" />
-      <span className="hora">{hh}:{mm}</span>
-      <span className="per">{per ? `Per. ${per}` : 'Fora de aula'}</span>
-    </div>
-  );
-}
-
-function MenuUsuario({ session, acesso, isAdmin }) {
-  const { aberto, setAberto, ref } = useMenu();
-  const [tema, setTema] = useTema();
+export default function Topbar({ session, acesso, onAbrirPerfil }) {
+  const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
+  const [time, setTime] = useState(new Date());
   const [saindo, setSaindo] = useState(false);
-  const nome = session?.user?.user_metadata?.nome || session?.user?.email?.split('@')[0] || 'Usuário';
-  const iniciais = nome.split(/[\s.]+/).filter(Boolean).map(p => p[0]).slice(0, 2).join('').toUpperCase();
 
-  const sair = async () => {
+  const handleSignOut = async () => {
     setSaindo(true);
     const { error } = await supabase.auth.signOut();
     if (error) {
       setSaindo(false);
-      await supabase.auth.signOut({ scope: 'local' }); // falhou no servidor: limpa a sessão local mesmo assim
+      // Se falhar, tenta limpar a sessão localmente mesmo assim
+      await supabase.auth.signOut({ scope: 'local' });
     }
   };
 
-  return (
-    <div className="user-wrap" ref={ref}>
-      <button className="avatar-btn" onClick={() => setAberto(!aberto)} aria-haspopup="true" aria-expanded={aberto} aria-label="Menu do usuário" title={session?.user?.email}>
-        <span className="avatar">{iniciais}</span>
-      </button>
-      {aberto && (
-        <div className="menu dir">
-          <div className="mu-quem">
-            <span className="avatar">{iniciais}</span>
-            <div style={{ minWidth: 0 }}>
-              <b>{nome}</b>
-              <small>{acesso?.perfilNome || 'Sem cargo'}{isAdmin ? ' · Administrador' : ''}</small>
-              <small style={{ overflowWrap: 'anywhere' }}>{session?.user?.email}</small>
-            </div>
-          </div>
-          <div className="menu-sep" />
-          <Link className="mi" to="/perfil" onClick={() => setAberto(false)}><User size={16} /><span>Meu perfil</span></Link>
-          <div className="mi" style={{ cursor: 'default' }}>
-            <Moon size={16} /><span style={{ flex: 1 }}>Tema</span>
-            <div className="seg sm" role="group" aria-label="Tema">
-              <button type="button" aria-pressed={tema === 'claro'} onClick={() => setTema('claro')}>Claro</button>
-              <button type="button" aria-pressed={tema === 'escuro'} onClick={() => setTema('escuro')}>Escuro</button>
-            </div>
-          </div>
-          <div className="menu-sep" />
-          <button className="mi perigo" onClick={sair} disabled={saindo}><LogOut size={16} /><span>{saindo ? 'Saindo…' : 'Sair'}</span></button>
-        </div>
-      )}
-    </div>
-  );
-}
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-function MenuGestao({ grupos, ativo }) {
-  const { aberto, setAberto, ref } = useMenu();
-  const [esquerda, setEsquerda] = useState(0);
-  const btnRef = useRef(null);
-  const abrir = () => {
-    // O menu fica fora da faixa de abas (que tem overflow-x e cortaria o
-    // dropdown), posicionado sob o botão.
-    const hdr = btnRef.current?.closest('.hdr')?.getBoundingClientRect();
-    const b = btnRef.current?.getBoundingClientRect();
-    if (hdr && b) setEsquerda(Math.max(8, Math.min(b.left - hdr.left, window.innerWidth - 350)));
-    setAberto(!aberto);
-  };
-  if (!grupos.length) return null;
-  return (
-    <div ref={ref} style={{ display: 'contents' }}>
-      <button ref={btnRef} className={`tab ${ativo ? 'active' : ''}`} onClick={abrir} aria-haspopup="true" aria-expanded={aberto}>
-        Gestão <ChevronDown size={14} />
-      </button>
-      {aberto && (
-        <div className="menu menu-gestao" style={{ left: esquerda }}>
-          {grupos.map(g => (
-            <div key={g.grupo}>
-              <div className="menu-grupo">{g.grupo}</div>
-              {g.itens.map((item) => {
-                const Icone = item.Icone;
-                return (
-                  <Link key={item.to} to={item.to} className={`mi ${item.ativo ? 'active' : ''}`} onClick={() => setAberto(false)}>
-                    <Icone size={16} /><span>{item.rotulo}<small>{item.descricao}</small></span>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+  useEffect(() => {
+    document.body.classList.toggle('dark-mode', isDark);
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  }, [isDark]);
 
-// Cabeçalho em barra única (56px): marca + prédio · abas · busca (Ctrl K) ·
-// relógio com período · avatar (perfil, tema, sair).
-export default function Topbar({ session, acesso, isAdmin, abas, gruposGestao, gestaoAtiva, onAbrirBusca }) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const nomeUsuario = session?.user?.user_metadata?.nome 
+    || session?.user?.email?.split('@')[0] 
+    || 'Usuário';
+  const inicial = nomeUsuario.charAt(0).toUpperCase();
+
   return (
-    <header className="hdr">
-      <Link to="/" className="marca" aria-label="PUCRS · ir para a Planta">
-        <span className="selo" aria-hidden="true" />
-        <span className="marca-nome">PUCRS</span>
-      </Link>
-      <SeletorPredio acesso={acesso} session={session} />
-      <nav className="tabs" aria-label="Telas">
-        {abas.map(({ to, rotulo, badge, badgeTipo, badgeTitulo, end }) => (
-          <NavLink key={to} to={to} end={end} className="tab">
-            {rotulo}
-            {badge > 0 && <span className={`badge ${badgeTipo}`} title={badgeTitulo}>{badge}</span>}
-          </NavLink>
-        ))}
-        <MenuGestao grupos={gruposGestao} ativo={gestaoAtiva} />
-      </nav>
-      <div className="hdr-dir">
-        <button className="busca-btn" onClick={onAbrirBusca} aria-label="Buscar (Ctrl K)">
-          <Search size={15} /><span className="txt">Buscar sala, aula, contato…</span><kbd>Ctrl K</kbd>
-        </button>
-        <Relogio />
-        <MenuUsuario session={session} acesso={acesso} isAdmin={isAdmin} />
+    <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid var(--border, #334155)', background: 'var(--bg, #0f172a)' }}>
+      <div className="tb-logo" style={{ display: 'flex', alignItems: 'center', gap: '16px', fontWeight: 'bold', fontSize: '18px' }}>
+        <span style={{ color: '#3b82f6', letterSpacing: '1px' }}>PUCRS</span>
+        <div style={{ width: '1px', height: '20px', background: 'var(--border, #334155)' }}></div>
+        <SeletorPredio acesso={acesso} session={session} /> 
       </div>
-    </header>
+      <div className="tb-clock" style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary, #94a3b8)', fontSize: '14px', fontWeight: '500' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: '16px' }}>
+          {`${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}`}
+        </span>
+        <span>·</span>
+        <span>{time.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase()}</span>
+      </div>
+      <div className="tb-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div className="live-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 'bold', color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+          <div className="live-dot" style={{ width: '6px', height: '6px', background: '#ef4444', borderRadius: '50%' }}></div>
+          AO VIVO
+        </div>
+        <button 
+          className="tb-btn" 
+          onClick={onAbrirPerfil}
+          title={`${session?.user?.email} (${acesso?.perfilNome || 'Sem Perfil'})`}
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px',
+            background: 'var(--surface, rgba(255,255,255,0.05))',
+            border: '1px solid var(--border, rgba(255,255,255,0.1))',
+            padding: '4px 16px 4px 4px', 
+            borderRadius: '24px',
+            color: 'var(--text, #f8fafc)',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+          onMouseOut={(e) => e.currentTarget.style.borderColor = 'var(--border, rgba(255,255,255,0.1))'}
+        >
+          <div style={{ 
+            background: '#3b82f6', color: '#fff', width: '28px', height: '28px', 
+            borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '13px', fontWeight: 'bold' 
+          }}>
+            {inicial}
+          </div>
+          <span style={{ fontWeight: '600', fontSize: '13px' }}>{nomeUsuario}</span>
+        </button>
+        <button 
+          className="tb-btn" 
+          onClick={() => setIsDark(!isDark)}
+          title="Alternar Tema"
+          style={{ 
+            background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer',
+            padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: 0.8, transition: 'opacity 0.2s'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.opacity = 1}
+          onMouseOut={(e) => e.currentTarget.style.opacity = 0.8}
+        >
+          {isDark ? '☀️' : '🌙'}
+        </button>
+        <button 
+          className="tb-btn" 
+          onClick={handleSignOut}
+          disabled={saindo}
+          style={{ 
+            background: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', 
+            color: '#ef4444', padding: '6px 16px', borderRadius: '6px', 
+            fontWeight: 'bold', fontSize: '13px', cursor: saindo ? 'not-allowed' : 'pointer',
+            opacity: saindo ? 0.6 : 1, transition: 'all 0.2s'
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.borderColor = '#ef4444'; }}
+          onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'; }}
+        >
+          {saindo ? 'Saindo...' : 'Sair'}
+        </button>
+
+      </div>
+    </div>
   );
 }

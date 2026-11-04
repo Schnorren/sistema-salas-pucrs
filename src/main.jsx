@@ -1,14 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import './styles/sx.css'
-// Aplica o tema salvo (body.dark-mode) antes do primeiro render, inclusive no Login
-import './hooks/useTema'
 import App from './App.jsx'
 import { PredioProvider } from './contexts/PredioContext.jsx'
 import { UIProvider } from './contexts/UIContext.jsx'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter } from 'react-router-dom'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -20,14 +16,12 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <PredioProvider>
-          <UIProvider>
-            <App />
-          </UIProvider>
-        </PredioProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <PredioProvider>
+        <UIProvider>
+          <App />
+        </UIProvider>
+      </PredioProvider>
+    </QueryClientProvider>
   </StrictMode>,
 )

@@ -15,7 +15,6 @@
     { "source": "/api/equipe/(.*)", "destination": "/api/equipe/index.js" },
     { "source": "/api/grade/(.*)", "destination": "/api/grade/index.js" },
     { "source": "/api/admin/(.*)", "destination": "/api/admin/index.js" },
-    { "source": "/api/contatos/(.*)", "destination": "/api/contatos/index.js" },
-    { "source": "/((?!api/|@)[^.]*)", "destination": "/index.html" }
+    { "source": "/api/contatos/(.*)", "destination": "/api/contatos/index.js" }
   ]
 }

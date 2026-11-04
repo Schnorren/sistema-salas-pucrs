@@ -1,15 +1,12 @@
-import { useState, useEffect, useMemo, useCallback, useSyncExternalStore, Component } from 'react';
-import { Routes, Route, Navigate, matchPath, useLocation, useSearchParams } from 'react-router-dom';
-import { DoorOpen, FileUp, Flame, Package, Users, Shield } from 'lucide-react';
-import { ROTAS } from '../rotas';
+import { useState, useEffect, useMemo, useRef, Component } from 'react';
 import Topbar from './Topbar';
-import BuscaGlobal from './BuscaGlobal';
-import UploadPDF from './UploadPDF';
+import UploadCSV from './UploadPDF';
 import NextClasses from './NextClasses';
 import FreeRooms from './FreeRooms';
 import Timeline from './Timeline';
 import LiveMap from './LiveMap';
-import Ocupacao from './Ocupacao';
+import WeeklyHeatmap from './WeeklyHeatmap';
+import HistoricalReports from './HistoricalReports';
 import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
 import MuralContatos from './MuralContatos';
@@ -17,17 +14,8 @@ import AdminPanel from './AdminPanel';
 import GestaoEquipe from './GestaoEquipe';
 import MeuPerfil from './MeuPerfil';
 import RelatoriosEmprestimos from './RelatoriosEmprestimos';
-import { Carregando } from './ui/Estado';
-import { TooltipGlobal } from './ui/Estado';
 import { useContatos } from '../hooks/useContatos';
-import { useAuthAccess } from '../hooks/useAuthAccess';
-import { usePredio } from '../contexts/PredioContext';
-import { useUI } from '../contexts/UIContext';
-import { supabase } from '../supabase';
-import { useQueryClient } from '@tanstack/react-query';
-import { useGrade } from '../hooks/useGrade';
-import { useTrocasSala } from '../hooks/useTrocasSala';
-import { computarChavesDeBlocos } from '../../backend_core/utils/timeHelpers';
+import { buscarNoDiretorio } from '../utils/contatosBusca';
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -35,10 +23,13 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div className="estado erro">
-          <b>Esta tela encontrou um erro</b>
-          <span className="mono" style={{ maxWidth: 640, fontSize: 12.5 }}>{this.state.error?.message}</span>
-          <button className="btn" onClick={() => this.setState({ error: null })}>Tentar novamente</button>
+        <div style={{ padding: '40px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '13px' }}>
+          <strong>Erro ao carregar o componente:</strong><br /><br />
+          {this.state.error?.message}<br /><br />
+          <pre style={{ whiteSpace: 'pre-wrap', opacity: 0.7 }}>{this.state.error?.stack}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: '20px', padding: '8px 16px', cursor: 'pointer' }}>
+            Tentar novamente
+          </button>
         </div>
       );
     }
@@ -46,61 +37,121 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Telas que ocupam a altura toda e rolam por dentro (grade, listas em colunas).
-const TELAS_FIXAS = [ROTAS.planta, ROTAS.linhaDoTempo, ROTAS.proximasAulas, ROTAS.emprestimos, ROTAS.contatos];
+import { useAuthAccess } from '../hooks/useAuthAccess';
+import { usePredio } from '../contexts/PredioContext';
+import { useUI } from '../contexts/UIContext';
+import { supabase } from '../supabase';
+import { useQuery } from '@tanstack/react-query';
+import { useGrade } from '../hooks/useGrade';
+import { useTrocasSala } from '../hooks/useTrocasSala';
+import { computarChavesDeBlocos } from '../../backend_core/utils/timeHelpers';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
   const { predioAtivo } = usePredio();
   const { toast } = useUI();
 
-  // A tela ativa vem da URL (ver src/rotas.js), não de estado local.
-  const location = useLocation();
-  const [searchParams] = useSearchParams();
-  const [buscaAberta, setBuscaAberta] = useState(false);
+  const [activeTab, setActiveTab] = useState('map');
+  const [showAdminMenu, setShowAdminMenu] = useState(false);
+  // Cabeçalho (topbar + busca + abas) minimizável — preferência persistida
+  // por navegador, igual ao tema (ver Topbar.jsx)
+  const [headerCollapsed, setHeaderCollapsed] = useState(() => localStorage.getItem('headerCollapsed') === '1');
+  useEffect(() => {
+    localStorage.setItem('headerCollapsed', headerCollapsed ? '1' : '0');
+  }, [headerCollapsed]);
 
-  // Contato a destacar na aba Contatos (/contatos?id=..., vem da busca global).
-  // A `key` da location muda a cada navegação: clicar de novo no mesmo
-  // resultado gera um objeto novo e o MuralContatos volta a rolar até o card.
-  const idContatoFocado = searchParams.get('id');
-  const contatoFocado = useMemo(
-    () => (idContatoFocado ? { id: idContatoFocado, n: location.key } : null),
-    [idContatoFocado, location.key]
-  );
+  const [searchQuery, setSearchQuery] = useState('');
+  // Contato a destacar na aba Contatos quando o usuário clica num resultado da busca global
+  const [contatoFocado, setContatoFocado] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const searchRef = useRef(null);
+  const adminMenuRef = useRef(null);
+
+  const getAuthHeaders = () => ({
+    'Authorization': `Bearer ${session?.access_token}`,
+    'x-predio-id': predioAtivo || acesso?.predioId || ''
+  });
+
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    // Contatos são filtrados em memória (useMemo abaixo), então o dropdown já
+    // pode abrir — não depende do fetch da grade nem de haver prédio ativo.
+    setShowDropdown(true);
+
+    const delayDebounce = setTimeout(async () => {
+      if (!predioAtivo && !acesso?.predioId) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/grade/busca?q=${encodeURIComponent(searchQuery)}`,
+          { headers: getAuthHeaders() }
+        );
+        const data = await response.json();
+        setSearchResults(data);
+      } catch {
+        // busca silencia erros — não interrompe o fluxo do usuário
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery, predioAtivo, acesso]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+      if (adminMenuRef.current && !adminMenuRef.current.contains(event.target)) {
+        setShowAdminMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const [timelineSearch, setTimelineSearch] = useState({ day: null, filtro: '' });
 
   const predioId = predioAtivo || acesso?.predioId || '';
   const userId = session?.user?.id;
 
-  // Ctrl K / Cmd K abre a busca de qualquer tela
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setBuscaAberta(a => !a); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-  const fecharBusca = useCallback(() => setBuscaAberta(false), []);
-
   // Diretório de contatos: mesma queryKey do MuralContatos, então a busca
   // global filtra o cache existente sem disparar requisição nova.
   const { diretorio: diretorioContatos } = useContatos(session, acesso);
-
-  // Badge de avisos — só LÊ o cache (preenchido pela Planta e pelo MuralAvisos).
-  // Assina o QueryCache em vez de criar um useQuery sem queryFn na mesma key:
-  // um observer sem queryFn sobrescrevia as opções da query e fazia os
-  // refetch do Realtime falharem ("No queryFn was passed").
-  const queryClient = useQueryClient();
-  const totalAvisosPendentes = useSyncExternalStore(
-    (avisar) => queryClient.getQueryCache().subscribe(avisar),
-    () => {
-      const d = queryClient.getQueryData(['avisos', predioId, userId]);
-      return (d?.chaves?.length || 0) + (d?.gerais?.length || 0);
-    }
+  const resultadosContatos = useMemo(
+    () => buscarNoDiretorio(diretorioContatos, searchQuery, 6),
+    [diretorioContatos, searchQuery]
   );
 
+  // Badge de avisos — useQuery com staleTime infinito para leitura reativa do
+  // cache sem disparar novo fetch (o dado é mantido pelo MuralAvisos)
+  const { data: avisosCache } = useQuery({
+    queryKey: ['avisos', predioId, userId],
+    enabled: false, // nunca faz fetch — só lê o que já está no cache
+    staleTime: Infinity,
+  });
+  const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
+
   // Badge de trocas — busca própria + Realtime (hook compartilhado com a
-  // Timeline), contando só trocas cuja aula ainda existe na grade atual.
+  // Timeline): o número fica certo sem depender da aba Linha do Tempo já ter
+  // sido aberta e acompanha trocas criadas/removidas por outros usuários.
   const trocasAtivas = useTrocasSala(predioId);
+  // Conta só trocas cuja aula ainda existe na grade atual (mesma regra de
+  // exibição da Timeline) — um re-import pode mover/remover aulas e deixar
+  // trocas órfãs no banco até a virada da semana.
   const { dados: gradeData } = useGrade(predioId);
   const chavesGrade = useMemo(
     () => (gradeData?.grade ? computarChavesDeBlocos(gradeData.grade) : null),
@@ -108,29 +159,74 @@ export default function Dashboard({ session }) {
   );
   const totalTrocasSemana = useMemo(() => {
     const chaves = Object.keys(trocasAtivas);
-    if (!chavesGrade) return chaves.length;
+    if (!chavesGrade) return chaves.length; // grade ainda carregando — usa o total bruto
     return chaves.filter(c => chavesGrade.has(c)).length;
   }, [trocasAtivas, chavesGrade]);
 
   // Notificação de aviso urgente em qualquer aba
   useEffect(() => {
     if (!predioId) return;
+
     const channel = supabase
       .channel(`dashboard_avisos_urgentes_${predioId}`)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'avisos', filter: `predio_id=eq.${predioId}`
+        event: 'INSERT',
+        schema: 'public',
+        table: 'avisos',
+        filter: `predio_id=eq.${predioId}`
       }, (payload) => {
         const novoAviso = payload.new;
         if (novoAviso?.prioridade === 'ALTA' || novoAviso?.tipo === 'CHAVE') {
-          toast.warning(`Novo aviso urgente: ${novoAviso.titulo || 'autorização de chave'}`);
+          toast.warning(`🔔 Novo aviso urgente: ${novoAviso.titulo || 'Aviso de chave'}`);
         }
       })
       .subscribe();
+
     return () => { supabase.removeChannel(channel); };
   }, [predioId, toast]);
 
+  const handleSelectContato = (resultado) => {
+    setShowDropdown(false);
+    setSearchQuery('');
+    // O nonce garante que clicar duas vezes no mesmo contato role de novo até ele.
+    setContatoFocado({ id: resultado.contatoId, n: Date.now() });
+    setActiveTab('contatos');
+  };
+
+  const handleSelectResult = (result) => {
+    setShowDropdown(false);
+    setSearchQuery('');
+    setTimelineSearch({ day: result.dia_semana, filtro: result.sala });
+    setActiveTab('tl');
+  };
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'map': return <LiveMap session={session} acesso={acesso} />;
+      case 'tl': return <ErrorBoundary key="tl"><Timeline session={session} acesso={acesso} initialDay={timelineSearch.day} initialFiltro={timelineSearch.filtro} /></ErrorBoundary>;
+      case 'next': return <NextClasses session={session} acesso={acesso} />;
+      case 'avisos': return <MuralAvisos session={session} acesso={acesso} />;
+      case 'emprestimos': return <MuralEmprestimos session={session} acesso={acesso} />;
+      case 'contatos': return <MuralContatos session={session} acesso={acesso} canEditContatos={canEditContatos} contatoFocado={contatoFocado} />;
+      case 'free': return <div style={{ padding: 20 }}><FreeRooms session={session} acesso={acesso} /></div>;
+      case 'heat': return <WeeklyHeatmap session={session} acesso={acesso} />;
+      case 'reports': return <HistoricalReports session={session} acesso={acesso} />;
+      case 'reports_emprestimos': return <RelatoriosEmprestimos session={session} acesso={acesso} />;
+      case 'equipe': return <GestaoEquipe session={session} acesso={acesso} />;
+      case 'perfil': return <MeuPerfil session={session} onClose={() => setActiveTab('map')} />;
+      case 'upload':
+        return (
+          <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+            <UploadCSV session={session} acesso={acesso} onUploadSuccess={() => {}} />
+          </div>
+        );
+      case 'admin': return <AdminPanel session={session} acesso={acesso} />;
+      default: return <LiveMap session={session} acesso={acesso} />;
+    }
+  };
+
   if (acesso.loading) {
-    return <div className="sx app"><Carregando texto="Verificando suas permissões…" /></div>;
+    return <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>Verificando credenciais de segurança...</div>;
   }
 
   const isAdmin = acesso.permissoes?.includes('admin');
@@ -140,109 +236,245 @@ export default function Dashboard({ session }) {
 
   if (isOrphan) {
     return (
-      <div className="sx app">
-        <div className="estado">
-          <span className="selo" aria-hidden="true" />
-          <b>Acesso aguardando liberação</b>
-          <span style={{ maxWidth: 440 }}>Sua conta foi criada, mas a coordenação do prédio ainda precisa liberar o seu acesso.</span>
-          <button className="btn" onClick={() => supabase.auth.signOut()}>Sair da conta</button>
-        </div>
+      <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
+        <h2>Acesso Restrito</h2>
+        <p style={{ color: 'var(--muted)', marginTop: '10px' }}>Sua conta foi criada, mas o encarregado/administrador precisa liberar o seu acesso ao Prédio.</p>
+        <button
+          onClick={() => supabase.auth.signOut()}
+          style={{ marginTop: '20px', padding: '10px 20px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+        >
+          Sair da conta
+        </button>
       </div>
     );
   }
 
-  const tem = (p) => acesso.permissoes?.includes(p) || isAdmin;
-  const canViewAvisos = tem('avisos') && hasPredioContext;
-  const canViewEmprestimos = tem('emprestimos') && hasPredioContext;
-  const canViewOperacional = tem('grade') && hasPredioContext;
-  const canViewRelatorios = tem('relatorios') && hasPredioContext;
-  const canEditGrade = tem('edicao_grade') && hasPredioContext;
-  const canViewEquipe = tem('equipe') && hasPredioContext;
+  const canViewAvisos = (acesso.permissoes?.includes('avisos') || isAdmin) && hasPredioContext;
+  const canViewEmprestimos = (acesso.permissoes?.includes('emprestimos') || isAdmin) && hasPredioContext;
+
+  const canViewOperacional = (acesso.permissoes?.includes('grade') || isAdmin) && hasPredioContext;
+  const canViewRelatorios = (acesso.permissoes?.includes('relatorios') || isAdmin) && hasPredioContext;
+  const canEditGrade = (acesso.permissoes?.includes('edicao_grade') || isAdmin) && hasPredioContext;
+  const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin) && hasPredioContext;
   // Contatos: leitura livre para qualquer autenticado e sem gate de prédio
   // (o diretório é institucional/global). Só a edição é gated.
-  const canEditContatos = tem('edicao_contatos');
+  const canEditContatos = acesso.permissoes?.includes('edicao_contatos') || isAdmin;
 
-  // Mesmo gating das abas, aplicado à URL: quem digita o endereço de uma tela
-  // sem permissão (ou sem prédio) volta para a Planta. É só UX — o backend
-  // barra de novo pelo withAuth.
-  const restrita = (permitido, elemento) => (permitido ? elemento : <Navigate to={ROTAS.planta} replace />);
-  const ativa = (to) => Boolean(matchPath(to, location.pathname));
+  const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
 
-  const abas = [
-    { to: ROTAS.planta, rotulo: 'Planta', end: true },
-    { to: ROTAS.linhaDoTempo, rotulo: 'Linha do tempo', badge: totalTrocasSemana, badgeTipo: 'b-troca', badgeTitulo: 'Trocas de sala ativas nesta semana' },
-    { to: ROTAS.proximasAulas, rotulo: 'Próximas aulas' },
-    canViewAvisos && { to: ROTAS.avisos, rotulo: 'Avisos', badge: totalAvisosPendentes, badgeTipo: 'b-alta', badgeTitulo: 'Autorizações e avisos pendentes' },
-    canViewEmprestimos && { to: ROTAS.emprestimos, rotulo: 'Empréstimos' },
-    { to: ROTAS.contatos, rotulo: 'Contatos' },
-  ].filter(Boolean);
-
-  const podeOcupacao = canViewOperacional || canViewRelatorios;
-  const gruposGestao = [
-    { grupo: 'Operação', itens: [
-      canViewOperacional && { to: ROTAS.salasLivres, Icone: DoorOpen, rotulo: 'Salas livres', descricao: 'Encontrar sala livre por dia e horário' },
-      canEditGrade && { to: ROTAS.atualizarGrade, Icone: FileUp, rotulo: 'Atualizar grade', descricao: 'Importar o PDF do Espaço Físico' },
-    ] },
-    { grupo: 'Relatórios', itens: [
-      podeOcupacao && { to: canViewOperacional ? ROTAS.ocupacao : ROTAS.historicoAulas, Icone: Flame, rotulo: 'Ocupação das salas', descricao: 'Grade atual ou PDF de outro semestre', ativo: ativa(ROTAS.ocupacao) || ativa(ROTAS.historicoAulas) },
-      (canViewEmprestimos || canViewRelatorios) && { to: ROTAS.relatorioEmprestimos, Icone: Package, rotulo: 'Relatório de empréstimos', descricao: 'Rotatividade e uso do acervo' },
-    ] },
-    { grupo: 'Administração', itens: [
-      canViewEquipe && { to: ROTAS.equipe, Icone: Users, rotulo: 'Equipe', descricao: 'Convites e permissões do prédio' },
-      isAdmin && { to: ROTAS.admin, Icone: Shield, rotulo: 'Painel admin', descricao: 'Usuários, cargos e prédios' },
-    ] },
-  ]
-    .map(g => ({ ...g, itens: g.itens.filter(Boolean).map(i => ({ ...i, ativo: i.ativo ?? ativa(i.to) })) }))
-    .filter(g => g.itens.length);
-  const gestaoAtiva = gruposGestao.some(g => g.itens.some(i => i.ativo));
-
-  const telasBusca = [
-    ...abas.map(a => ({ to: a.to, rotulo: a.rotulo === 'Planta' ? 'Planta ao vivo' : a.rotulo })),
-    ...gruposGestao.flatMap(g => g.itens.map(i => ({ to: i.to, rotulo: i.rotulo }))),
-    { to: ROTAS.perfil, rotulo: 'Meu perfil' },
-  ];
-
-  const fixa = TELAS_FIXAS.some(t => matchPath({ path: t, end: true }, location.pathname));
-  const props = { session, acesso };
+  const isGestaoActive = ['free', 'heat', 'reports', 'upload', 'equipe', 'reports_emprestimos'].includes(activeTab);
 
   return (
-    <div className="sx app">
-      <Topbar
-        session={session} acesso={acesso} isAdmin={isAdmin}
-        abas={abas} gruposGestao={gruposGestao} gestaoAtiva={gestaoAtiva}
-        onAbrirBusca={() => setBuscaAberta(true)}
-      />
+    <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div
+        className="header-toggle"
+        onClick={() => setHeaderCollapsed(!headerCollapsed)}
+        title={headerCollapsed ? 'Mostrar cabeçalho' : 'Minimizar cabeçalho'}
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ transform: headerCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
 
-      <main className={`app-main ${fixa ? 'fixa' : ''}`}>
-        <ErrorBoundary key={location.pathname}>
-          <Routes>
-            <Route path={ROTAS.planta} element={<LiveMap {...props} podeVerAvisos={canViewAvisos} podeEditarGrade={canEditGrade} salaInicial={searchParams.get('sala')} navKey={location.key} />} />
-            {/* ?dia=&filtro= vem da busca global (link compartilhável) */}
-            <Route path={ROTAS.linhaDoTempo} element={<Timeline {...props} initialDay={searchParams.get('dia')} initialFiltro={searchParams.get('filtro')} />} />
-            <Route path={ROTAS.proximasAulas} element={<NextClasses {...props} />} />
-            <Route path={ROTAS.avisos} element={restrita(canViewAvisos, <MuralAvisos {...props} />)} />
-            <Route path={ROTAS.emprestimos} element={restrita(canViewEmprestimos, <MuralEmprestimos {...props} />)} />
-            <Route path={ROTAS.contatos} element={<MuralContatos {...props} canEditContatos={canEditContatos} contatoFocado={contatoFocado} />} />
-            <Route path={ROTAS.admin} element={restrita(isAdmin, <AdminPanel {...props} />)} />
-            <Route path={ROTAS.perfil} element={<MeuPerfil session={session} acesso={acesso} isAdmin={isAdmin} />} />
+      {!headerCollapsed && (
+        <>
+          <Topbar session={session} acesso={acesso} onAbrirPerfil={() => setActiveTab('perfil')} />
+    
+          <div className="search-bar" ref={searchRef}>
+            <div className="search-input-wrap">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <input
+                className="search-input"
+                placeholder={`Buscar por código, disciplina ou sala...`}
+                autoComplete="off"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
+              />
+              {searchQuery && (
+                <button className="search-clear vis" onClick={() => setSearchQuery('')}>×</button>
+              )}
+            </div>
+    
+            {showDropdown && (
+              <div className="search-dropdown vis">
+                {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 ? (
+                  <div className="sd-empty">Buscando na base...</div>
+                ) : searchResults.length === 0 && resultadosContatos.length === 0 ? (
+                  <div className="sd-empty">Nenhum registro encontrado.</div>
+                ) : (
+                  <>
+                    {searchResults.map((res) => (
+                      <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
+                        <div className="sd-room">{res.sala}</div>
+                        <div className="sd-info">
+                          <div className="sd-class">{res.nome}</div>
+                          <div className="sd-meta">
+                            <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
+                            <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                            Per. {res.periodosFormatados}
+                            <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                            {res.horarioInicio} às {res.horarioFim}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {searchResults.length > 0 && (
+                      <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
+                    )}
 
-            <Route path={ROTAS.salasLivres} element={restrita(canViewOperacional, <FreeRooms {...props} />)} />
-            <Route path={ROTAS.ocupacao} element={restrita(canViewOperacional, <Ocupacao {...props} fonte="atual" podeAtual={canViewOperacional} podePdf={canViewRelatorios} />)} />
-            <Route path={ROTAS.historicoAulas} element={restrita(canViewRelatorios, <Ocupacao {...props} fonte="pdf" podeAtual={canViewOperacional} podePdf={canViewRelatorios} />)} />
-            <Route path={ROTAS.atualizarGrade} element={restrita(canEditGrade, <UploadPDF {...props} />)} />
-            <Route path={ROTAS.equipe} element={restrita(canViewEquipe, <GestaoEquipe {...props} />)} />
-            <Route path={ROTAS.relatorioEmprestimos} element={restrita(canViewEmprestimos || canViewRelatorios, <RelatoriosEmprestimos {...props} />)} />
-
-            {/* Endereço desconhecido → Planta */}
-            <Route path="*" element={<Navigate to={ROTAS.planta} replace />} />
-          </Routes>
-        </ErrorBoundary>
-      </main>
-
-      {buscaAberta && (
-        <BuscaGlobal gradeData={gradeData} trocas={trocasAtivas} diretorio={diretorioContatos} telas={telasBusca} onFechar={fecharBusca} />
+                    {resultadosContatos.length > 0 && (
+                      <>
+                        <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>CONTATOS</div>
+                        {resultadosContatos.map((res) => (
+                          <div key={res.chave} className="sd-item" onClick={() => handleSelectContato(res)}>
+                            <div className="sd-room">{res.tipo === 'curso' ? '🎓' : '📇'}</div>
+                            <div className="sd-info">
+                              <div className="sd-class">{res.titulo}</div>
+                              <div className="sd-meta">
+                                {res.subtitulo && <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.subtitulo}</span>}
+                                {res.subtitulo && res.telefone && <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>}
+                                {res.telefone}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            <span className="search-hint">Busca inteligente em tempo real</span>
+          </div>
+    
+          <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
+              <div className={`navtab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>Planta ao Vivo</div>
+              <div className={`navtab ${activeTab === 'tl' ? 'active' : ''}`} onClick={() => setActiveTab('tl')}>
+                Linha do Tempo
+                {totalTrocasSemana > 0 && (
+                  <span title="Trocas de sala ativas nesta semana" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                    {totalTrocasSemana}
+                  </span>
+                )}
+              </div>
+              <div className={`navtab ${activeTab === 'next' ? 'active' : ''}`} onClick={() => setActiveTab('next')}>Próximas Aulas</div>
+    
+              {canViewAvisos && (
+                <div className={`navtab ${activeTab === 'avisos' ? 'active' : ''}`} onClick={() => setActiveTab('avisos')}>
+                  Mural de Avisos
+                  {totalAvisosPendentes > 0 && (
+                    <span style={{ marginLeft: '6px', background: '#dc2626', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                      {totalAvisosPendentes}
+                    </span>
+                  )}
+                </div>
+              )}
+    
+              {canViewEmprestimos && (
+                <div className={`navtab ${activeTab === 'emprestimos' ? 'active' : ''}`} onClick={() => setActiveTab('emprestimos')}>📦 Empréstimos</div>
+              )}
+    
+              {/* Visível para todos: o diretório de contatos não é gated por permissão nem por prédio. */}
+              <div className={`navtab ${activeTab === 'contatos' ? 'active' : ''}`} onClick={() => setActiveTab('contatos')}>📇 Contatos</div>
+    
+              {isAdmin && (
+                <div className={`navtab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} style={{ color: activeTab === 'admin' ? '#fbbf24' : '', borderBottomColor: activeTab === 'admin' ? '#fbbf24' : '' }}>
+                  🛡️ Painel Admin
+                </div>
+              )}
+            </div>
+    
+            {isGestor && (
+              <div style={{ position: 'relative', padding: '10px 16px' }} ref={adminMenuRef}>
+                <button
+                  onClick={() => setShowAdminMenu(!showAdminMenu)}
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: isGestaoActive ? '#60a5fa' : '#9ca3af',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+                    fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
+                  }}
+                >
+                  ⚙️ Gestão ▾
+                </button>
+    
+                {showAdminMenu && (
+                  <div style={{
+                    position: 'absolute', top: '100%', right: '16px',
+                    background: '#1e293b', border: '1px solid #334155',
+                    borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                    zIndex: 50, minWidth: '220px', overflow: 'hidden'
+                  }}>
+    
+                    {canViewOperacional && (
+                      <>
+                        <div
+                          onClick={() => { setActiveTab('free'); setShowAdminMenu(false); }}
+                          style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'free' ? '#fff' : '#cbd5e1', background: activeTab === 'free' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                          onMouseEnter={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = '#0f172a' }}
+                          onMouseLeave={(e) => { if (activeTab !== 'free') e.currentTarget.style.background = 'transparent' }}
+                        >🚪 Salas Livres</div>
+    
+                        <div
+                          onClick={() => { setActiveTab('heat'); setShowAdminMenu(false); }}
+                          style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'heat' ? '#fff' : '#cbd5e1', background: activeTab === 'heat' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                          onMouseEnter={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = '#0f172a' }}
+                          onMouseLeave={(e) => { if (activeTab !== 'heat') e.currentTarget.style.background = 'transparent' }}
+                        >🔥 Ocupação Semanal</div>
+                      </>
+                    )}
+    
+                    {canViewRelatorios && (
+                      <div
+                        onClick={() => { setActiveTab('reports'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports' ? '#fff' : '#cbd5e1', background: activeTab === 'reports' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'reports') e.currentTarget.style.background = 'transparent' }}
+                      >📊 Histórico de Aulas (BI)</div>
+                    )}
+    
+                    {canEditGrade && (
+                      <div
+                        onClick={() => { setActiveTab('upload'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'upload' ? '#fff' : '#cbd5e1', background: activeTab === 'upload' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'upload') e.currentTarget.style.background = 'transparent' }}
+                      >🔄 Atualizar Grade CSV/PDF</div>
+                    )}
+    
+                    {canViewEquipe && (
+                      <div
+                        onClick={() => { setActiveTab('equipe'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'equipe' ? '#fff' : '#cbd5e1', background: activeTab === 'equipe' ? '#2563eb' : 'transparent', borderBottom: '1px solid #334155' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'equipe') e.currentTarget.style.background = 'transparent' }}
+                      >👥 Gestão de Equipe</div>
+                    )}
+    
+                    {(canViewEmprestimos || canViewRelatorios) && (
+                      <div
+                        onClick={() => { setActiveTab('reports_emprestimos'); setShowAdminMenu(false); }}
+                        style={{ padding: '14px 16px', cursor: 'pointer', fontSize: '13px', color: activeTab === 'reports_emprestimos' ? '#fff' : '#cbd5e1', background: activeTab === 'reports_emprestimos' ? '#2563eb' : 'transparent' }}
+                        onMouseEnter={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = '#0f172a' }}
+                        onMouseLeave={(e) => { if (activeTab !== 'reports_emprestimos') e.currentTarget.style.background = 'transparent' }}
+                      >📊 Relatório de Empréstimos</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
       )}
-      <TooltipGlobal />
+
+      <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+        {renderTabContent()}
+      </div>
     </div>
   );
 }

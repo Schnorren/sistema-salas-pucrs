@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
-import { useGrade } from '../hooks/useGrade';
-import { FileUp, CircleCheck, TriangleAlert } from 'lucide-react';
 
 // Etapas exibidas durante a importação. O backend processa tudo numa única
 // requisição (sem eventos de progresso), então só o envio tem progresso real;
@@ -34,7 +32,7 @@ function formatarTempo(totalSegundos) {
     return `${min}:${seg}`;
 }
 
-export default function UploadPDF({ session, acesso, onUploadSuccess }) {
+export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     const { predioAtivo } = usePredio();
     const { toast } = useUI();
 
@@ -47,7 +45,6 @@ export default function UploadPDF({ session, acesso, onUploadSuccess }) {
     const [erroMsg, setErroMsg] = useState('');
 
     const timersRef = useRef([]);
-    const { dados: gradeAtual, refresh: recarregarGrade } = useGrade(predioAtivo || acesso?.predioId || '');
     const etapaRef = useRef(0);
     const uploadPctRef = useRef(0);
 
@@ -157,7 +154,6 @@ export default function UploadPDF({ session, acesso, onUploadSuccess }) {
             timersRef.current.push(setTimeout(() => {
                 setFase('sucesso');
                 toast.success(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
-                recarregarGrade();
                 if (onUploadSuccess) onUploadSuccess();
             }, 600));
 
@@ -171,99 +167,95 @@ export default function UploadPDF({ session, acesso, onUploadSuccess }) {
         }
     };
 
-    const [sobre, setSobre] = useState(false);
-    const publicadaEm = gradeAtual?.atualizado_em
-        ? new Date(gradeAtual.atualizado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
-        : null;
-    const soltar = (ev) => {
-        ev.preventDefault();
-        setSobre(false);
-        const file = ev.dataTransfer?.files?.[0];
-        if (file && fase !== 'executando') handleUpload({ target: { files: [file], value: null } });
-    };
+    if (fase === 'executando') {
+        const concluido = progresso >= 100;
+        return (
+            <div className="bar-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <h2>Atualizando a grade…</h2>
+                <div className="up-file" style={{ marginTop: '14px' }}>
+                    📄 {arquivo?.nome} <span style={{ color: 'var(--muted)' }}>({formatarTamanho(arquivo?.tamanho || 0)})</span>
+                </div>
+                <div className="up-steps">
+                    {ETAPAS.map((et, i) => {
+                        const feita = concluido || i < etapa;
+                        const ativa = !feita && i === etapa;
+                        return (
+                            <div key={et.label} className={`up-step${ativa ? ' ativa' : ''}${feita ? ' feita' : ''}`}>
+                                <span className="up-ico">
+                                    {feita ? '✓' : ativa ? <span className="up-spin" /> : <span className="up-dot" />}
+                                </span>
+                                {et.label}
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="up-bar">
+                    <div className="up-bar-fill" style={{ width: `${progresso}%` }} />
+                </div>
+                <div className="up-timer">{Math.round(progresso)}% · {formatarTempo(segundos)}</div>
+                <p className="up-hint">{concluido ? 'Tudo pronto!' : ETAPAS[etapa].hint}</p>
+                <p style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '14px' }}>
+                    Não feche esta página até a atualização terminar.
+                </p>
+            </div>
+        );
+    }
+
+    if (fase === 'sucesso') {
+        return (
+            <div className="bar-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <div style={{ fontSize: '34px', marginBottom: '6px' }}>✅</div>
+                <h2 style={{ color: 'var(--green)' }}>Grade atualizada!</h2>
+                <p style={{ color: 'var(--text2)', marginTop: '8px' }}>
+                    <b>{resultado?.registrosInseridos}</b> aulas importadas em {formatarTempo(segundos)}.
+                </p>
+                <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '6px 0 20px' }}>
+                    A nova grade já está publicada e visível para todos os usuários do prédio.
+                </p>
+                <button className="btn-primary" onClick={resetar}>
+                    Importar outro arquivo
+                </button>
+            </div>
+        );
+    }
+
+    if (fase === 'erro') {
+        return (
+            <div className="bar-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <div style={{ fontSize: '34px', marginBottom: '6px' }}>⚠️</div>
+                <h2 style={{ color: 'var(--red)' }}>Falha na atualização</h2>
+                <div className="sp-error" style={{ maxWidth: '400px', margin: '14px auto' }}>{erroMsg}</div>
+                <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '20px' }}>
+                    Verifique o arquivo e tente novamente.
+                </p>
+                <button className="btn-primary" onClick={resetar}>
+                    Tentar novamente
+                </button>
+            </div>
+        );
+    }
 
     return (
-        <div className="pg" style={{ maxWidth: 1200 }}>
-            <div className="pg-hd">
-                <div><h1 className="t-pg">Atualizar grade</h1><p className="sub">Importe o PDF da agenda semanal exportado do Espaço Físico</p></div>
-            </div>
-            <div className="up-grid">
-                <section className="card"><div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {fase === 'idle' && (
-                        <label
-                            className={`drop ${sobre ? 'sobre' : ''}`} htmlFor="up-arq"
-                            onDragOver={(ev) => { ev.preventDefault(); setSobre(true); }} onDragLeave={() => setSobre(false)} onDrop={soltar}
-                        >
-                            <FileUp size={28} />
-                            <b style={{ fontSize: 15 }}>Arraste o PDF aqui ou clique para escolher</b>
-                            <span className="sub" style={{ margin: 0 }}>A grade nova substitui a atual do prédio inteiro. As trocas de sala da semana são mantidas.</span>
-                            <input id="up-arq" type="file" accept=".pdf,application/pdf" hidden onChange={handleUpload} />
-                        </label>
-                    )}
+        <div className="bar-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <h2>Atualização de Grade</h2>
+            <p style={{ color: 'var(--text2)', marginBottom: '20px' }}>
+                Selecione o arquivo da agenda gerado pelo sistema central em formato <b>.pdf</b>
+            </p>
 
-                    {fase !== 'idle' && arquivo && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                            <span className="chip contorno"><FileUp size={13} />{arquivo.nome} · {formatarTamanho(arquivo.tamanho)}</span>
-                            <span className="sub" style={{ margin: 0 }}>{formatarTempo(segundos)}</span>
-                            {fase === 'sucesso' && <span className="chip livre">publicada</span>}
-                            {fase === 'erro' && <span className="chip alta">falhou</span>}
-                        </div>
-                    )}
+            <input
+                type="file"
+                accept=".pdf"
+                id="pdfUpload"
+                hidden
+                onChange={handleUpload}
+            />
 
-                    {fase !== 'idle' && (
-                        <>
-                            <div className="up-barra" role="progressbar" aria-valuenow={Math.round(progresso)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progresso}%` }} /></div>
-                            <ol className="etapas">
-                                {ETAPAS.map((et, i) => {
-                                    const st = fase === 'sucesso' || i < etapa ? 'ok' : (fase === 'executando' && i === etapa ? 'ativa' : '');
-                                    return (
-                                        <li key={et.label} className={`etapa ${st}`}>
-                                            <i>{st === 'ok' ? '✓' : i + 1}</i>
-                                            <span>{et.label}{st === 'ativa' && <><br /><small>{et.hint}</small></>}</span>
-                                            <span className="sub" style={{ margin: 0 }}>{st === 'ok' ? 'feito' : st === 'ativa' ? 'em andamento…' : ''}</span>
-                                        </li>
-                                    );
-                                })}
-                            </ol>
-                        </>
-                    )}
-
-                    {fase === 'sucesso' && (
-                        <div className="alerta-box info"><CircleCheck size={16} /><span><b>Grade atualizada.</b> {resultado?.registrosInseridos} aulas importadas em {formatarTempo(segundos)}. Todas as telas já usam a nova versão.</span></div>
-                    )}
-                    {fase === 'erro' && (
-                        <div className="alerta-box erro"><TriangleAlert size={16} /><span><b>A importação falhou.</b> {erroMsg} A grade anterior continua publicada.</span></div>
-                    )}
-                    {(fase === 'sucesso' || fase === 'erro') && (
-                        <div className="acoes-linha"><button className="btn pri" onClick={resetar}>{fase === 'erro' ? 'Tentar de novo' : 'Importar outro PDF'}</button></div>
-                    )}
-                </div></section>
-
-                <div className="coluna-pilha">
-                    <section className="card">
-                        <div className="card-hd"><b>Grade publicada agora</b>{gradeAtual && <span className="chip livre" style={{ marginLeft: 'auto' }}>no ar</span>}</div>
-                        <div className="card-bd">
-                            {gradeAtual ? (
-                                <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px', margin: 0, fontSize: 13.5 }}>
-                                    <dt className="sub" style={{ margin: 0 }}>Publicada em</dt><dd style={{ margin: 0, fontWeight: 600 }}>{publicadaEm || '—'}</dd>
-                                    <dt className="sub" style={{ margin: 0 }}>Aulas</dt><dd style={{ margin: 0, fontWeight: 600 }}>{gradeAtual.grade?.length ?? 0} períodos ocupados</dd>
-                                    <dt className="sub" style={{ margin: 0 }}>Salas</dt><dd style={{ margin: 0, fontWeight: 600 }}>{gradeAtual.salas?.length ?? 0}</dd>
-                                </dl>
-                            ) : <p className="sub">Este prédio ainda não tem grade publicada.</p>}
-                        </div>
-                    </section>
-                    <section className="card">
-                        <div className="card-hd"><b>Antes de importar</b></div>
-                        <div className="card-bd">
-                            <ul className="lista-hist">
-                                <li><span>Exporte a <b>agenda semanal</b> do prédio no Espaço Físico, em PDF.</span></li>
-                                <li><span>A extração pode levar até 1 minuto na primeira importação do dia (o extrator "acorda").</span></li>
-                                <li><span>Trocas de sala ficam salvas; se a aula de origem sumir da grade nova, a troca deixa de aparecer.</span></li>
-                            </ul>
-                        </div>
-                    </section>
-                </div>
-            </div>
+            <button
+                className="btn-primary"
+                onClick={() => document.getElementById('pdfUpload').click()}
+            >
+                Selecionar Arquivo PDF
+            </button>
         </div>
     );
 }

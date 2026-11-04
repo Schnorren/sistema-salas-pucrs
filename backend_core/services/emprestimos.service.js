@@ -70,8 +70,7 @@ class EmprestimosService {
             nomeAluno: e.nome_aluno,
             dataRetirada: e.data_retirada,
             dataDevolucao: e.data_devolucao,
-            responsavel: e.resp_devolucao,
-            responsavelRetirada: e.resp_retirada
+            responsavel: e.resp_devolucao
         }));
     }
 

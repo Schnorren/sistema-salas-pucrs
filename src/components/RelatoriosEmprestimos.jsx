@@ -1,212 +1,349 @@
-import { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { usePredio } from '../contexts/PredioContext';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Search, LoaderCircle } from 'lucide-react';
+import { useUI } from '../contexts/UIContext';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { usePredio } from '../contexts/PredioContext';
-import { useUI } from '../contexts/UIContext';
-import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
-import { normalizar } from '../utils/blocos';
-import { Seg } from './ui/Seg';
-import { Erro, Carregando } from './ui/Estado';
 
-const pad = (n) => String(n).padStart(2, '0');
-const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-
-// Atalhos de período calculados no fuso da PUCRS
-function intervaloDoAtalho(atalho) {
-  const agora = getDataSaoPaulo();
-  const ini = new Date(agora); ini.setHours(0, 0, 0, 0);
-  if (atalho === 'semana') { const dow = ini.getDay(); ini.setDate(ini.getDate() + (dow === 0 ? -6 : 1 - dow)); }
-  if (atalho === 'mes') ini.setDate(1);
-  if (atalho === 'semestre') { ini.setMonth(agora.getMonth() >= 6 ? 6 : 0, 1); }
-  return { inicio: local(ini), fim: local(agora) };
-}
-const duracao = (inicioIso, fimIso) => {
-  if (!inicioIso || !fimIso) return null;
-  const m = Math.floor((new Date(fimIso) - new Date(inicioIso)) / 60000);
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${pad(m % 60)}`;
+const getInicioHojeLocal = () => {
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 10) + 'T00:00';
 };
-const dataHora = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
-function Barras({ dados, chaveRotulo, chaveValor, sufixo = '' }) {
-  if (!dados?.length) return <p className="sub">Nenhum registro no período.</p>;
-  const max = Math.max(1, ...dados.map(d => Number(d[chaveValor]) || 0));
-  return (
-    <div className="barras">
-      {dados.map((d, i) => {
-        const v = Number(d[chaveValor]) || 0;
-        return (
-          <div key={i} className="barra" style={{ '--rot': '140px' }} data-tt={`${d[chaveRotulo]}: ${v}${sufixo}`}>
-            <span className="rotulo sans">{d[chaveRotulo]}</span>
-            <span className="trilho"><i style={{ width: `${(v / max) * 100}%` }} /></span>
-            <span className="v">{Number.isInteger(v) ? v : v.toFixed(1)}{sufixo}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+const getAgoraLocal = () => {
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+};
 
-function Colunas({ dados, chaveRotulo, chaveValor, fmtRotulo = (x) => x }) {
-  if (!dados?.length) return <p className="sub">Nenhum registro no período.</p>;
-  const max = Math.max(1, ...dados.map(d => Number(d[chaveValor]) || 0));
-  return (
-    <div className="colunas">
-      {dados.map((d, i) => {
-        const v = Number(d[chaveValor]) || 0;
-        return (
-          <div key={i} className="coluna" data-tt={`${fmtRotulo(d[chaveRotulo])}: ${v} retiradas`}>
-            <i style={{ height: `${(v / max) * 100}%` }}><span>{v}</span></i>
-            <small>{fmtRotulo(d[chaveRotulo])}</small>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+const calcularDuracaoTotal = (inicioIso, fimIso) => {
+    if (!inicioIso || !fimIso) return '--';
+    const diffMs = new Date(fimIso) - new Date(inicioIso);
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return `${diffMin} min`;
+    return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+};
 
 export default function RelatoriosEmprestimos({ session, acesso }) {
-  const { predioAtivo } = usePredio();
-  const { toast } = useUI();
-  const relatorioRef = useRef(null);
-  const [atalho, setAtalho] = useState('semana');
-  const [intervalo, setIntervalo] = useState(() => intervaloDoAtalho('semana'));
-  const [rascunho, setRascunho] = useState(intervalo);
-  const [gerandoPdf, setGerandoPdf] = useState(false);
-  const [buscaHist, setBuscaHist] = useState('');
-  const [buscaAlunos, setBuscaAlunos] = useState('');
-  const predioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
+    const { predioAtivo } = usePredio();
+    const { toast } = useUI();
+    const relatorioRef = useRef(null);
 
-  const { data: dados, isLoading, isError, isFetching } = useQuery({
-    queryKey: ['relatorios_emprestimos', predioId, intervalo.inicio, intervalo.fim],
-    queryFn: async () => {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?inicio=${intervalo.inicio}&fim=${intervalo.fim}`, {
-        headers: { 'Authorization': `Bearer ${session?.access_token}`, 'x-predio-id': predioId }
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-      return json;
-    },
-    enabled: !!predioId && !!intervalo.inicio && !!intervalo.fim,
-    staleTime: 1000 * 60 * 2
-  });
+    const [inputInicio, setInputInicio] = useState(getInicioHojeLocal());
+    const [inputFim, setInputFim] = useState(getAgoraLocal());
+    const [filtroInicio, setFiltroInicio] = useState(getInicioHojeLocal());
+    const [filtroFim, setFiltroFim] = useState(getAgoraLocal());
 
-  const escolherAtalho = (a) => {
-    setAtalho(a);
-    if (a !== 'outro') { const i = intervaloDoAtalho(a); setIntervalo(i); setRascunho(i); }
-  };
-  const aplicar = (e) => { e.preventDefault(); setIntervalo(rascunho); };
+    const [gerandoPdf, setGerandoPdf] = useState(false);
 
-  const exportarPDF = async () => {
-    if (!relatorioRef.current) return;
-    setGerandoPdf(true);
-    try {
-      const canvas = await html2canvas(relatorioRef.current, { scale: 2, useCORS: true, logging: false, backgroundColor: getComputedStyle(relatorioRef.current).backgroundColor });
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const w = pdf.internal.pageSize.getWidth();
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, (canvas.height * w) / canvas.width);
-      pdf.save(`Relatorio_Emprestimos_${intervalo.inicio.slice(0, 10)}_${intervalo.fim.slice(0, 10)}.pdf`);
-      toast.success('PDF exportado.');
-    } catch { toast.error('Não foi possível gerar o PDF.'); }
-    finally { setGerandoPdf(false); }
-  };
+    const [mostrarTodosAlunos, setMostrarTodosAlunos] = useState(false);
+    const [mostrarTodoHistorico, setMostrarTodoHistorico] = useState(false);
 
-  const hist = useMemo(() => {
-    const t = normalizar(buscaHist);
-    return (dados?.tabelaHistorico || []).filter(h => !t || normalizar(`${h.nomeAluno} ${h.matricula} ${h.nomeItem}`).includes(t));
-  }, [dados, buscaHist]);
-  const alunos = useMemo(() => {
-    const t = normalizar(buscaAlunos);
-    return (dados?.tabelaAlunosUnicos || []).filter(a => !t || normalizar(`${a.nome} ${a.matricula}`).includes(t));
-  }, [dados, buscaAlunos]);
+    const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
 
-  if (isError) return <Erro texto="Não foi possível carregar o relatório. Tente de novo em instantes." />;
+    const { data: dados, isLoading: loading, isError, isFetching } = useQuery({
+        queryKey: ['relatorios_emprestimos', currentPredioId, filtroInicio, filtroFim],
+        queryFn: async () => {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?inicio=${filtroInicio}&fim=${filtroFim}`, {
+                headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'x-predio-id': currentPredioId
+                }
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+            return json;
+        },
+        enabled: !!currentPredioId && !!filtroInicio && !!filtroFim,
+        staleTime: 1000 * 60 * 2
+    });
 
-  const r = dados?.resumo || {};
-  const total = Number(r.totalEmprestimos) || 0;
-  const mediaHoras = total ? (Number(r.horasTotais) || 0) / total : 0;
-  const picoHora = [...(dados?.picosHorario || [])].sort((a, b) => b.quantidade - a.quantidade)[0];
-  const fmtMedia = mediaHoras >= 1 ? `${Math.floor(mediaHoras)}h${pad(Math.round((mediaHoras % 1) * 60))}` : `${Math.round(mediaHoras * 60)} min`;
+    const handleAtualizar = (e) => {
+        if (e) e.preventDefault();
+        setFiltroInicio(inputInicio);
+        setFiltroFim(inputFim);
 
-  return (
-    <div className="pg">
-      <div className="pg-hd">
-        <div>
-          <h1 className="t-pg">Relatório de empréstimos</h1>
-          <p className="sub">Rotatividade e uso do acervo{isFetching && !isLoading ? ' · atualizando…' : ''}</p>
-        </div>
-        <div className="pg-acoes">
-          <Seg rotulo="Período" valor={atalho} onChange={escolherAtalho} opcoes={[['hoje', 'Hoje'], ['semana', 'Esta semana'], ['mes', 'Este mês'], ['semestre', 'Semestre'], ['outro', 'Personalizado']]} />
-          <button className="btn" onClick={exportarPDF} disabled={gerandoPdf || !dados}>{gerandoPdf ? <LoaderCircle size={16} className="girando" /> : <Download size={16} />}PDF</button>
-        </div>
-      </div>
+        setMostrarTodosAlunos(false);
+        setMostrarTodoHistorico(false);
+    };
 
-      {atalho === 'outro' && (
-        <form className="card finder" onSubmit={aplicar}>
-          <div className="campo"><label htmlFor="rel-ini">Início</label><input id="rel-ini" type="datetime-local" className="inp" value={rascunho.inicio} onChange={(e) => setRascunho({ ...rascunho, inicio: e.target.value })} required /></div>
-          <div className="campo"><label htmlFor="rel-fim">Fim</label><input id="rel-fim" type="datetime-local" className="inp" value={rascunho.fim} onChange={(e) => setRascunho({ ...rascunho, fim: e.target.value })} required /></div>
-          <button className="btn pri" disabled={isFetching}>Aplicar</button>
-        </form>
-      )}
+    const handleExportarPDF = async () => {
+        const elemento = relatorioRef.current;
+        if (!elemento) return;
 
-      {isLoading ? <Carregando texto="Analisando o período…" /> : !total ? (
-        <div className="vazio">Nenhum empréstimo entre {dataHora(intervalo.inicio)} e {dataHora(intervalo.fim)}.</div>
-      ) : (
-        <div ref={relatorioRef} style={{ display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--bg)' }}>
-          <div className="kpis">
-            <div className="card kpi"><div className="kpi-rot">Retiradas</div><div className="kpi-val">{total}</div><div className="kpi-ctx">{dataHora(intervalo.inicio)} a {dataHora(intervalo.fim)}</div></div>
-            <div className="card kpi"><div className="kpi-rot">Alunos diferentes</div><div className="kpi-val">{r.alunosAtendidos ?? '—'}</div><div className="kpi-ctx">{dados.tabelaAlunosUnicos?.filter(a => a.total_retiradas > 1).length || 0} vieram mais de uma vez</div></div>
-            <div className="card kpi"><div className="kpi-rot">Tempo médio com o item</div><div className="kpi-val">{fmtMedia}</div><div className="kpi-ctx">{Number(r.horasTotais || 0).toFixed(1).replace('.', ',')} h de uso no total</div></div>
-            <div className="card kpi"><div className="kpi-rot">Horário de pico</div><div className="kpi-val">{picoHora ? `${picoHora.hora}h` : '—'}</div><div className="kpi-ctx">{picoHora ? `${picoHora.quantidade} retiradas nessa faixa` : ''}</div></div>
-          </div>
+        setGerandoPdf(true);
+        toast.info('Gerando PDF... Aguarde um momento.');
 
-          <div className="rel-grid">
-            <div className="coluna-pilha">
-              <section className="card"><div className="card-hd"><b>Itens mais retirados</b><span className="sub" style={{ margin: '0 0 0 auto' }}>retiradas</span></div><div className="card-bd"><Barras dados={dados.rankingItens} chaveRotulo="nome_item" chaveValor="total_saidas" /></div></section>
-              <section className="card"><div className="card-hd"><b>Itens com mais tempo de uso</b><span className="sub" style={{ margin: '0 0 0 auto' }}>horas</span></div><div className="card-bd"><Barras dados={dados.rankingHoras} chaveRotulo="nome_item" chaveValor="total_horas" sufixo=" h" /></div></section>
+        try {
+            const canvas = await html2canvas(elemento, {
+                scale: 2,
+                useCORS: true,
+                logging: false
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`Relatorio_Emprestimos_${new Date().getTime()}.pdf`);
+
+            toast.success('PDF exportado com sucesso!');
+        } catch {
+            toast.error('Ocorreu um erro ao gerar o PDF.');
+        } finally {
+            setGerandoPdf(false);
+        }
+    };
+
+    const limiteAlunos = 5;
+    const totalAlunos = dados?.tabelaAlunosUnicos?.length || 0;
+    const alunosRenderizados = mostrarTodosAlunos
+        ? dados?.tabelaAlunosUnicos
+        : dados?.tabelaAlunosUnicos?.slice(0, limiteAlunos);
+
+    const limiteHistorico = 8; // Mostra 8 registros no histórico por padrão
+    const totalHistorico = dados?.tabelaHistorico?.length || 0;
+    const historicoRenderizado = mostrarTodoHistorico
+        ? dados?.tabelaHistorico
+        : dados?.tabelaHistorico?.slice(0, limiteHistorico);
+
+    if (isError) return <div className="empty-st" style={{ color: 'var(--red)' }}>Erro ao carregar relatórios. Tente novamente.</div>;
+
+    return (
+        <div className="relatorios-container">
+
+            <div className="relatorios-header">
+                <div>
+                    <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text)', display: 'flex', alignItems: 'center' }}>
+                        Painel de Desempenho
+                        {isFetching && <span className="badge-atualizando">Atualizando...</span>}
+                    </h2>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--muted)' }}>Análise de rotatividade e uso do acervo.</p>
+                </div>
+
+                <form className="filtros-wrapper" onSubmit={handleAtualizar}>
+                    <div className="input-filtro-box">
+                        <label>INÍCIO</label>
+                        <input type="datetime-local" value={inputInicio} onChange={e => setInputInicio(e.target.value)} className="input-filtro" />
+                    </div>
+                    <div className="input-filtro-box">
+                        <label>FIM</label>
+                        <input type="datetime-local" value={inputFim} onChange={e => setInputFim(e.target.value)} className="input-filtro" />
+                    </div>
+
+                    <button type="submit" disabled={isFetching} className="btn-atualizar-filtro">
+                        Atualizar
+                    </button>
+                </form>
             </div>
-            <div className="coluna-pilha">
-              <section className="card"><div className="card-hd"><b>Retiradas por hora do dia</b></div><div className="card-bd"><Colunas dados={dados.picosHorario} chaveRotulo="hora" chaveValor="quantidade" fmtRotulo={(h) => `${h}h`} /></div></section>
-              <section className="card"><div className="card-hd"><b>Retiradas por dia da semana</b></div><div className="card-bd"><Colunas dados={dados.picos} chaveRotulo="dia_semana" chaveValor="quantidade" fmtRotulo={(d) => String(d).slice(0, 3)} /></div></section>
-            </div>
-          </div>
 
-          <div className="rel-grid">
-            <section>
-              <div className="sec-hd"><h2 className="t-sec">Retiradas detalhadas</h2><span className="cont">{hist.length}</span><div className="campo-busca" style={{ marginLeft: 'auto', minWidth: 220 }}><Search size={16} /><input className="inp" placeholder="Aluno, matrícula ou item" value={buscaHist} onChange={(e) => setBuscaHist(e.target.value)} /></div></div>
-              <div className="tabela-wrap" style={{ maxHeight: 420 }}>
-                <table className="dados">
-                  <thead><tr><th>Aluno</th><th>Item</th><th>Retirada</th><th>Duração</th></tr></thead>
-                  <tbody>
-                    {hist.map(h => (
-                      <tr key={h.id}>
-                        <td><b>{h.nomeAluno}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{h.matricula}</small></td>
-                        <td>{h.nomeItem}</td>
-                        <td className="num" style={{ whiteSpace: 'nowrap' }}>{dataHora(h.dataRetirada)}</td>
-                        <td>{h.dataDevolucao ? <span className="num">{duracao(h.dataRetirada, h.dataDevolucao)}</span> : <span className="chip ocup">em uso</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            <section>
-              <div className="sec-hd"><h2 className="t-sec">Alunos atendidos</h2><span className="cont">{alunos.length}</span><div className="campo-busca" style={{ marginLeft: 'auto', minWidth: 200 }}><Search size={16} /><input className="inp" placeholder="Nome ou matrícula" value={buscaAlunos} onChange={(e) => setBuscaAlunos(e.target.value)} /></div></div>
-              <div className="tabela-wrap" style={{ maxHeight: 420 }}>
-                <table className="dados">
-                  <thead><tr><th>Aluno</th><th className="dir">Retiradas</th></tr></thead>
-                  <tbody>
-                    {alunos.map(a => (
-                      <tr key={a.matricula}><td><b>{a.nome}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{a.matricula}</small></td><td className="dir num">{a.total_retiradas}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </div>
+            {(loading && !dados) ? (
+                <div className="empty-st">Analisando dados do período...</div>
+            ) : (!dados || !dados.resumo) ? (
+                <div className="empty-st" style={{ color: 'var(--red)' }}>Nenhum dado encontrado para este período.</div>
+            ) : (
+
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                        <button
+                            type="button"
+                            onClick={handleExportarPDF}
+                            disabled={loading || !dados || gerandoPdf}
+                            className="btn-exportar-pdf"
+                            title="Baixar Relatório em PDF"
+                            style={{ border: '1px solid var(--border)' }}
+                        >
+                            {gerandoPdf ? '⏳ Gerando...' : '📄 Exportar PDF'}
+                        </button>
+                    </div>
+
+                    <div ref={relatorioRef} className="pdf-export-area">
+                        <div className="kpi-grid" style={{ marginBottom: '24px' }}>
+                            <div className="kpi-card">
+                                <span className="kpi-titulo">TOTAL DE EMPRÉSTIMOS</span>
+                                <div className="kpi-valor blue">{dados.resumo.totalEmprestimos}</div>
+                            </div>
+                            <div className="kpi-card">
+                                <span className="kpi-titulo">HORAS TOTAIS DE USO</span>
+                                <div className="kpi-valor amber">{Math.round(dados.resumo.horasTotais)}h</div>
+                            </div>
+                            <div className="kpi-card">
+                                <span className="kpi-titulo">ALUNOS ÚNICOS ATENDIDOS</span>
+                                <div className="kpi-valor green">{dados.resumo.alunosAtendidos}</div>
+                            </div>
+                        </div>
+
+                        <div className="charts-grid" style={{ marginBottom: '24px' }}>
+                            <div className="chart-box">
+                                <h3 className="chart-title">🏆 Top 10 Itens Mais Retirados</h3>
+                                {dados.rankingItens.length === 0 ? <div className="empty-st">Nenhum registro.</div> : (
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <BarChart data={dados.rankingItens} layout="vertical" margin={{ left: 40, right: 20 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="nome_item" type="category" width={120} style={{ fontSize: '12px', fill: 'var(--text2)', fontWeight: 'bold' }} />
+                                            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} cursor={{ fill: 'var(--panel2)' }} />
+                                            <Bar dataKey="total_saidas" name="Vezes Emprestado" fill="var(--blue)" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: 'var(--text)', fontSize: 12, fontWeight: 'bold' }} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                )}
+                            </div>
+
+                            <div className="chart-box">
+                                <h3 className="chart-title">⏳ Itens com Maior Tempo de Uso</h3>
+                                {dados.rankingHoras.length === 0 ? <div className="empty-st">Nenhum registro.</div> : (
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <BarChart data={dados.rankingHoras} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                            <XAxis dataKey="nome_item" hide />
+                                            <YAxis style={{ fontSize: '12px', fill: 'var(--text2)' }} />
+                                            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} cursor={{ fill: 'var(--panel2)' }} />
+                                            <Bar dataKey="total_horas" name="Total em Horas" fill="var(--amber)" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: 'var(--amber)', fontSize: 12, fontWeight: 'bold' }} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                )}
+                            </div>
+
+                            <div className="chart-box">
+                                <h3 className="chart-title">📈 Fluxo de Atendimento (Semana)</h3>
+                                {dados.picos.length === 0 ? <div className="empty-st">Nenhum registro.</div> : (
+                                    <ResponsiveContainer width="100%" height={250}>
+                                        <AreaChart data={dados.picos}>
+                                            <defs>
+                                                <linearGradient id="colorQty" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="var(--purple)" stopOpacity={0.4} />
+                                                    <stop offset="95%" stopColor="var(--purple)" stopOpacity={0} />
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                            <XAxis dataKey="dia_semana" style={{ fontSize: '13px', fill: 'var(--text)', fontWeight: 'bold' }} />
+                                            <YAxis style={{ fontSize: '12px', fill: 'var(--muted)' }} />
+                                            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
+                                            <Area type="monotone" name="Atendimentos" dataKey="quantidade" stroke="var(--purple)" fillOpacity={1} fill="url(#colorQty)" strokeWidth={4} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                )}
+                            </div>
+
+                            <div className="chart-box">
+                                <h3 className="chart-title">⏰ Picos de Utilização (Horário)</h3>
+                                {dados.picosHorario && dados.picosHorario.length === 0 ? <div className="empty-st">Nenhum registro.</div> : (
+                                    <ResponsiveContainer width="100%" height={250}>
+                                        <AreaChart data={dados.picosHorario}>
+                                            <defs>
+                                                <linearGradient id="colorHora" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="var(--green)" stopOpacity={0.4} />
+                                                    <stop offset="95%" stopColor="var(--green)" stopOpacity={0} />
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                            <XAxis dataKey="hora" style={{ fontSize: '13px', fill: 'var(--text)', fontWeight: 'bold' }} />
+                                            <YAxis style={{ fontSize: '12px', fill: 'var(--muted)' }} />
+                                            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' }} />
+                                            <Area type="monotone" name="Empréstimos" dataKey="quantidade" stroke="var(--green)" fillOpacity={1} fill="url(#colorHora)" strokeWidth={4} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="tables-grid">
+
+                            <div className="chart-box" style={{ display: 'flex', flexDirection: 'column' }}>
+                                <h3 className="chart-title">📄 Registro Detalhado de Retiradas</h3>
+                                {dados.tabelaHistorico && dados.tabelaHistorico.length === 0 ? <div className="empty-st">Sem registros no período.</div> : (
+                                    <div className="table-wrapper" style={{ maxHeight: 'none', overflowY: 'visible', display: 'flex', flexDirection: 'column' }}>
+                                        <table className="table-historico" style={{ flex: 1 }}>
+                                            <thead style={{ background: 'var(--panel2)' }}>
+                                                <tr>
+                                                    <th>Aluno</th>
+                                                    <th>Item</th>
+                                                    <th>Retirada</th>
+                                                    <th>Duração</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {historicoRenderizado?.map(h => (
+                                                    <tr key={h.id}>
+                                                        <td>
+                                                            <div className="th-aluno-nome">{h.nomeAluno}</div>
+                                                            <div className="th-aluno-mat">{h.matricula}</div>
+                                                        </td>
+                                                        <td className="th-item">{h.nomeItem}</td>
+                                                        <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>
+                                                            {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                        </td>
+                                                        <td>
+                                                            {h.dataDevolucao ? (
+                                                                <span className="tag-status concluido">{calcularDuracaoTotal(h.dataRetirada, h.dataDevolucao)}</span>
+                                                            ) : (
+                                                                <span className="tag-status pendente">Pendente</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+
+                                        {totalHistorico > limiteHistorico && (
+                                            <button
+                                                type="button"
+                                                className="btn-ver-mais"
+                                                onClick={() => setMostrarTodoHistorico(!mostrarTodoHistorico)}
+                                                data-html2canvas-ignore="true"
+                                            >
+                                                {mostrarTodoHistorico ? 'Ver Menos ▲' : `Ver mais ${totalHistorico - limiteHistorico} registros ▼`}
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="chart-box" style={{ display: 'flex', flexDirection: 'column' }}>
+                                <h3 className="chart-title">👥 Tabela de Alunos Únicos</h3>
+                                {dados.tabelaAlunosUnicos && dados.tabelaAlunosUnicos.length === 0 ? <div className="empty-st">Sem registros no período.</div> : (
+                                    <div className="table-wrapper" style={{ maxHeight: 'none', overflowY: 'visible', display: 'flex', flexDirection: 'column' }}>
+                                        <table className="table-historico" style={{ flex: 1 }}>
+                                            <thead style={{ background: 'var(--panel2)' }}>
+                                                <tr>
+                                                    <th>Aluno</th>
+                                                    <th style={{ textAlign: 'center' }}>Qtd. Retiradas</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {alunosRenderizados?.map(a => (
+                                                    <tr key={a.matricula}>
+                                                        <td>
+                                                            <div className="th-aluno-nome">{a.nome}</div>
+                                                            <div className="th-aluno-mat">{a.matricula}</div>
+                                                        </td>
+                                                        <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--green)', fontSize: '14px' }}>
+                                                            {a.total_retiradas}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+
+                                        {totalAlunos > limiteAlunos && (
+                                            <button
+                                                type="button"
+                                                className="btn-ver-mais"
+                                                onClick={() => setMostrarTodosAlunos(!mostrarTodosAlunos)}
+                                                data-html2canvas-ignore="true"
+                                            >
+                                                {mostrarTodosAlunos ? 'Ver Menos ▲' : `Ver mais ${totalAlunos - limiteAlunos} alunos ▼`}
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 }

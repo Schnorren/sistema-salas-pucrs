@@ -1,384 +1,469 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ScanBarcode, Check, Wrench, Users, Monitor, Search, LoaderCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEmprestimos } from '../hooks/useEmprestimos';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { STATUS_ITEM } from '../utils/constants';
-import { lerBalcao, salvarBalcao, lerResponsavel } from '../utils/balcao';
-import { normalizar } from '../utils/blocos';
-import { Seg } from './ui/Seg';
-import { Carregando, SemPredio } from './ui/Estado';
 
-const LONGO_MIN = 120; // acima de 2h o tempo fica destacado
 
-const horaDe = (iso) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '--:--');
-const iniciais = (n) => String(n || '?').split(/\s+/).filter(Boolean).map(p => p[0]).slice(0, 2).join('').toUpperCase();
-const duracao = (min) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}`);
-const minutosDesde = (iso) => Math.max(0, Math.floor((Date.now() - new Date(iso)) / 60000));
+const calcularDuracaoTotal = (inicioIso, fimIso) => {
+    if (!inicioIso || !fimIso) return '--';
+    const diffMs = new Date(fimIso) - new Date(inicioIso);
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return `${diffMin} min`;
+    return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+};
 
-function TempoDecorrido({ dataIso }) {
-  const [min, setMin] = useState(() => minutosDesde(dataIso));
-  useEffect(() => {
-    const t = setInterval(() => setMin(minutosDesde(dataIso)), 30000);
-    return () => clearInterval(t);
-  }, [dataIso]);
-  return <span className={`tempo ${min >= LONGO_MIN ? 'longo' : ''}`} title={min >= LONGO_MIN ? 'Mais de 2 horas' : undefined}>{duracao(min)}</span>;
-}
+const TempoDecorrido = ({ dataIso }) => {
+    const [tempo, setTempo] = useState('--');
 
-// Balcão: Crachá -> Item -> (nome, se aluno novo) -> registra. Crachá de quem
-// já está com um item abre direto a devolução (Enter confirma).
-function Balcao({
-  categorias, itensDisponiveis, emprestimosAtivos, consultarAluno, registrarRetirada, registrarDevolucao,
-  retirando, devolvendo, categoriaSel, setCategoriaSel,
-}) {
-  const { toast } = useUI();
-  const [passo, setPasso] = useState(1); // 1 crachá · 2 item · 3 nome · 4 devolução
-  const [entrada, setEntrada] = useState('');
-  const [nomeAluno, setNomeAluno] = useState('');
-  const [buscando, setBuscando] = useState(false);
-  const [aluno, setAluno] = useState(null);
-  const [itemSel, setItemSel] = useState(null);
-  const inputRef = useRef(null);
+    useEffect(() => {
+        if (!dataIso) return;
+        const calcular = () => {
+            const diffMin = Math.floor(Math.max(0, new Date() - new Date(dataIso)) / 60000);
+            if (diffMin < 60) return `${diffMin} min`;
+            return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+        };
 
-  useEffect(() => { inputRef.current?.focus(); }, [passo]);
+        setTempo(calcular()); // eslint-disable-line react-hooks/set-state-in-effect
+        const timer = setInterval(() => setTempo(calcular()), 30000);
+        return () => clearInterval(timer);
+    }, [dataIso]);
 
-  const reiniciar = useCallback(() => {
-    setPasso(1); setEntrada(''); setNomeAluno(''); setAluno(null); setItemSel(null); setBuscando(false);
-  }, []);
+    return <>{tempo}</>;
+};
 
-  const confirmarDevolucao = useCallback(async () => {
-    if (devolvendo) return; // segurar Enter (key repeat) dispararia N devoluções
-    const id = aluno?.emprestimoAtivo?.id;
-    if (!id) return;
-    try {
-      await registrarDevolucao(id);
-      toast.success(`Devolução de ${aluno.emprestimoAtivo.nomeItem} registrada.`);
-      reiniciar();
-    } catch (err) { toast.error(`Erro ao registrar devolução: ${err.message || 'tente novamente.'}`); }
-  }, [devolvendo, aluno, registrarDevolucao, reiniciar, toast]);
 
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape' && passo > 1) { e.preventDefault(); reiniciar(); }
-      if (e.key === 'Enter' && passo === 4) { e.preventDefault(); confirmarDevolucao(); }
-      // Leitor de código de barras "digita": se o foco saiu do campo (clique na
-      // tabela, por exemplo), a 1ª tecla devolve o foco ao leitor.
-      if (passo !== 4 && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
-        && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && !document.querySelector('.dlg-fundo, .gaveta')) {
-        inputRef.current?.focus();
-      }
+const EmprestimoWizard = ({
+    categorias, itensDisponiveis, emprestimosAtivos,
+    consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
+    retirando, devolvendo, alterandoStatus,
+    categoriaSel, setCategoriaSel
+}) => {
+    const { toast, showPrompt, showConfirm } = useUI();
+    const [step, setStep] = useState(1);
+    const [inputMatricula, setInputMatricula] = useState('');
+    const [inputItem, setInputItem] = useState('');
+    const [nomeAluno, setNomeAluno] = useState('');
+    const [buscandoAluno, setBuscandoAluno] = useState(false);
+    const [alunoAnalisado, setAlunoAnalisado] = useState(null);
+    const [itemSelecionado, setItemSelecionado] = useState(null);
+
+    const inputMatriculaRef = useRef(null);
+    const inputItemRef = useRef(null);
+    const inputNomeRef = useRef(null);
+
+    useEffect(() => {
+        if (step === 1 && inputMatriculaRef.current) inputMatriculaRef.current.focus();
+        if (step === 2 && inputItemRef.current) inputItemRef.current.focus();
+        if (step === 3 && inputNomeRef.current) inputNomeRef.current.focus();
+    }, [step]);
+
+    const resetFlow = useCallback(() => {
+        setStep(1);
+        setInputMatricula('');
+        setInputItem('');
+        setNomeAluno('');
+        setAlunoAnalisado(null);
+        setItemSelecionado(null);
+        setBuscandoAluno(false);
+    }, []);
+
+    const handleConfirmarDevolucao = useCallback(async () => {
+        if (devolvendo) return; // segurar Enter (key repeat) dispararia N devoluções
+        const idParaDevolver = alunoAnalisado?.emprestimoAtivo?.id;
+        if (!idParaDevolver) return;
+        try {
+            await registrarDevolucao(idParaDevolver);
+            resetFlow();
+            toast.success('Devolução registrada com sucesso!');
+        } catch (err) {
+            toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
+        }
+    }, [devolvendo, alunoAnalisado, registrarDevolucao, resetFlow, toast]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (step === 4 && e.key === 'Enter') {
+                e.preventDefault();
+                handleConfirmarDevolucao();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [step, handleConfirmarDevolucao]);
+
+    const handleBiparMatricula = async (e) => {
+        e.preventDefault();
+        const mat = inputMatricula.trim();
+        if (!mat) return;
+
+        const emprestimoLocal = emprestimosAtivos.find(emp => emp.matricula === mat);
+        if (emprestimoLocal) {
+            setAlunoAnalisado({
+                matricula: mat,
+                nomeCadastrado: emprestimoLocal.nomeAluno,
+                emprestimoAtivo: { id: emprestimoLocal.id, nomeItem: emprestimoLocal.nomeItem }
+            });
+            setStep(4);
+            return;
+        }
+
+        setBuscandoAluno(true);
+        let dadosAluno;
+        try {
+            dadosAluno = await consultarAluno(mat);
+        } catch {
+            // Falha na consulta NÃO pode virar "aluno novo": permanece no passo 1
+            toast.error('Não foi possível consultar a matrícula. Verifique a conexão e tente novamente.');
+            return;
+        } finally {
+            setBuscandoAluno(false);
+        }
+
+        // Cobre empréstimo ativo registrado em outra máquina (lista local desatualizada)
+        if (dadosAluno?.emprestimoAtivo) {
+            setAlunoAnalisado(dadosAluno);
+            setStep(4);
+            return;
+        }
+
+        setAlunoAnalisado(dadosAluno || { matricula: mat, nomeCadastrado: null });
+        setNomeAluno(dadosAluno?.nomeCadastrado || '');
+        setStep(2);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [passo, reiniciar, confirmarDevolucao]);
 
-  const biparCracha = async (e) => {
-    e.preventDefault();
-    const mat = entrada.trim();
-    if (!mat || buscando) return;
-    const local = emprestimosAtivos.find(x => x.matricula === mat);
-    if (local) {
-      setAluno({ matricula: mat, nomeCadastrado: local.nomeAluno, emprestimoAtivo: { id: local.id, nomeItem: local.nomeItem, dataRetirada: local.dataRetirada } });
-      setPasso(4); setEntrada('');
-      return;
-    }
-    setBuscando(true);
-    let dados;
-    try { dados = await consultarAluno(mat); }
-    catch { toast.error('Não foi possível consultar a matrícula. Verifique a conexão e tente de novo.'); setBuscando(false); return; }
-    setBuscando(false);
-    setEntrada('');
-    if (dados?.emprestimoAtivo) { setAluno(dados); setPasso(4); return; }
-    setAluno(dados || { matricula: mat, nomeCadastrado: null });
-    setNomeAluno(dados?.nomeCadastrado || '');
-    setPasso(2);
-  };
+    const handleBiparItem = (e) => {
+        e.preventDefault();
+        const termo = inputItem.trim().toLowerCase();
+        // Termo vazio casaria com qualquer nome via includes('') — Enter acidental emprestaria o 1º item
+        if (!termo) return;
+        const itemEncontrado = itensDisponiveis.find(i =>
+            (i.patrimonio || '').toLowerCase() === termo || (i.nome_item || '').toLowerCase().includes(termo)
+        );
 
-  const executarRetirada = async (item, nome) => {
-    if (retirando) return;
-    try {
-      await registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: aluno.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
-      toast.success(`${item.nome_item} emprestado para ${nome}.`);
-      reiniciar();
-    } catch (err) { toast.error(`Erro ao registrar empréstimo: ${err.message || 'tente novamente.'}`); }
-  };
+        if (itemEncontrado) processarEscolhaItem(itemEncontrado);
+        else {
+            toast.error("Item não encontrado ou não disponível nesta categoria.");
+            setInputItem('');
+        }
+    };
 
-  const escolherItem = (item) => {
-    if (retirando) return; // duplo clique dispararia duas retiradas
-    if (item.status === STATUS_ITEM.MANUTENCAO) { toast.error('Este item está em manutenção.'); return; }
-    if (nomeAluno) executarRetirada(item, nomeAluno);
-    else { setItemSel(item); setPasso(3); }
-  };
+    const processarEscolhaItem = (item) => {
+        if (retirando) return; // duplo clique no card dispararia duas retiradas
+        if (item.status === STATUS_ITEM.MANUTENCAO) return toast.error("Este item está em manutenção.");
+        if (nomeAluno) executarRetirada(item, nomeAluno);
+        else {
+            setItemSelecionado(item);
+            setStep(3);
+        }
+    };
 
-  const biparItem = (e) => {
-    e.preventDefault();
-    const t = normalizar(entrada);
-    if (!t) return;
-    const prontos = itensDisponiveis.filter(i => i.status === STATUS_ITEM.DISPONIVEL);
-    const item = prontos.find(i => normalizar(i.patrimonio) === t) || prontos.find(i => normalizar(i.nome_item).includes(t));
-    if (item) escolherItem(item);
-    else { toast.error('Item não encontrado ou indisponível nesta categoria.'); setEntrada(''); }
-  };
+    const handleSalvarNome = (e) => {
+        e.preventDefault();
+        if (!nomeAluno.trim()) return;
+        executarRetirada(itemSelecionado, nomeAluno.trim());
+    };
 
-  const salvarNome = (e) => {
-    e.preventDefault();
-    if (nomeAluno.trim()) executarRetirada(itemSel, nomeAluno.trim());
-  };
+    const executarRetirada = async (item, nome) => {
+        if (retirando) return;
+        const alunoAtual = alunoAnalisado;
+        try {
+            await registrarRetirada({ categoriaId: item.categoria_id, itemId: item.id, matricula: alunoAtual.matricula, nomeAluno: nome, documento: 'Crachá Retido' });
+            resetFlow();
+            toast.success(`Empréstimo de "${item.nome_item}" registrado!`);
+        } catch (err) {
+            toast.error(`Erro ao registrar empréstimo: ${err.message || 'Tente novamente.'}`);
+        }
+    };
 
-  const passos = [[1, 'Crachá'], [2, 'Item'], [3, 'Confirmar']];
-  const estadoPasso = (n) => {
-    if (passo === 4) return n === 1 ? 'ativo' : '';
-    if (passo === n) return 'ativo';
-    return passo > n ? 'feito' : '';
-  };
-  const prontos = itensDisponiveis.filter(i => i.status === STATUS_ITEM.DISPONIVEL);
+    const handleEnviarManutencao = async (item) => {
+        const motivo = await showPrompt(`Motivo da manutenção para o item: ${item.nome_item}`, '🔧 Enviar para Manutenção');
+        if (motivo) {
+            try {
+                await alterarStatusManutencao(item.id, STATUS_ITEM.MANUTENCAO, motivo);
+                toast.success('Item enviado para manutenção.');
+            } catch (err) {
+                toast.error(`Erro ao enviar para manutenção: ${err.message || 'Tente novamente.'}`);
+            }
+        }
+    };
 
-  return (
-    <section className="card estacao" aria-label="Balcão">
-      <ol className="passos">
-        {passos.map(([n, l]) => <li key={n} className={`passo ${estadoPasso(n)}`}><i>{estadoPasso(n) === 'feito' ? '✓' : n}</i>{l}</li>)}
-      </ol>
-      <div className="est-corpo">
-        {passo === 1 && (
-          <form className="leitor pronto" onSubmit={biparCracha}>
-            <label htmlFor="emp-inp"><ScanBarcode size={18} />Bipe o crachá do aluno</label>
-            <input id="emp-inp" ref={inputRef} className="inp leitor-inp" autoComplete="off" inputMode="numeric" placeholder={buscando ? 'consultando…' : 'matrícula'} value={entrada} onChange={(e) => setEntrada(e.target.value)} disabled={buscando} />
-            <p className="leitor-st">{buscando ? <LoaderCircle size={14} className="girando" /> : <span className="pt" />}{buscando ? 'Consultando a matrícula…' : 'Leitor pronto. Se o aluno estiver com um item, a devolução abre sozinha.'}</p>
-          </form>
-        )}
+    const handleLiberarManutencao = async (item) => {
+        const confirmado = await showConfirm(`Liberar "${item.nome_item}" para empréstimo?`, 'Liberação');
+        if (confirmado) {
+            try {
+                await alterarStatusManutencao(item.id, STATUS_ITEM.DISPONIVEL, null);
+                toast.success('Item liberado!');
+            } catch (err) {
+                toast.error(`Erro ao liberar item: ${err.message || 'Tente novamente.'}`);
+            }
+        }
+    };
 
-        {passo === 4 && aluno && (
-          <>
-            <div className="aluno-card"><span className="avatar">{iniciais(aluno.nomeCadastrado)}</span><div><b>{aluno.nomeCadastrado || 'Aluno'}</b><small>Matrícula {aluno.matricula}</small></div></div>
-            <div className="devol">
-              <span className="chip media">Devolução{aluno.emprestimoAtivo?.dataRetirada ? ` · retirado às ${horaDe(aluno.emprestimoAtivo.dataRetirada)}` : ''}</span>
-              <span className="item-nome">{aluno.emprestimoAtivo?.nomeItem}</span>
-              <button className="btn pri lg" style={{ width: '100%' }} onClick={confirmarDevolucao} disabled={devolvendo}>
-                <Check size={18} />{devolvendo ? 'Registrando…' : <>Confirmar devolução <kbd className="kbd" style={{ marginLeft: 6 }}>Enter</kbd></>}
-              </button>
+    const itensProntos = itensDisponiveis.filter(i => i.status === STATUS_ITEM.DISPONIVEL);
+    const itensQuebrados = itensDisponiveis.filter(i => i.status === STATUS_ITEM.MANUTENCAO);
+
+    return (
+        <div className="wizard-panel">
+            <div className={`wizard-header step-${step}`}>
+                <h3>
+                    {step === 1 && "PASSO 1: Bipar Crachá"}
+                    {step === 2 && "PASSO 2: Bipar Jogo"}
+                    {step === 3 && "PASSO 3: Registrar Nome"}
+                    {step === 4 && "DEVOLUÇÃO DE ITEM"}
+                </h3>
             </div>
-            <button className="btn fant" onClick={reiniciar}>Cancelar (Esc)</button>
-          </>
-        )}
 
-        {passo === 2 && aluno && (
-          <>
-            <div className="aluno-card">
-              <span className="avatar">{nomeAluno ? iniciais(nomeAluno) : '?'}</span>
-              <div><b>{nomeAluno || 'Aluno novo'}</b><small>Matrícula {aluno.matricula}{nomeAluno ? ' · sem item em aberto' : ' · o nome é pedido ao confirmar'}</small></div>
+            <div className="wizard-content">
+                {step > 1 && <button onClick={resetFlow} className="btn-cancelar-flow">CANCELAR</button>}
+
+                {step === 1 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <form onSubmit={handleBiparMatricula} style={{ textAlign: 'center', marginBottom: '24px' }}>
+                            <div style={{ fontSize: '48px', opacity: 0.5, marginBottom: '16px' }}>💳</div>
+                            <input
+                                ref={inputMatriculaRef} type="text" value={inputMatricula} 
+                                onChange={e => setInputMatricula(e.target.value)} disabled={buscandoAluno}
+                                placeholder={buscandoAluno ? "Consultando..." : "Bipe o crachá do aluno..."}
+                                className="input-bipar matricula"
+                                style={{ opacity: buscandoAluno ? 0.6 : 1 }}
+                            />
+                        </form>
+
+                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px', fontWeight: 'bold' }}>GERENCIAR ESTOQUE</div>
+                            
+                            {categorias.length > 1 && (
+                                <div className="categorias-scroll">
+                                    {categorias.map(c => (
+                                        <button key={c.id} onClick={() => setCategoriaSel(c.id)} className={`btn-categoria ${categoriaSel === c.id ? 'ativa' : ''}`}>
+                                            {c.nome}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {itensDisponiveis.length === 0 && <div className="empty-st" style={{padding: '20px'}}>Nenhum item nesta categoria.</div>}
+                                
+                                {itensProntos.map(item => (
+                                    <div key={item.id} className="item-card-mini">
+                                        <div>
+                                            <div className="nome">{item.nome_item}</div>
+                                            <div className="cod">Cód: {item.patrimonio}</div>
+                                        </div>
+                                        <button onClick={() => handleEnviarManutencao(item)} disabled={alterandoStatus} title="Enviar para manutenção" className="btn-icon-action">🔧</button>
+                                    </div>
+                                ))}
+
+                                {itensQuebrados.map(item => (
+                                    <div key={item.id} className="item-card-mini manutencao">
+                                        <div>
+                                            <div className="nome">⚠️ {item.nome_item}</div>
+                                            <div className="cod">{item.observacoes || 'Manutenção'}</div>
+                                        </div>
+                                        <button onClick={() => handleLiberarManutencao(item)} disabled={alterandoStatus} className="btn-liberar">✓ Liberar</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {step === 2 && alunoAnalisado && (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="card-aluno-identificado">
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '4px' }}>ALUNO IDENTIFICADO</div>
+                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text)' }}>👤 {nomeAluno || 'Novo Cadastro'}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--blue)', fontFamily: 'var(--mono)', marginTop: '4px' }}>Matrícula: {alunoAnalisado.matricula}</div>
+                        </div>
+
+                        <form onSubmit={handleBiparItem} style={{ marginBottom: '24px' }}>
+                            <label style={{ fontSize: '12px', color: 'var(--green)', display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>BIPE O ITEM</label>
+                            <input ref={inputItemRef} type="text" value={inputItem} onChange={e => setInputItem(e.target.value)} placeholder="Código de barras..." className="input-bipar item" />
+                        </form>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', overflowY: 'auto', maxHeight: '200px' }}>
+                            {itensProntos.map(item => (
+                                <div key={item.id} onClick={() => processarEscolhaItem(item)} className="item-card-mini" style={{ padding: '12px' }}>
+                                    <div>
+                                        <div className="nome">{item.nome_item}</div>
+                                        <div className="cod">Cód: {item.patrimonio}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {step === 3 && itemSelecionado && (
+                    <form onSubmit={handleSalvarNome} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
+                        <div className="card-aluno-identificado" style={{ textAlign: 'center', marginBottom: '30px' }}>
+                            <div style={{ fontSize: '40px', marginBottom: '10px' }}>📦</div>
+                            <div style={{ color: 'var(--amber)', fontSize: '20px', fontWeight: 'bold' }}>{itemSelecionado.nome_item}</div>
+                        </div>
+
+                        <label style={{ fontSize: '13px', color: 'var(--purple)', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>NOME DO NOVO ALUNO:</label>
+                        <input ref={inputNomeRef} type="text" value={nomeAluno} onChange={e => setNomeAluno(e.target.value)} placeholder="Ex: João da Silva..." className="input-bipar nome" style={{ marginBottom: '20px' }} />
+
+                        <button type="submit" disabled={retirando} className="btn-action-primary">{retirando ? '⏳ Registrando...' : 'Confirmar e Emprestar'}</button>
+                    </form>
+                )}
+
+                {step === 4 && alunoAnalisado && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                        <div className="card-aluno-identificado destaque-devolucao">
+                            <div style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--text)' }}>👤 {alunoAnalisado.nomeCadastrado}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'var(--mono)', margin: '4px 0 24px 0' }}>Matrícula: {alunoAnalisado.matricula}</div>
+                            
+                            <div style={{ fontSize: '50px', marginBottom: '10px' }}>📦</div>
+                            <h3 style={{ color: 'var(--amber)', margin: '0 0 10px 0' }}>Item a Devolver:</h3>
+                            <p style={{ fontSize: '24px', fontWeight: '900', color: 'var(--text)', margin: '0 0 30px 0' }}>{alunoAnalisado.emprestimoAtivo.nomeItem}</p>
+                            
+                            <button onClick={handleConfirmarDevolucao} disabled={devolvendo} className="btn-action-primary large">{devolvendo ? '⏳ Registrando...' : '✓ APERTE ENTER OU CLIQUE'}</button>
+                        </div>
+                    </div>
+                )}
             </div>
-            <form className="leitor pronto" onSubmit={biparItem}>
-              <label htmlFor="emp-inp"><ScanBarcode size={18} />Bipe o item</label>
-              <input id="emp-inp" ref={inputRef} className="inp leitor-inp" autoComplete="off" placeholder="código ou nome" value={entrada} onChange={(e) => setEntrada(e.target.value)} />
-              <p className="leitor-st"><span className="pt" />Ou escolha abaixo.</p>
-            </form>
-            {categorias.length > 1 && (
-              <div className="filtros">{categorias.map(c => <button key={c.id} className="f-chip" aria-pressed={categoriaSel === c.id} onClick={() => setCategoriaSel(c.id)}>{c.nome}</button>)}</div>
-            )}
-            <div className="itens-grid">
-              {prontos.length === 0 && <div className="vazio" style={{ gridColumn: '1 / -1' }}>Nada disponível nesta categoria.</div>}
-              {prontos.map(i => <button key={i.id} className="item-btn" onClick={() => escolherItem(i)} disabled={retirando}><b>{i.nome_item}</b><small>{i.patrimonio}</small></button>)}
+        </div>
+    );
+};
+
+
+const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, loadingHistorico, registrarDevolucao, devolvendo }) => {
+    const { toast, showConfirm } = useUI();
+
+    const handleDevolucaoDireta = async (emprestimoId, nomeItem) => {
+        if (devolvendo) return;
+        const confirmado = await showConfirm(`Confirma a devolução do item: ${nomeItem}?`, '⬇️ Receber Devolução');
+        if (confirmado) {
+            try {
+                await registrarDevolucao(emprestimoId);
+                toast.success('Devolução concluída!');
+            } catch (err) {
+                toast.error(`Erro ao registrar devolução: ${err.message || 'Tente novamente.'}`);
+            }
+        }
+    };
+
+    const emprestimosOrdenados = [...emprestimosAtivos].sort((a, b) => new Date(b.dataRetirada) - new Date(a.dataRetirada));
+
+    return (
+        <div className="registros-panel">
+            <div className="abas-container">
+                <button onClick={() => setAbaAtiva('ativos')} className={`aba-btn ${abaAtiva === 'ativos' ? 'ativa' : ''}`}>Em Andamento ({emprestimosOrdenados.length})</button>
+                <button onClick={() => setAbaAtiva('historico')} className={`aba-btn ${abaAtiva === 'historico' ? 'ativa' : ''}`}>Histórico Recente</button>
             </div>
-            <button className="btn fant" onClick={reiniciar}>Cancelar (Esc)</button>
-          </>
-        )}
 
-        {passo === 3 && itemSel && (
-          <>
-            <div className="aluno-card"><span className="avatar">?</span><div><b>Aluno novo</b><small>Matrícula {aluno.matricula} · {itemSel.nome_item} ({itemSel.patrimonio})</small></div></div>
-            <form className="campo" onSubmit={salvarNome}>
-              <label htmlFor="emp-inp">Nome do aluno</label>
-              <input id="emp-inp" ref={inputRef} className="inp" style={{ height: 48, fontSize: 17 }} placeholder="Nome completo" autoComplete="off" value={nomeAluno} onChange={(e) => setNomeAluno(e.target.value)} />
-              <span className="dica">Fica salvo: na próxima vez o crachá já traz o nome.</span>
-              <button className="btn pri lg" style={{ marginTop: 8 }} disabled={retirando || !nomeAluno.trim()}>{retirando ? 'Registrando…' : 'Confirmar empréstimo'}</button>
-            </form>
-            <button className="btn fant" onClick={reiniciar}>Cancelar (Esc)</button>
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function EmUso({ emprestimosAtivos, historico, registrarDevolucao, devolvendo }) {
-  const { toast, showConfirm } = useUI();
-  const ordenados = [...emprestimosAtivos].sort((a, b) => new Date(a.dataRetirada) - new Date(b.dataRetirada));
-
-  // Feed dos dois balcões: retiradas em aberto + devoluções recentes
-  const feed = useMemo(() => {
-    const ev = [
-      ...emprestimosAtivos.map(e => ({ quando: e.dataRetirada, resp: e.responsavel, txt: `emprestou ${e.nomeItem} para ${e.nomeAluno}` })),
-      ...historico.filter(h => h.dataDevolucao).map(h => ({ quando: h.dataDevolucao, resp: h.responsavel, txt: `recebeu ${h.nomeItem} de ${h.nomeAluno}` })),
-    ];
-    return ev.sort((a, b) => new Date(b.quando) - new Date(a.quando)).slice(0, 6);
-  }, [emprestimosAtivos, historico]);
-
-  const receber = async (emp) => {
-    if (devolvendo) return;
-    const ok = await showConfirm(`${emp.nomeAluno} está devolvendo ${emp.nomeItem}?`, 'Receber devolução', { confirmar: 'Receber' });
-    if (!ok) return;
-    try { await registrarDevolucao(emp.id); toast.success('Devolução registrada.'); }
-    catch (err) { toast.error(`Erro ao registrar devolução: ${err.message || 'tente novamente.'}`); }
-  };
-
-  return (
-    <section className="uso">
-      <div className="tabela-wrap">
-        <table className="dados">
-          <thead><tr><th>Aluno</th><th>Item</th><th>Saída</th><th>Com o aluno há</th><th className="dir">Em uso agora · {ordenados.length}</th></tr></thead>
-          <tbody>
-            {ordenados.length === 0 && <tr><td colSpan={5}><div className="vazio" style={{ margin: 6 }}>Nenhum item emprestado no momento.</div></td></tr>}
-            {ordenados.map(e => (
-              <tr key={e.id}>
-                <td><div className="pessoa"><span className="avatar">{iniciais(e.nomeAluno)}</span><div><b>{e.nomeAluno}</b><small className="mono">{e.matricula}</small></div></div></td>
-                <td><b>{e.nomeItem}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{e.patrimonio}</small></td>
-                <td className="num">{horaDe(e.dataRetirada)}</td>
-                <td><TempoDecorrido dataIso={e.dataRetirada} /></td>
-                <td className="dir"><button className="btn sm" onClick={() => receber(e)} disabled={devolvendo}>Receber</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="card">
-        <div className="card-hd"><Users size={16} /><b>Atividade dos balcões</b><span className="sub" style={{ margin: '0 0 0 auto' }}>últimos registros dos dois computadores</span></div>
-        <div className="card-bd" style={{ paddingTop: 6, paddingBottom: 6 }}>
-          {feed.length === 0 ? <p className="sub">Nenhuma movimentação recente.</p> : (
-            <ul className="feed">
-              {feed.map((f, i) => {
-                const r = lerResponsavel(f.resp);
-                return <li key={i}><span className="num">{horaDe(f.quando)}</span><span><span className="bal">{r.balcao || r.quem || 'Sistema'}</span>{r.balcao && r.quem ? ` · ${r.quem}` : ''} {f.txt}</span></li>;
-              })}
-            </ul>
-          )}
+            <div className="registros-content">
+                {loadingHistorico && emprestimosOrdenados.length === 0 && historico.length === 0 ? (
+                    <div className="empty-st">Carregando dados...</div>
+                ) : abaAtiva === 'ativos' ? (
+                    emprestimosOrdenados.length === 0 ? (
+                        <div className="empty-st" style={{ border: '1px dashed var(--border)', borderRadius: '8px' }}>Nenhum item emprestado no momento.</div>
+                    ) : (
+                        <div className="grid-emprestimos">
+                            {emprestimosOrdenados.map(emp => (
+                                <div key={emp.id} className="emprestimo-card">
+                                    <div className="emp-aluno">👤 {emp.nomeAluno}</div>
+                                    <div className="emp-mat">Matrícula: {emp.matricula}</div>
+                                    <div style={{ flex: 1 }}>
+                                        <div className="emp-item">📦 {emp.nomeItem}</div>
+                                        <div className="emp-cod">Cód: {emp.patrimonio}</div>
+                                    </div>
+                                    <div className="emp-footer">
+                                        <span>🕒 {new Date(emp.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        <span className="tag-tempo"><TempoDecorrido dataIso={emp.dataRetirada} /></span>
+                                    </div>
+                                    <button onClick={() => handleDevolucaoDireta(emp.id, emp.nomeItem)} disabled={devolvendo} className="btn-devolver">⬇️ Receber Devolução</button>
+                                </div>
+                            ))}
+                        </div>
+                    )
+                ) : (
+                    historico.length === 0 ? (
+                        <div className="empty-st" style={{ border: '1px dashed var(--border)', borderRadius: '8px' }}>Nenhum histórico encontrado.</div>
+                    ) : (
+                        <table className="table-historico">
+                            <thead>
+                                <tr>
+                                    <th>Aluno</th>
+                                    <th>Item Devolvido</th>
+                                    <th>Período</th>
+                                    <th>Duração</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {historico.map(h => (
+                                    <tr key={h.id}>
+                                        <td>
+                                            <div className="th-aluno-nome">{h.nomeAluno}</div>
+                                            <div className="th-aluno-mat">Matrícula: {h.matricula}</div>
+                                        </td>
+                                        <td className="th-item">📦 {h.nomeItem}</td>
+                                        <td>
+                                            <div className="th-data">
+                                                <span className="th-data-up">↑</span> {new Date(h.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                            <div className="th-data" style={{ marginTop: '6px' }}>
+                                                {h.dataDevolucao ? (
+                                                    <><span className="th-data-down">↓</span> {new Date(h.dataDevolucao).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+                                                ) : (
+                                                    <span className="tag-status pendente">⏳ Pendente</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            {h.dataDevolucao ? (
+                                                <span className="tag-status concluido">⏳ {calcularDuracaoTotal(h.dataRetirada, h.dataDevolucao)}</span>
+                                            ) : (
+                                                <span className="tag-status em-uso">🟢 Em Uso</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )
+                )}
+            </div>
         </div>
-      </div>
-    </section>
-  );
-}
+    );
+};
 
-function Estoque({ categorias, itensDisponiveis, categoriaSel, setCategoriaSel, alterarStatusManutencao, alterandoStatus, loadingItens, emprestimosAtivos }) {
-  const { toast, showPrompt, showConfirm } = useUI();
-  const enviar = async (item) => {
-    const motivo = await showPrompt(`Por que ${item.nome_item} vai para manutenção?`, 'Enviar para manutenção', { placeholder: 'Ex.: faltam peças', confirmar: 'Enviar' });
-    if (!motivo) return;
-    try { await alterarStatusManutencao(item.id, STATUS_ITEM.MANUTENCAO, motivo); toast.success(`${item.nome_item} foi para manutenção.`); }
-    catch (err) { toast.error(`Erro ao enviar para manutenção: ${err.message || 'tente novamente.'}`); }
-  };
-  const liberar = async (item) => {
-    if (!(await showConfirm(`Liberar ${item.nome_item} para empréstimo?`, 'Liberar item', { confirmar: 'Liberar' }))) return;
-    try { await alterarStatusManutencao(item.id, STATUS_ITEM.DISPONIVEL, null); toast.success(`${item.nome_item} liberado.`); }
-    catch (err) { toast.error(`Erro ao liberar item: ${err.message || 'tente novamente.'}`); }
-  };
-  const emUso = emprestimosAtivos.filter(e => e.itemId).map(e => e.itemId);
-  const ST = { [STATUS_ITEM.DISPONIVEL]: ['livre', 'Disponível'], [STATUS_ITEM.MANUTENCAO]: ['media', 'Manutenção'], [STATUS_ITEM.EMPRESTADO]: ['ocup', 'Em uso'] };
-  return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="filtros">{categorias.map(c => <button key={c.id} className="f-chip" aria-pressed={categoriaSel === c.id} onClick={() => setCategoriaSel(c.id)}>{c.nome}</button>)}</div>
-      {loadingItens ? <Carregando texto="Carregando os itens…" /> : (
-        <div className="estoque">
-          {itensDisponiveis.length === 0 && <div className="vazio" style={{ gridColumn: '1 / -1' }}>Nenhum item nesta categoria.</div>}
-          {itensDisponiveis.map(i => {
-            const st = emUso.includes(i.id) ? STATUS_ITEM.EMPRESTADO : i.status;
-            const [cls, rot] = ST[st] || ['contorno', st];
-            return (
-              <div key={i.id} className={`est-item ${st === STATUS_ITEM.MANUTENCAO ? 'man' : ''}`}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                  <div style={{ minWidth: 0 }}><b>{i.nome_item}</b><br /><small>{i.patrimonio}</small></div>
-                  <span className={`chip ${cls}`}>{rot}</span>
-                </div>
-                {i.observacoes && st === STATUS_ITEM.MANUTENCAO && <small style={{ fontFamily: 'var(--sans)', color: 'var(--media)' }}>{i.observacoes}</small>}
-                <div>
-                  {st === STATUS_ITEM.DISPONIVEL && <button className="btn sm fant" onClick={() => enviar(i)} disabled={alterandoStatus}><Wrench size={14} />Enviar para manutenção</button>}
-                  {st === STATUS_ITEM.MANUTENCAO && <button className="btn sm" onClick={() => liberar(i)} disabled={alterandoStatus}><Check size={14} />Liberar</button>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Historico({ historico, loadingHistorico }) {
-  const [busca, setBusca] = useState('');
-  const t = normalizar(busca);
-  const lista = historico.filter(h => !t || normalizar(`${h.nomeAluno} ${h.matricula} ${h.nomeItem}`).includes(t));
-  return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="campo-busca" style={{ maxWidth: 360 }}><Search size={16} /><input className="inp" placeholder="Buscar aluno, matrícula ou item" value={busca} onChange={(e) => setBusca(e.target.value)} /></div>
-      {loadingHistorico ? <Carregando texto="Carregando o histórico…" /> : (
-        <div className="tabela-wrap">
-          <table className="dados">
-            <thead><tr><th>Aluno</th><th>Item</th><th>Saída</th><th>Volta</th><th>Duração</th><th>Atendido por</th></tr></thead>
-            <tbody>
-              {lista.length === 0 && <tr><td colSpan={6}><div className="vazio" style={{ margin: 6 }}>Nenhum registro encontrado.</div></td></tr>}
-              {lista.map(h => {
-                const r = lerResponsavel(h.responsavel || h.responsavelRetirada);
-                return (
-                  <tr key={h.id}>
-                    <td><b>{h.nomeAluno}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{h.matricula}</small></td>
-                    <td>{h.nomeItem}</td>
-                    <td className="num">{new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</td>
-                    <td className="num">{h.dataDevolucao ? horaDe(h.dataDevolucao) : '—'}</td>
-                    <td>{h.dataDevolucao ? <span className="num">{duracao(Math.floor((new Date(h.dataDevolucao) - new Date(h.dataRetirada)) / 60000))}</span> : <span className="chip ocup">em uso</span>}</td>
-                    <td style={{ color: 'var(--text-2)' }}>{r.balcao ? `${r.balcao} · ${r.quem}` : r.quem}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function MuralEmprestimos({ session }) {
-  const { predioAtivo } = usePredio();
-  const { showPrompt, toast } = useUI();
-  const [categoriaSel, setCategoriaSel] = useState('');
-  const [aba, setAba] = useState('balcao');
-  const [balcao, setBalcao] = useState(lerBalcao);
-  const hook = useEmprestimos(session, predioAtivo, categoriaSel);
+    const { predioAtivo } = usePredio();
+    
+    const [categoriaSel, setCategoriaSel] = useState('');
+    const [abaAtiva, setAbaAtiva] = useState('ativos');
 
-  useEffect(() => {
-    if (hook.categorias.length > 0 && !categoriaSel) setCategoriaSel(hook.categorias[0].id); // eslint-disable-line react-hooks/set-state-in-effect
-  }, [hook.categorias, categoriaSel]);
+    const hookData = useEmprestimos(session, predioAtivo, categoriaSel);
 
-  const nomearBalcao = async () => {
-    const nome = await showPrompt('Como este computador aparece no histórico e no feed? Os dois PCs da recepção usam o mesmo login, então cada um precisa de um nome.', 'Nome deste computador', { placeholder: 'Ex.: Balcão 1', confirmar: 'Salvar' });
-    if (!nome) return;
-    salvarBalcao(nome); setBalcao(lerBalcao());
-    toast.success(`Este computador agora é "${lerBalcao()}".`);
-  };
+    useEffect(() => {
+        if (hookData.categorias.length > 0 && !categoriaSel) {
+            setCategoriaSel(hookData.categorias[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+        }
+    }, [hookData.categorias, categoriaSel]);
 
-  if (!predioAtivo) return <SemPredio />;
-  if (hook.loadingWizard && !hook.categorias.length) return <Carregando texto="Carregando o balcão…" />;
+    if (!predioAtivo) return <div className="empty-st">Selecione um prédio primeiro.</div>;
 
-  return (
-    <div className="pg cheia larga">
-      <div className="pg-hd">
-        <div>
-          <h1 className="t-pg">Empréstimos</h1>
-          <p className="sub">{hook.emprestimosAtivos.length} em uso agora · leitor de código de barras</p>
+    return (
+        <div className="mural-container">
+            <EmprestimoWizard 
+                {...hookData}
+                categoriaSel={categoriaSel}
+                setCategoriaSel={setCategoriaSel}
+            />
+            <PainelRegistros
+                abaAtiva={abaAtiva}
+                setAbaAtiva={setAbaAtiva}
+                emprestimosAtivos={hookData.emprestimosAtivos}
+                historico={hookData.historico}
+                loadingHistorico={hookData.loadingHistorico}
+                registrarDevolucao={hookData.registrarDevolucao}
+                devolvendo={hookData.devolvendo}
+            />
         </div>
-        <button className="sync" style={{ border: 0, cursor: 'pointer' }} onClick={nomearBalcao} title="Os dois computadores da recepção veem as mesmas listas em tempo real. Clique para dar nome a este computador.">
-          <span className="pt" /><Monitor size={14} />{balcao ? `Este computador: ${balcao}` : 'Dar nome a este computador'}
-        </button>
-        <div className="pg-acoes">
-          <Seg rotulo="Seção" valor={aba} onChange={setAba} opcoes={[['balcao', 'Balcão'], ['estoque', 'Estoque'], ['historico', 'Histórico']]} />
-        </div>
-      </div>
-      {aba === 'balcao' && (
-        <div className="balcao">
-          <Balcao {...hook} categoriaSel={categoriaSel} setCategoriaSel={setCategoriaSel} />
-          <EmUso emprestimosAtivos={hook.emprestimosAtivos} historico={hook.historico} registrarDevolucao={hook.registrarDevolucao} devolvendo={hook.devolvendo} />
-        </div>
-      )}
-      {aba === 'estoque' && <Estoque {...hook} categoriaSel={categoriaSel} setCategoriaSel={setCategoriaSel} />}
-      {aba === 'historico' && <Historico historico={hook.historico} loadingHistorico={hook.loadingHistorico} />}
-    </div>
-  );
+    );
 }

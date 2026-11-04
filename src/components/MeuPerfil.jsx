@@ -1,93 +1,194 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { useUI } from '../contexts/UIContext';
-import { useTema } from '../hooks/useTema';
-import { Seg } from './ui/Seg';
+export default function MeuPerfil({ session, onClose }) {
+    const [nome, setNome] = useState('');
+    const [senha, setSenha] = useState('');
+    const [confirmarSenha, setConfirmarSenha] = useState('');
+    const [mostrarSenha, setMostrarSenha] = useState(false);
 
-const nomeDe = (session) => {
-  const meta = session?.user?.user_metadata;
-  return meta?.nome || meta?.name || meta?.full_name || '';
-};
+    const [loading, setLoading] = useState(false);
+    const [mensagem, setMensagem] = useState(null);
 
-// Meu perfil: nome de exibição, senha e tema. Nome e senha são salvos
-// separadamente (supabase.auth.updateUser), cada um com o seu botão.
-export default function MeuPerfil({ session, acesso, isAdmin }) {
-  const { toast } = useUI();
-  const [tema, setTema] = useTema();
-  const [nome, setNome] = useState(() => nomeDe(session));
-  const [senha, setSenha] = useState('');
-  const [confirmar, setConfirmar] = useState('');
-  const [salvandoNome, setSalvandoNome] = useState(false);
-  const [salvandoSenha, setSalvandoSenha] = useState(false);
+    useEffect(() => {
+        if (session?.user) {
+            const meta = session.user.user_metadata;
+            setNome(meta?.nome || meta?.name || meta?.full_name || '');
+        }
+    }, [session]);
 
-  const exibido = nome.trim() || session?.user?.email?.split('@')[0] || 'Usuário';
-  const iniciais = exibido.split(/[\s.]+/).filter(Boolean).map(p => p[0]).slice(0, 2).join('').toUpperCase();
+    const handleSalvar = async (e) => {
+        e.preventDefault();
+        setMensagem(null);
+        if (mostrarSenha) {
+            if (!senha) return setMensagem({ tipo: 'erro', texto: 'Digite a nova senha ou feche a alteração de senha.' });
+            if (senha !== confirmarSenha) return setMensagem({ tipo: 'erro', texto: 'As senhas não coincidem.' });
+            if (senha.length < 6) return setMensagem({ tipo: 'erro', texto: 'A nova senha deve ter pelo menos 6 caracteres.' });
+        }
 
-  const salvarNome = async (e) => {
-    e.preventDefault();
-    setSalvandoNome(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ data: { nome: nome.trim() } });
-      if (error) throw error;
-      toast.success('Nome atualizado.');
-    } catch (err) { toast.error(err.message || 'Não foi possível atualizar o nome.'); }
-    finally { setSalvandoNome(false); }
-  };
+        setLoading(true);
 
-  const salvarSenha = async (e) => {
-    e.preventDefault();
-    if (senha.length < 6) { toast.error('A nova senha precisa ter pelo menos 6 caracteres.'); return; }
-    if (senha !== confirmar) { toast.error('As duas senhas não são iguais.'); return; }
-    setSalvandoSenha(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: senha });
-      if (error) throw error;
-      setSenha(''); setConfirmar('');
-      toast.success('Senha alterada.');
-    } catch (err) { toast.error(err.message || 'Não foi possível alterar a senha.'); }
-    finally { setSalvandoSenha(false); }
-  };
+        try {
+            const updates = {
+                data: { nome: nome.trim() }
+            };
 
-  return (
-    <div className="pg">
-      <div className="perfil">
-        <h1 className="t-pg">Meu perfil</h1>
-        <section className="card perfil-topo">
-          <span className="avatar">{iniciais}</span>
-          <div style={{ minWidth: 0 }}>
-            <b style={{ fontSize: 17 }}>{exibido}</b>
-            <div className="sub">{[acesso?.perfilNome, acesso?.predioNome, isAdmin && 'Administrador'].filter(Boolean).join(' · ')}</div>
-          </div>
-        </section>
+            if (mostrarSenha && senha) {
+                updates.password = senha;
+            }
 
-        <form className="card" onSubmit={salvarNome}>
-          <div className="card-hd"><b>Dados de acesso</b></div>
-          <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="campo"><label htmlFor="pf-nome">Como você quer ser chamado</label><input id="pf-nome" className="inp" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Seu nome" maxLength={120} /></div>
-            <div className="campo"><label htmlFor="pf-email">E-mail de login</label><input id="pf-email" className="inp" value={session?.user?.email || ''} disabled /></div>
-            <div><button className="btn pri" disabled={salvandoNome || nome.trim() === nomeDe(session)}>{salvandoNome ? 'Salvando…' : 'Salvar nome'}</button></div>
-          </div>
-        </form>
+            const { error } = await supabase.auth.updateUser(updates);
+            if (error) throw error;
+            setMensagem({ tipo: 'sucesso', texto: 'Perfil atualizado com sucesso!' });
 
-        <form className="card" onSubmit={salvarSenha}>
-          <div className="card-hd"><b>Trocar senha</b></div>
-          <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div className="linha-campos">
-              <div className="campo"><label htmlFor="pf-s1">Nova senha</label><input id="pf-s1" className="inp" type="password" autoComplete="new-password" placeholder="mínimo 6 caracteres" value={senha} onChange={(e) => setSenha(e.target.value)} /></div>
-              <div className="campo"><label htmlFor="pf-s2">Confirmar</label><input id="pf-s2" className="inp" type="password" autoComplete="new-password" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} /></div>
+            setTimeout(() => {
+                if (onClose) onClose();
+            }, 1200);
+
+        } catch (error) {
+            setMensagem({ tipo: 'erro', texto: error.message || 'Erro ao atualizar os dados.' });
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div style={{ padding: '24px', color: 'var(--text)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', height: '100%', overflowY: 'auto' }}>
+
+            <div style={{ width: '100%', maxWidth: '450px', background: 'var(--surface, #1e293b)', padding: '32px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2)', marginTop: '20px' }}>
+
+                <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+                    <div style={{ width: '70px', height: '70px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', margin: '0 auto 16px auto', border: '2px solid rgba(59, 130, 246, 0.3)' }}>
+                        👤
+                    </div>
+                    <h2 style={{ margin: '0 0 8px 0', color: '#f8fafc' }}>Meu Perfil</h2>
+                    <p style={{ margin: 0, fontSize: '14px', color: 'var(--muted)' }}>Gerencie suas informações de acesso.</p>
+                </div>
+
+                {mensagem && (
+                    <div style={{
+                        padding: '12px', marginBottom: '24px', borderRadius: '6px', fontSize: '14px', textAlign: 'center', fontWeight: 'bold',
+                        background: mensagem.tipo === 'sucesso' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        color: mensagem.tipo === 'sucesso' ? '#10b981' : '#ef4444',
+                        border: `1px solid ${mensagem.tipo === 'sucesso' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                    }}>
+                        {mensagem.texto}
+                    </div>
+                )}
+
+                <form onSubmit={handleSalvar} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block', color: '#94a3b8' }}>E-MAIL INSTITUCIONAL (LOGIN)</label>
+                        <input
+                            type="email"
+                            value={session?.user?.email || ''}
+                            disabled
+                            style={{
+                                width: '100%', padding: '12px', borderRadius: '6px',
+                                background: 'rgba(0,0,0,0.2)', color: 'var(--muted)',
+                                border: '1px solid var(--border)', outline: 'none', cursor: 'not-allowed'
+                            }}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block', color: '#e2e8f0' }}>NOME COMPLETO</label>
+                        <input
+                            type="text"
+                            value={nome}
+                            onChange={e => setNome(e.target.value)}
+                            placeholder="Como você quer ser chamado?"
+                            required
+                            style={{
+                                width: '100%', padding: '12px', borderRadius: '6px',
+                                background: 'rgba(255,255,255,0.05)', color: '#fff',
+                                border: '1px solid var(--border)', outline: 'none', transition: 'border-color 0.2s'
+                            }}
+                            onFocus={e => e.target.style.borderColor = '#3b82f6'}
+                            onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                        />
+                    </div>
+
+                    <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '10px 0' }}></div>
+                    {!mostrarSenha ? (
+                        <button
+                            type="button"
+                            onClick={() => setMostrarSenha(true)}
+                            style={{
+                                background: 'transparent', border: '1px dashed var(--border)', color: '#94a3b8',
+                                padding: '12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseOver={e => { e.currentTarget.style.borderColor = '#60a5fa'; e.currentTarget.style.color = '#60a5fa'; }}
+                            onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = '#94a3b8'; }}
+                        >
+                            🔑 Trocar minha senha de acesso
+                        </button>
+                    ) : (
+                        <div style={{ background: 'rgba(0,0,0,0.1)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#fbbf24', margin: 0 }}>🔒 NOVA SENHA</label>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMostrarSenha(false); setSenha(''); setConfirmarSenha(''); setMensagem(null); }}
+                                    style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+
+                            <input
+                                type="password"
+                                value={senha}
+                                onChange={e => setSenha(e.target.value)}
+                                placeholder="Digite a nova senha"
+                                autoFocus
+                                style={{
+                                    width: '100%', padding: '12px', borderRadius: '6px',
+                                    background: 'rgba(255,255,255,0.05)', color: '#fff',
+                                    border: '1px solid var(--border)', outline: 'none', marginBottom: '12px'
+                                }}
+                            />
+
+                            <input
+                                type="password"
+                                value={confirmarSenha}
+                                onChange={e => setConfirmarSenha(e.target.value)}
+                                placeholder="Confirme a nova senha"
+                                style={{
+                                    width: '100%', padding: '12px', borderRadius: '6px',
+                                    background: 'rgba(255,255,255,0.05)', color: '#fff',
+                                    border: '1px solid var(--border)', outline: 'none'
+                                }}
+                            />
+                        </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                        {onClose && (
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                disabled={loading}
+                                style={{
+                                    flex: 1, padding: '14px', background: 'transparent', color: '#94a3b8',
+                                    border: '1px solid #475569', borderRadius: '6px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 'bold'
+                                }}
+                            >
+                                Voltar
+                            </button>
+                        )}
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            style={{
+                                flex: 2, padding: '14px', background: loading ? '#64748b' : '#3b82f6',
+                                color: '#fff', border: 'none', borderRadius: '6px',
+                                cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '15px'
+                            }}
+                        >
+                            {loading ? 'Salvando...' : 'Salvar Perfil'}
+                        </button>
+                    </div>
+
+                </form>
             </div>
-            <div><button className="btn" disabled={salvandoSenha || !senha}>{salvandoSenha ? 'Alterando…' : 'Trocar senha'}</button></div>
-          </div>
-        </form>
-
-        <section className="card">
-          <div className="card-hd"><b>Preferências deste navegador</b></div>
-          <div className="card-bd" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ flex: 1 }}>Tema da interface</span>
-            <Seg rotulo="Tema" valor={tema} onChange={setTema} opcoes={[['claro', 'Claro'], ['escuro', 'Escuro']]} />
-          </div>
-        </section>
-      </div>
-    </div>
-  );
+        </div>
+    );
 }
