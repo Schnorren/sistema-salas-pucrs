@@ -1,10 +1,9 @@
 import avisosRepository from '../repositories/avisos.repository.js';
 import { ErroPublico } from '../utils/http.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
-import { PERIOD_OPTIONS } from '../utils/timeHelpers.js';
+import { separarCodigosPeriodo } from '../utils/timeHelpers.js';
 
 const PRIORIDADES = ['ALTA', 'NORMAL', 'BAIXA'];
-const CODIGOS_PERIODO = new Set(PERIOD_OPTIONS.map(p => p.code));
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function textoObrigatorio(valor, campo, max) {
@@ -63,10 +62,12 @@ class AvisosService {
         const base = { status: 'ATIVO', criado_por: user.id, predio_id };
 
         if (dados.tipo === 'CHAVE') {
-            const periodo = textoObrigatorio(dados.periodo, 'Períodos', 20).toUpperCase();
-            if ([...periodo].some(letra => !CODIGOS_PERIODO.has(letra))) {
-                throw new ErroPublico('Períodos inválidos: use as letras da grade PUCRS.');
+            const codigos = separarCodigosPeriodo(textoObrigatorio(dados.periodo, 'Períodos', 20));
+            if (!codigos?.length) {
+                throw new ErroPublico('Períodos inválidos: use os códigos da grade PUCRS (A–P, E1).');
             }
+            // Normalizado: ordem da grade, sem repetição ("E1E" → "EE1")
+            const periodo = codigos.join('');
             const data_prevista = textoObrigatorio(dados.data_prevista, 'Data prevista', 10);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(data_prevista)) {
                 throw new ErroPublico('Data prevista inválida.');
