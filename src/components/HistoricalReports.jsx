@@ -9,6 +9,7 @@ import { usePredio } from '../contexts/PredioContext';
 const COLORS = ['#3b82f6', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#06b6d4', '#ec4899'];
 const DAYS_OPTIONS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 import { PERIOD_OPTIONS } from '../../backend_core/utils/timeHelpers';
+import { TAMANHO_MAX_PDF, TAMANHO_MAX_PDF_TEXTO } from '../../backend_core/utils/limites';
 
 class LocalErrorBoundary extends Component {
     constructor(props) { super(props); this.state = { hasError: false, errorMsg: '' }; }
@@ -80,6 +81,12 @@ function HistoricalReportsCore({ session, acesso }) {
             return;
         }
 
+        if (file.size > TAMANHO_MAX_PDF) {
+            setErrorMsg(`O PDF passa do limite de ${TAMANHO_MAX_PDF_TEXTO}. Exporte só a agenda da semana.`);
+            target.value = '';
+            return;
+        }
+
         setLoading(true);
         setErrorMsg('');
 
@@ -100,7 +107,7 @@ function HistoricalReportsCore({ session, acesso }) {
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.detail || errData.error || `Erro ${res.status}`);
+                throw new Error(errData.error || errData.detail || (res.status === 413 ? `O PDF passa do limite de ${TAMANHO_MAX_PDF_TEXTO}.` : `Erro ${res.status}`));
             }
 
             const rawData = await res.json();

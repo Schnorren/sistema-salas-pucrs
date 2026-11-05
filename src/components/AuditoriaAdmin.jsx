@@ -31,6 +31,7 @@ const ACOES = {
     'contatos.curso_remover': 'Curso removido',
     'excluir_aviso': 'Aviso apagado',
     'grade.salas.visibilidade': 'Salas exibidas/ocultadas',
+    'grade.importar': 'Grade importada (PDF)',
 };
 
 const CATEGORIAS = [
@@ -71,6 +72,10 @@ function resumir(item, nomeModulo) {
         case 'admin.usuario.atualizar': return [modulos && `módulos: ${modulos}`, d.senhaAlterada && 'senha alterada'].filter(Boolean).join(' · ');
         case 'contatos.curso_adicionar':
         case 'contatos.curso_remover': return [d.curso, d.contato].filter(Boolean).join(' · ');
+        case 'grade.importar': return [
+            Number.isFinite(d.aulas) && `${d.aulas} períodos de aula`,
+            d.salasNovas?.length && `salas novas: ${d.salasNovas.join(', ')}`,
+        ].filter(Boolean).join(' · ');
         case 'grade.salas.visibilidade': return [
             d.exibidas?.length && `exibidas: ${d.exibidas.join(', ')}`,
             d.ocultadas?.length && `ocultadas: ${d.ocultadas.join(', ')}`,

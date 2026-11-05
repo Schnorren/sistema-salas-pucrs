@@ -38,6 +38,9 @@ const ORDEM = [
   'rls_policies.sql',
   // Views não passam pela RLS: só a service role pode lê-las.
   'views_privilegios.sql',
+  // Importação do PDF troca a grade do prédio numa transação só
+  'grade_substituir_rpc.sql',
+  'indices_desempenho.sql',
   'auditoria_log.sql',
   // Remove as RPCs da v1. Só depois do deploy do código v2 — ver o cabeçalho do arquivo.
   'emprestimos_limpeza.sql',

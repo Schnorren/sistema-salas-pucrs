@@ -6,6 +6,7 @@ import { avisarGradeRepublicada } from '../hooks/useGrade';
 import { useSalasPredio } from '../hooks/useSalasPredio';
 import { ROTAS } from '../rotas';
 import DecisaoSalasNovas from './DecisaoSalasNovas';
+import { TAMANHO_MAX_PDF, TAMANHO_MAX_PDF_TEXTO } from '../../backend_core/utils/limites';
 
 // Etapas exibidas durante a importação. O backend processa tudo numa única
 // requisição (sem eventos de progresso), então só o envio tem progresso real;
@@ -91,6 +92,13 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             return;
         }
 
+        // Acima disso a Vercel recusa o envio com uma resposta que nem é JSON
+        if (file.size > TAMANHO_MAX_PDF) {
+            toast.error(`O PDF passa do limite de ${TAMANHO_MAX_PDF_TEXTO}. Exporte só a agenda da semana.`);
+            e.target.value = null;
+            return;
+        }
+
         const idParaUpload = predioAtivo || acesso?.predioId;
         if (!idParaUpload) {
             toast.error('Selecione um prédio no menu superior antes de fazer o upload.');
@@ -144,7 +152,9 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
                     let corpo = {};
                     try { corpo = JSON.parse(xhr.responseText); } catch { /* resposta sem JSON cai no erro genérico */ }
                     if (xhr.status >= 200 && xhr.status < 300) resolve(corpo);
-                    else reject(new Error(corpo.error || 'Erro no servidor ou permissão negada'));
+                    else reject(new Error(corpo.error || (xhr.status === 413
+                        ? `O PDF passa do limite de ${TAMANHO_MAX_PDF_TEXTO}.`
+                        : 'Erro no servidor ou permissão negada')));
                 };
                 xhr.onerror = () => reject(new Error('Falha de conexão ao enviar o arquivo.'));
                 xhr.send(formData);
