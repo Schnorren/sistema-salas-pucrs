@@ -538,7 +538,7 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
             {filteredTimeline.length === 0 ? (
               <div className="empty-st">Nenhuma sala ou aula encontrada para "{filtro}".</div>
             ) : (
-              <MiniGrade linhas={filteredTimeline} periodos={dataProcessed.periodosCabecalho} trocas={trocasAtivas} onAbrirSala={abrirSala} />
+              <MiniGrade linhas={filteredTimeline} periodos={dataProcessed.periodosCabecalho} trocas={trocasAtivas} onAbrirSala={abrirSala} onAbrirAula={abrirAula} />
             )}
           </>
         )}

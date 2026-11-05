@@ -62,19 +62,27 @@ export function itensDaAgenda(slots) {
   return itens;
 }
 
-// O que dizer embaixo da faixa de uma sala.
-//   idxAgora: índice do período atual, ou -1 (outro dia / fora do horário)
-//   inicios:  horário de início de cada um dos 16 períodos
-// Resultado: { tipo: 'agora', bloco, troca } | { tipo: 'livre', bloco, inicio }
-//          | { tipo: 'livreResto' } | { tipo: 'dia', bloco, inicio, total } | { tipo: 'vazia' }
-export function resumoDaLinha(slots, trocas, idxAgora, inicios) {
-  const blocos = itensDaAgenda(slots).filter((item) => !item.livre);
-  if (!blocos.length) return { tipo: 'vazia' };
-  if (idxAgora >= 0) {
-    const atual = blocos.find((b) => idxAgora >= b.ini && idxAgora <= b.fim);
-    if (atual) return { tipo: 'agora', bloco: atual, troca: trocaDoSlot(slots[idxAgora], trocas) };
-    const proxima = blocos.find((b) => b.ini > idxAgora);
-    return proxima ? { tipo: 'livre', bloco: proxima, inicio: inicios[proxima.ini] } : { tipo: 'livreResto' };
-  }
-  return { tipo: 'dia', bloco: blocos[0], inicio: inicios[blocos[0].ini], total: blocos.length };
+// Blocos da mini-grade com nome: cada segmento da faixa (segmentosDaLinha)
+// com o que é preciso para desenhar a aula dentro dele — os períodos (letras),
+// qual deles é o atual, o nome da disciplina e a troca de sala que vale nele.
+// `continua` = mesmo bloco de aula do segmento anterior (troca que cobre só
+// parte da aula divide o bloco em dois).
+export function blocosDaFaixa(slots, trocas) {
+  let chaveAnterior = null;
+  return segmentosDaLinha(slots, trocas).map((seg) => {
+    const continua = !!seg.chave && seg.chave === chaveAnterior;
+    chaveAnterior = seg.chave;
+    if (seg.tipo === 'livre') return { ...seg, livre: true, periodo: slots[seg.ini].periodo };
+    const doBloco = slots.slice(seg.ini, seg.fim + 1);
+    const primeiro = doBloco[0];
+    return {
+      ...seg,
+      livre: false,
+      continua,
+      periodos: doBloco.map((s) => s.periodo),
+      idxAgora: doBloco.findIndex((s) => s.isAgora),
+      nome: primeiro.aulaParseada?.nomeAula || primeiro.nome || '',
+      troca: seg.tipo === 'troca' ? trocas?.[seg.chave] || null : null,
+    };
+  });
 }

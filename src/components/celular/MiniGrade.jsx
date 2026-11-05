@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { PERIODS } from '../../../backend_core/utils/timeHelpers';
-import { segmentosDaLinha, resumoDaLinha } from '../../utils/miniGrade';
+import { segmentosDaLinha, blocosDaFaixa } from '../../utils/miniGrade';
 
-const INICIOS = PERIODS.map(p => p.lb);
 // Largura de cada período na mini-grade + espaço entre eles (src/celular.css:
 // --col e --gap de .cel-mg-rolagem). Usado para abrir já no período atual.
-const COLUNA_PX = 34;
+const COLUNA_PX = 56;
 const ESPACO_PX = 4;
 
-// Faixa dos 16 períodos de uma sala: uma célula por período, com a letra
-// dentro. Azul = aula, roxo = interno, vermelho = troca de sala, contorno
-// dourado = período atual. Períodos da mesma aula ficam colados, separados
-// por uma linha fina; aulas diferentes ficam separadas por um espaço.
+// Turno a partir do período (índice 0–15): a tarde começa no F (6) e a noite
+// no L (12). Os blocos da tarde/noite são deslocados para abrir um espaço
+// entre os turnos (src/celular.css, .t2/.t3).
+const turno = (i) => (i >= 12 ? ' t3' : i >= 6 ? ' t2' : '');
+
+// Faixa compacta dos 16 períodos (agenda da sala): uma célula por período,
+// com a letra dentro. Azul = aula, roxo = interno, vermelho = troca de sala,
+// contorno dourado = período atual.
 export function Faixa({ slots, trocas }) {
     const celulas = [];
     segmentosDaLinha(slots, trocas).forEach(seg => {
@@ -31,28 +33,49 @@ export function Faixa({ slots, trocas }) {
     );
 }
 
-const Resumo = ({ resumo }) => {
-    switch (resumo.tipo) {
-        case 'agora':
-            return (
-                <>
-                    <em>agora</em> {resumo.bloco.nome}
-                    {resumo.troca && <strong> → P.{resumo.troca.predio_destino} · {resumo.troca.sala_destino}</strong>}
-                </>
-            );
-        case 'livre': return <>livre agora · {resumo.inicio} {resumo.bloco.nome}</>;
-        case 'livreResto': return <>livre o resto do dia</>;
-        case 'dia': return <>{resumo.total} {resumo.total > 1 ? 'aulas' : 'aula'} · a 1ª às {resumo.inicio} · {resumo.bloco.nome}</>;
-        default: return <>sem aulas neste dia</>;
-    }
-};
+// Faixa da mini-grade: cada aula é um bloco com as letras dos períodos no alto
+// (divisória fina entre eles), o nome da disciplina e, se houver, a troca de
+// sala. Tocar na aula abre os detalhes dela (como clicar na grade do computador).
+function FaixaComNomes({ slots, trocas, onAbrirAula }) {
+    return (
+        <div className="cel-mg-faixa">
+            {blocosDaFaixa(slots, trocas).map(b => {
+                const coluna = { gridColumn: `${b.ini + 1} / span ${b.fim - b.ini + 1}` };
+                if (b.livre) {
+                    return (
+                        <span key={b.ini} aria-hidden="true" className={`cel-mg-vazio${slots[b.ini].isAgora ? ' agora' : ''}${turno(b.ini)}`} style={coluna}>
+                            {b.periodo}
+                        </span>
+                    );
+                }
+                return (
+                    <button
+                        key={b.ini}
+                        type="button"
+                        className={`cel-mg-aula ${b.tipo}${b.continua ? ' cont' : ''}${b.idxAgora >= 0 ? ' agora' : ''}${turno(b.ini)}`}
+                        style={coluna}
+                        onClick={(e) => { e.stopPropagation(); onAbrirAula(b.chave); }}
+                        aria-label={`${b.nome}, períodos ${b.periodos.join(' ')}${b.troca ? `, trocada para o prédio ${b.troca.predio_destino}, sala ${b.troca.sala_destino}` : ''}`}
+                    >
+                        <span className="pers" style={{ gridTemplateColumns: `repeat(${b.periodos.length}, var(--col))` }}>
+                            {b.periodos.map((p, i) => <span key={p} className={i === b.idxAgora ? 'agora' : undefined}>{p}</span>)}
+                        </span>
+                        {b.troca && <span className="troca-faixa">🔁 P.{b.troca.predio_destino} · {b.troca.sala_destino}</span>}
+                        <span className="nome">{b.nome}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
 
-// Linha do tempo no celular: salas × 16 períodos, rolando para os lados (a
-// coluna da sala fica parada). Abre já no período atual. Embaixo de cada
-// sala, o que acontece agora ou a próxima aula. Tocar abre a agenda da sala.
+// Linha do tempo no celular: salas × 16 períodos com o nome de cada aula,
+// rolando para os lados (a coluna da sala fica parada). Abre já no período
+// atual. Tocar numa aula abre os detalhes; tocar na sala (ou num horário
+// livre) abre a agenda do dia da sala.
 //   linhas   = dataProcessed.timeline da Timeline (já filtrada)
 //   periodos = dataProcessed.periodosCabecalho
-export default function MiniGrade({ linhas, periodos, trocas, onAbrirSala }) {
+export default function MiniGrade({ linhas, periodos, trocas, onAbrirSala, onAbrirAula }) {
     const idxAgora = periodos.findIndex(p => p.isAgora);
     const rolagem = useRef(null);
 
@@ -69,9 +92,10 @@ export default function MiniGrade({ linhas, periodos, trocas, onAbrirSala }) {
                     <span className="cel-mg-fixa" />
                     <div>
                         <div className="cel-mg-turnos">
-                            <span style={{ gridColumn: '1 / 7' }}>manhã</span>
-                            <span style={{ gridColumn: '7 / 13' }}>tarde</span>
-                            <span style={{ gridColumn: '13 / 17' }}>noite</span>
+                            {/* O rótulo fica parado na tela enquanto o turno dele está à vista */}
+                            <span style={{ gridColumn: '1 / 7' }}><span>manhã</span></span>
+                            <span style={{ gridColumn: '7 / 13' }}><span>tarde</span></span>
+                            <span style={{ gridColumn: '13 / 17' }}><span>noite</span></span>
                         </div>
                         <div className="cel-mg-horas">
                             {periodos.map(p => (
@@ -80,16 +104,14 @@ export default function MiniGrade({ linhas, periodos, trocas, onAbrirSala }) {
                         </div>
                     </div>
                 </div>
-                {linhas.map(linha => {
-                    const resumo = resumoDaLinha(linha.slots, trocas, idxAgora, INICIOS);
-                    return (
-                        <button key={linha.sala} type="button" className="cel-mg-linha" onClick={() => onAbrirSala(linha.sala)} aria-label={`Sala ${linha.sala}: ver o dia`}>
-                            <span className={`cel-mg-sala${linha.temAulaAgora ? ' agora' : ''}`}>{linha.sala}</span>
-                            <Faixa slots={linha.slots} trocas={trocas} />
-                            <span className="cel-mg-txt"><Resumo resumo={resumo} /></span>
+                {linhas.map(linha => (
+                    <div key={linha.sala} className="cel-mg-linha" onClick={() => onAbrirSala(linha.sala)}>
+                        <button type="button" className={`cel-mg-sala${linha.temAulaAgora ? ' agora' : ''}`} onClick={(e) => { e.stopPropagation(); onAbrirSala(linha.sala); }} aria-label={`Sala ${linha.sala}: ver o dia`}>
+                            {linha.sala}
                         </button>
-                    );
-                })}
+                        <FaixaComNomes slots={linha.slots} trocas={trocas} onAbrirAula={onAbrirAula} />
+                    </div>
+                ))}
             </div>
         </div>
     );
