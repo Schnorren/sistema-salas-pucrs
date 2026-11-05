@@ -292,7 +292,7 @@ export default function Dashboard({ session }) {
   // (o diretório é institucional/global). Só a edição é gated.
   const canEditContatos = acesso.permissoes?.includes('edicao_contatos') || isAdmin;
 
-  const isGestor = canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
+  const isGestor = isAdmin || canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
 
   // Mesmo gating das abas, aplicado à URL: quem digita o endereço de uma tela
   // sem permissão (ou sem prédio) volta para a Planta. É só UX — o backend
@@ -300,12 +300,14 @@ export default function Dashboard({ session }) {
   const restrita = (permitido, elemento) => (permitido ? elemento : <Navigate to={ROTAS.planta} replace />);
 
   const itensGestao = [
-    canViewOperacional && { to: ROTAS.salasLivres, rotulo: '🚪 Salas Livres' },
-    canViewOperacional && { to: ROTAS.ocupacao, rotulo: '🔥 Ocupação Semanal' },
-    canViewRelatorios && { to: ROTAS.historicoAulas, rotulo: '📊 Histórico de Aulas (BI)' },
-    canEditGrade && { to: ROTAS.atualizarGrade, rotulo: '🔄 Atualizar Grade CSV/PDF' },
-    canViewEquipe && { to: ROTAS.equipe, rotulo: '👥 Gestão de Equipe' },
-    (canViewEmprestimos || canViewRelatorios) && { to: ROTAS.relatorioEmprestimos, rotulo: '📊 Relatório de Empréstimos' },
+    canViewOperacional && { to: ROTAS.salasLivres, rotulo: 'Salas Livres' },
+    canViewOperacional && { to: ROTAS.ocupacao, rotulo: 'Ocupação Semanal' },
+    canViewRelatorios && { to: ROTAS.historicoAulas, rotulo: 'Histórico de Aulas (BI)' },
+    canEditGrade && { to: ROTAS.atualizarGrade, rotulo: 'Atualizar Grade CSV/PDF' },
+    canViewEquipe && { to: ROTAS.equipe, rotulo: 'Gestão de Equipe' },
+    (canViewEmprestimos || canViewRelatorios) && { to: ROTAS.relatorioEmprestimos, rotulo: 'Relatório de Empréstimos' },
+    // Painel Admin saiu das abas (só admin vê)
+    isAdmin && { to: ROTAS.admin, rotulo: 'Painel Admin' },
   ]
     .filter(Boolean)
     .map(item => ({ ...item, ativo: Boolean(matchPath(item.to, location.pathname)) }));
@@ -326,152 +328,157 @@ export default function Dashboard({ session }) {
 
       {!headerCollapsed && (
         <>
-          <Topbar session={session} acesso={acesso} onAbrirPerfil={() => navigate(ROTAS.perfil)} />
+          {/* Cabeçalho em duas linhas: a busca fica na faixa de cima, junto de
+              prédio, relógio e usuário; as abas ficam na de baixo. */}
+          <Topbar
+            session={session} acesso={acesso} onAbrirPerfil={() => navigate(ROTAS.perfil)}
+            busca={(
+              <div className="search-bar search-bar--topo" ref={searchRef}>
+                <div className="search-input-wrap">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                  <input
+                    className="search-input"
+                    placeholder={`Buscar por código, disciplina ou sala...`}
+                    autoComplete="off"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
+                  />
+                  {searchQuery && (
+                    <button className="search-clear vis" onClick={() => setSearchQuery('')}>×</button>
+                  )}
+                </div>
     
-          <div className="search-bar" ref={searchRef}>
-            <div className="search-input-wrap">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <input
-                className="search-input"
-                placeholder={`Buscar por código, disciplina ou sala...`}
-                autoComplete="off"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
-              />
-              {searchQuery && (
-                <button className="search-clear vis" onClick={() => setSearchQuery('')}>×</button>
-              )}
-            </div>
-    
-            {showDropdown && (
-              <div className="search-dropdown vis">
-                {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
-                  <div className="sd-empty">Buscando na base...</div>
-                ) : searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
-                  <div className="sd-empty">Nenhum registro encontrado.</div>
-                ) : (
-                  <>
-                    {salaConsultada && (
+                {showDropdown && (
+                  <div className="search-dropdown vis">
+                    {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
+                      <div className="sd-empty">Buscando na base...</div>
+                    ) : searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
+                      <div className="sd-empty">Nenhum registro encontrado.</div>
+                    ) : (
                       <>
-                        <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>
-                          SALA {salaConsultada.numero} · {salaConsultada.per ? `AGORA (PER. ${salaConsultada.per} · ${salaConsultada.inicioPer})` : 'FORA DO HORÁRIO DE AULA'}
-                        </div>
-                        <div
-                          className="sd-item"
-                          style={salaConsultada.troca ? { background: 'rgba(239, 68, 68, 0.08)' } : undefined}
-                          onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}
-                        >
-                          <div className="sd-room">{salaConsultada.numero}</div>
-                          <div className="sd-info">
-                            {salaConsultada.agora ? (
-                              <>
-                                <div className="sd-class">
-                                  {salaConsultada.agora.nomeAula}
-                                  {salaConsultada.agora.codCred && <span style={{ opacity: 0.7, fontWeight: 'normal' }}> · {salaConsultada.agora.codCred}</span>}
-                                </div>
-                                <div className="sd-meta">
-                                  {salaConsultada.troca && (
-                                    <>
-                                      <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🔁 TRANSFERIDA → PRÉDIO {salaConsultada.troca.predio_destino} · SALA {salaConsultada.troca.sala_destino}</span>
-                                      <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                                    </>
-                                  )}
-                                  Per. {salaConsultada.agora.periodos.join('')}
-                                  <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                                  {salaConsultada.agora.inicio} às {salaConsultada.agora.fim}
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <div className="sd-class">Livre agora</div>
-                                <div className="sd-meta">
-                                  {salaConsultada.proxima
-                                    ? `Próxima aula: ${salaConsultada.proxima.nomeAula} às ${salaConsultada.proxima.inicio} (${salaConsultada.proxima.periodos.join('')})`
-                                    : 'Sem mais aulas hoje nesta sala'}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {salaConsultada.agora && salaConsultada.proxima && (
-                          <div className="sd-item" onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}>
-                            <div className="sd-room" style={{ opacity: 0.6 }}>⏭</div>
-                            <div className="sd-info">
-                              <div className="sd-class">Depois: {salaConsultada.proxima.nomeAula}</div>
-                              <div className="sd-meta">às {salaConsultada.proxima.inicio} · Per. {salaConsultada.proxima.periodos.join('')}</div>
+                        {salaConsultada && (
+                          <>
+                            <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>
+                              SALA {salaConsultada.numero} · {salaConsultada.per ? `AGORA (PER. ${salaConsultada.per} · ${salaConsultada.inicioPer})` : 'FORA DO HORÁRIO DE AULA'}
                             </div>
-                          </div>
-                        )}
-                        {podeVerAvisos && (salaConsultada.chaves.length > 0 ? salaConsultada.chaves.map(c => (
-                          <div key={c.id} className="sd-item" onClick={() => { setShowDropdown(false); setSearchQuery(''); navigate(ROTAS.avisos); }}>
-                            <div className="sd-room">🔑</div>
-                            <div className="sd-info">
-                              <div className="sd-class">Autorização de chave: {c.aluno_nome}</div>
-                              <div className="sd-meta">
-                                {c.disciplina}
-                                {c.periodo && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>Per. {c.periodo}</>}
-                                {typeof c.data_prevista === 'string' && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>{c.data_prevista.split('-').reverse().join('/')}</>}
+                            <div
+                              className="sd-item"
+                              style={salaConsultada.troca ? { background: 'rgba(239, 68, 68, 0.08)' } : undefined}
+                              onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}
+                            >
+                              <div className="sd-room">{salaConsultada.numero}</div>
+                              <div className="sd-info">
+                                {salaConsultada.agora ? (
+                                  <>
+                                    <div className="sd-class">
+                                      {salaConsultada.agora.nomeAula}
+                                      {salaConsultada.agora.codCred && <span style={{ opacity: 0.7, fontWeight: 'normal' }}> · {salaConsultada.agora.codCred}</span>}
+                                    </div>
+                                    <div className="sd-meta">
+                                      {salaConsultada.troca && (
+                                        <>
+                                          <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🔁 TRANSFERIDA → PRÉDIO {salaConsultada.troca.predio_destino} · SALA {salaConsultada.troca.sala_destino}</span>
+                                          <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                                        </>
+                                      )}
+                                      Per. {salaConsultada.agora.periodos.join('')}
+                                      <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                                      {salaConsultada.agora.inicio} às {salaConsultada.agora.fim}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="sd-class">Livre agora</div>
+                                    <div className="sd-meta">
+                                      {salaConsultada.proxima
+                                        ? `Próxima aula: ${salaConsultada.proxima.nomeAula} às ${salaConsultada.proxima.inicio} (${salaConsultada.proxima.periodos.join('')})`
+                                        : 'Sem mais aulas hoje nesta sala'}
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </div>
-                          </div>
-                        )) : (
-                          <div className="sd-item" style={{ cursor: 'default' }}>
-                            <div className="sd-room" style={{ opacity: 0.6 }}>🔑</div>
-                            <div className="sd-info"><div className="sd-class" style={{ fontWeight: 'normal' }}>Sem autorização de chave pendente para a {salaConsultada.numero}</div></div>
+                            {salaConsultada.agora && salaConsultada.proxima && (
+                              <div className="sd-item" onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}>
+                                <div className="sd-room" style={{ opacity: 0.6 }}>⏭</div>
+                                <div className="sd-info">
+                                  <div className="sd-class">Depois: {salaConsultada.proxima.nomeAula}</div>
+                                  <div className="sd-meta">às {salaConsultada.proxima.inicio} · Per. {salaConsultada.proxima.periodos.join('')}</div>
+                                </div>
+                              </div>
+                            )}
+                            {podeVerAvisos && (salaConsultada.chaves.length > 0 ? salaConsultada.chaves.map(c => (
+                              <div key={c.id} className="sd-item" onClick={() => { setShowDropdown(false); setSearchQuery(''); navigate(ROTAS.avisos); }}>
+                                <div className="sd-room">🔑</div>
+                                <div className="sd-info">
+                                  <div className="sd-class">Autorização de chave: {c.aluno_nome}</div>
+                                  <div className="sd-meta">
+                                    {c.disciplina}
+                                    {c.periodo && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>Per. {c.periodo}</>}
+                                    {typeof c.data_prevista === 'string' && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>{c.data_prevista.split('-').reverse().join('/')}</>}
+                                  </div>
+                                </div>
+                              </div>
+                            )) : (
+                              <div className="sd-item" style={{ cursor: 'default' }}>
+                                <div className="sd-room" style={{ opacity: 0.6 }}>🔑</div>
+                                <div className="sd-info"><div className="sd-class" style={{ fontWeight: 'normal' }}>Sem autorização de chave pendente para a {salaConsultada.numero}</div></div>
+                              </div>
+                            ))}
+                            {searchResults.length > 0 && (
+                              <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>AULAS DA SEMANA</div>
+                            )}
+                          </>
+                        )}
+                        {searchResults.map((res) => (
+                          <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
+                            <div className="sd-room">{res.sala}</div>
+                            <div className="sd-info">
+                              <div className="sd-class">{res.nome}</div>
+                              <div className="sd-meta">
+                                <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
+                                <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                                Per. {res.periodosFormatados}
+                                <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                                {res.horarioInicio} às {res.horarioFim}
+                              </div>
+                            </div>
                           </div>
                         ))}
                         {searchResults.length > 0 && (
-                          <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>AULAS DA SEMANA</div>
+                          <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
+                        )}
+
+                        {resultadosContatos.length > 0 && (
+                          <>
+                            <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>CONTATOS</div>
+                            {resultadosContatos.map((res) => (
+                              <div key={res.chave} className="sd-item" onClick={() => handleSelectContato(res)}>
+                                <div className="sd-room">{res.tipo === 'curso' ? '🎓' : '📇'}</div>
+                                <div className="sd-info">
+                                  <div className="sd-class">{res.titulo}</div>
+                                  <div className="sd-meta">
+                                    {res.subtitulo && <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.subtitulo}</span>}
+                                    {res.subtitulo && res.telefone && <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>}
+                                    {res.telefone}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </>
                         )}
                       </>
                     )}
-                    {searchResults.map((res) => (
-                      <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
-                        <div className="sd-room">{res.sala}</div>
-                        <div className="sd-info">
-                          <div className="sd-class">{res.nome}</div>
-                          <div className="sd-meta">
-                            <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
-                            <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                            Per. {res.periodosFormatados}
-                            <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                            {res.horarioInicio} às {res.horarioFim}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {searchResults.length > 0 && (
-                      <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
-                    )}
-
-                    {resultadosContatos.length > 0 && (
-                      <>
-                        <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>CONTATOS</div>
-                        {resultadosContatos.map((res) => (
-                          <div key={res.chave} className="sd-item" onClick={() => handleSelectContato(res)}>
-                            <div className="sd-room">{res.tipo === 'curso' ? '🎓' : '📇'}</div>
-                            <div className="sd-info">
-                              <div className="sd-class">{res.titulo}</div>
-                              <div className="sd-meta">
-                                {res.subtitulo && <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.subtitulo}</span>}
-                                {res.subtitulo && res.telefone && <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>}
-                                {res.telefone}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </>
+                  </div>
                 )}
               </div>
             )}
-            <span className="search-hint">Busca inteligente em tempo real</span>
-          </div>
+          />
+    
     
           <div className="navtabs" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', flex: 1 }}>
@@ -499,21 +506,12 @@ export default function Dashboard({ session }) {
               )}
 
               {canViewEmprestimos && (
-                <NavLink to={ROTAS.emprestimos} className="navtab">📦 Empréstimos</NavLink>
+                <NavLink to={ROTAS.emprestimos} className="navtab">Empréstimos</NavLink>
               )}
 
               {/* Visível para todos: o diretório de contatos não é gated por permissão nem por prédio. */}
-              <NavLink to={ROTAS.contatos} className="navtab">📇 Contatos</NavLink>
+              <NavLink to={ROTAS.contatos} className="navtab">Contatos</NavLink>
 
-              {isAdmin && (
-                <NavLink
-                  to={ROTAS.admin}
-                  className="navtab"
-                  style={({ isActive }) => (isActive ? { color: '#fbbf24', borderBottomColor: '#fbbf24' } : undefined)}
-                >
-                  🛡️ Painel Admin
-                </NavLink>
-              )}
             </div>
     
             {isGestor && (
@@ -524,10 +522,10 @@ export default function Dashboard({ session }) {
                     background: 'transparent', border: 'none',
                     color: isGestaoActive ? '#60a5fa' : '#9ca3af',
                     cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                    fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
+                    fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em'
                   }}
                 >
-                  ⚙️ Gestão ▾
+                  Gestão ▾
                 </button>
     
                 {showAdminMenu && (

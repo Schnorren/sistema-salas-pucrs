@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import SeletorPredio from './SeletorPredio';
 import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
 
-export default function Topbar({ session, acesso, onAbrirPerfil }) {
+export default function Topbar({ session, acesso, onAbrirPerfil, busca }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
   // Horário de Brasília (regra do projeto), não o fuso do computador
   const [time, setTime] = useState(getDataSaoPaulo());
@@ -36,12 +36,13 @@ export default function Topbar({ session, acesso, onAbrirPerfil }) {
   const inicial = nomeUsuario.charAt(0).toUpperCase();
 
   return (
-    <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid var(--border, #334155)', background: 'var(--bg, #0f172a)' }}>
+    <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '10px 24px', borderBottom: '1px solid var(--border, #334155)', background: 'var(--bg, #0f172a)' }}>
       <div className="tb-logo" style={{ display: 'flex', alignItems: 'center', gap: '16px', fontWeight: 'bold', fontSize: '18px' }}>
         <span style={{ color: '#3b82f6', letterSpacing: '1px' }}>PUCRS</span>
         <div style={{ width: '1px', height: '20px', background: 'var(--border, #334155)' }}></div>
         <SeletorPredio acesso={acesso} session={session} /> 
       </div>
+      {busca}
       <div className="tb-clock" style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary, #94a3b8)', fontSize: '14px', fontWeight: '500' }}>
         <span style={{ fontFamily: 'monospace', fontSize: '16px' }}>
           {`${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}`}
