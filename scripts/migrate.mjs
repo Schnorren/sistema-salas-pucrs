@@ -36,6 +36,8 @@ const ORDEM = [
   'emprestimos_v2.sql',
   'emprestimos_v2_rpcs.sql',
   'rls_policies.sql',
+  // Views não passam pela RLS: só a service role pode lê-las.
+  'views_privilegios.sql',
   'auditoria_log.sql',
   // Remove as RPCs da v1. Só depois do deploy do código v2 — ver o cabeçalho do arquivo.
   'emprestimos_limpeza.sql',
