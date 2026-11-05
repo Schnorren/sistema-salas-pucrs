@@ -23,7 +23,10 @@ export default function SeletorPredio({ acesso, session }) {
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
                 setListaPredios(data);
-                setPredioAtivo(prev => prev || data[0].id);
+                // Prédio salvo no navegador que não existe mais (ex.: excluído)
+                // cai no primeiro da lista — senão o select mostra um prédio e o
+                // sistema segue em outro, e escolher o que aparece não dispara troca.
+                setPredioAtivo(prev => (data.some(p => p.id === prev) ? prev : data[0].id));
             }
         };
 
