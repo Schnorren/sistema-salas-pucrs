@@ -118,7 +118,7 @@ export default function MuralAvisos({ session, acesso }) {
     if (error) return <p style={{ padding: 24, color: '#ef4444' }}>{error}</p>;
 
     return (
-        <div style={{ padding: celular ? '12px 12px 96px' : '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
+        <div className="mural-avisos" style={{ padding: celular ? '12px 12px 96px' : '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: celular ? '12px' : '24px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Mural de Operações</h2>
@@ -143,7 +143,7 @@ export default function MuralAvisos({ session, acesso }) {
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: celular ? '1fr' : 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', flex: 1 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: celular ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', flex: 1 }}>
 
                 <div style={celular && abaCelular !== 'chaves' ? { display: 'none' } : undefined}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -215,7 +215,7 @@ export default function MuralAvisos({ session, acesso }) {
                             <div key={aviso.id} style={{ background: '#1e293b', border: '1px solid #334155', borderLeft: `4px solid ${borderLeftColor}`, borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div className="aviso-titulo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' }}>{aviso.titulo}</span>
                                         <span style={{ ...pillStyle, ...currentPrioStyle }}>
                                             {prio.charAt(0) + prio.slice(1).toLowerCase()}
