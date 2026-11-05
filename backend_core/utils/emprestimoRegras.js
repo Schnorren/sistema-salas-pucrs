@@ -81,3 +81,149 @@ export const resolverItemPorTermo = (itens, termo) => {
   if (porNome.length === 1) return { item: porNome[0], ambiguos: [] };
   return { item: null, ambiguos: porNome };
 };
+
+// "Hoje" (YYYY-MM-DD) em Brasília — validade de bloqueio, comparação de datas
+export const hojeSP = (data = new Date()) => inputDataHoraSP(data).slice(0, 10);
+
+// ---------------------------------------------------------------------------
+// Devolução, ocorrências e desfazer
+// ---------------------------------------------------------------------------
+
+export const RESULTADOS_DEVOLUCAO = Object.freeze({
+  OK: 'OK',
+  COM_PROBLEMA: 'COM_PROBLEMA',      // voltou, mas o item vai para manutenção
+  NAO_DEVOLVIDO: 'NAO_DEVOLVIDO',    // não voltou: item fica PERDIDO
+});
+
+export const ROTULO_OCORRENCIA = Object.freeze({
+  DEVOLVIDO_COM_PROBLEMA: 'Devolveu com problema',
+  NAO_DEVOLVIDO: 'Não devolveu',
+});
+
+// Prazo para desfazer uma retirada ou devolução registrada por engano.
+// ESPELHO de `interval '10 minutes'` em emprestimo_cancelar/emprestimo_reabrir
+// (supabase/migrations/emprestimos_v2_rpcs.sql) — ao mudar um, mude o outro.
+export const JANELA_DESFAZER_MIN = 10;
+
+// Milissegundos que ainda restam para desfazer (0 = expirou)
+export const restanteParaDesfazerMs = (iso, agora = new Date(), janelaMin = JANELA_DESFAZER_MIN) => {
+  const d = paraData(iso);
+  const a = paraData(agora);
+  if (!d || !a) return 0;
+  return Math.max(0, d.getTime() + janelaMin * 60000 - a.getTime());
+};
+
+export const podeDesfazer = (iso, agora = new Date(), janelaMin = JANELA_DESFAZER_MIN) =>
+  restanteParaDesfazerMs(iso, agora, janelaMin) > 0;
+
+// ---------------------------------------------------------------------------
+// Pessoas
+// ---------------------------------------------------------------------------
+
+const PARTICULAS = new Set(['da', 'das', 'de', 'do', 'dos', 'e', 'di', 'du', 'del', 'della', 'van', 'von']);
+const ROMANO = /^(i{1,3}|iv|vi{0,3}|ix|x)$/;
+
+// "  joão   DA silva ii " → "João da Silva II" · "maria-clara d'ávila" → "Maria-Clara D'Ávila"
+export const normalizarNome = (nome) => {
+  const limpo = String(nome ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!limpo) return '';
+  return limpo.toLocaleLowerCase('pt-BR').split(' ').map((palavra, i) => {
+    if (i > 0 && PARTICULAS.has(palavra)) return palavra;
+    if (i > 0 && ROMANO.test(palavra)) return palavra.toLocaleUpperCase('pt-BR');
+    return palavra.replace(/(^|[-'’])(\p{L})/gu, (_m, sep, letra) => sep + letra.toLocaleUpperCase('pt-BR'));
+  }).join(' ');
+};
+
+// Matrícula/código do crachá: sem espaços (o leitor às vezes manda um no fim)
+export const normalizarMatricula = (valor) => String(valor ?? '').replace(/\s+/g, '').slice(0, 50);
+
+// ---------------------------------------------------------------------------
+// Disponibilidade com previsão ("costuma voltar em ~15 min")
+// ---------------------------------------------------------------------------
+
+export const mediana = (valores) => {
+  const v = (valores || []).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+// Duração típica de cada item, pelas devoluções mais recentes.
+//   registros: [{ item_id, data_retirada, data_devolucao }] do mais novo ao mais antigo
+//   itens:     [{ id, categoria_id }]
+// Ignora durações fora de [2 min, 12 h] (desfeito na hora / esquecido no
+// sistema). Usa as últimas `porItem` do item; com menos de `minimo` amostras,
+// cai para a mediana da categoria (itens iguais: "Bola 1", "Bola 2").
+// Retorna Map itemId → { mediana (min), amostras, fonte: 'item' | 'categoria' }.
+export const calcularMedianas = (registros, itens, opcoes = {}) => {
+  const { porItem = 30, minimo = 5, minMin = 2, maxMin = 720 } = opcoes;
+  const duracoesPorItem = new Map();
+  for (const r of registros || []) {
+    const ini = paraData(r?.data_retirada);
+    const fim = paraData(r?.data_devolucao);
+    if (!ini || !fim) continue;
+    const minutos = (fim.getTime() - ini.getTime()) / 60000;
+    if (!(minutos >= minMin && minutos <= maxMin)) continue;
+    const lista = duracoesPorItem.get(r.item_id) || [];
+    if (lista.length >= porItem) continue;
+    lista.push(minutos);
+    duracoesPorItem.set(r.item_id, lista);
+  }
+
+  const catDoItem = new Map((itens || []).map(i => [i.id, i.categoria_id]));
+  const duracoesPorCategoria = new Map();
+  for (const [itemId, lista] of duracoesPorItem) {
+    const cat = catDoItem.get(itemId);
+    if (cat == null) continue;
+    duracoesPorCategoria.set(cat, (duracoesPorCategoria.get(cat) || []).concat(lista));
+  }
+
+  const resultado = new Map();
+  for (const item of itens || []) {
+    const doItem = duracoesPorItem.get(item.id) || [];
+    if (doItem.length >= minimo) {
+      resultado.set(item.id, { mediana: Math.round(mediana(doItem)), amostras: doItem.length, fonte: 'item' });
+      continue;
+    }
+    const daCategoria = duracoesPorCategoria.get(item.categoria_id) || [];
+    if (daCategoria.length >= minimo) {
+      resultado.set(item.id, { mediana: Math.round(mediana(daCategoria)), amostras: daCategoria.length, fonte: 'categoria' });
+    }
+  }
+  return resultado;
+};
+
+// "~15 min" fica mais honesto que "~13 min": arredonda para 5 a partir de 10
+const aproximar = (min) => (min < 10 ? Math.max(1, Math.round(min)) : Math.round(min / 5) * 5);
+
+// Previsão de volta de um item emprestado.
+//   { desde: data da retirada, medianaMin } → { estado, decorrido, restante, texto }
+//   estado: 'no_tempo' | 'passou' | 'sem_historico'
+export const preverDevolucao = ({ desde, medianaMin } = {}, agora = new Date()) => {
+  const decorrido = minutosEntre(desde, agora);
+  if (decorrido == null) return null;
+  if (!Number.isFinite(medianaMin) || medianaMin <= 0) {
+    return { estado: 'sem_historico', decorrido, restante: null, texto: null };
+  }
+  const restante = medianaMin - decorrido;
+  if (restante > 0) {
+    return { estado: 'no_tempo', decorrido, restante, texto: `costuma voltar em ~${formatarDuracao(aproximar(restante))}` };
+  }
+  return { estado: 'passou', decorrido, restante: 0, texto: `passou do tempo habitual (~${formatarDuracao(aproximar(medianaMin))})` };
+};
+
+// Categoria sem nenhum item livre: quando deve voltar o próximo?
+//   itens: [{ status, mediana_min, emprestimo: { dataRetirada } | null }]
+// → { restante, texto } ou null (há item livre, ou nenhum emprestado tem histórico)
+export const previsaoDaCategoria = (itens, agora = new Date()) => {
+  const lista = itens || [];
+  if (!lista.length || lista.some(i => i.status === 'DISPONIVEL')) return null;
+  let menor = null;
+  for (const i of lista) {
+    if (i.status !== 'EMPRESTADO' || !i.emprestimo) continue;
+    const p = preverDevolucao({ desde: i.emprestimo.dataRetirada, medianaMin: i.mediana_min }, agora);
+    if (p?.estado === 'no_tempo' && (menor == null || p.restante < menor)) menor = p.restante;
+  }
+  if (menor == null) return null;
+  return { restante: menor, texto: `próxima volta prevista em ~${formatarDuracao(aproximar(menor))}` };
+};

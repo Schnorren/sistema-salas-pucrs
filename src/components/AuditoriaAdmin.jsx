@@ -8,6 +8,14 @@ const ACOES = {
     'emprestimo.retirar': 'Empréstimo registrado',
     'emprestimo.devolver': 'Devolução registrada',
     'emprestimo.item.status': 'Status de item alterado',
+    'emprestimo.cancelar': 'Empréstimo desfeito',
+    'emprestimo.reabrir': 'Devolução desfeita',
+    'emprestimo.aluno.nome': 'Nome de aluno corrigido',
+    'emprestimo.ponto.salvar': 'Ponto de empréstimo salvo',
+    'emprestimo.categoria.salvar': 'Categoria de empréstimo salva',
+    'emprestimo.item.salvar': 'Item do acervo salvo',
+    'emprestimo.bloqueio.criar': 'Aluno suspenso dos empréstimos',
+    'emprestimo.bloqueio.remover': 'Suspensão de aluno removida',
     'equipe.convidar': 'Convite enviado',
     'equipe.membro.atualizar': 'Permissões alteradas',
     'equipe.membro.remover': 'Acesso revogado',
@@ -44,7 +52,19 @@ function resumir(item, nomeModulo) {
     const d = item.detalhes || {};
     const modulos = Array.isArray(d.permissoes) ? d.permissoes.map(p => nomeModulo[p] || p).join(', ') : null;
     switch (item.acao) {
-        case 'emprestimo.retirar': return d.matricula ? `Matrícula ${d.matricula}` : '';
+        case 'emprestimo.retirar': return [d.matricula && `Matrícula ${d.matricula}`, d.balcao].filter(Boolean).join(' · ');
+        case 'emprestimo.devolver': return [
+            d.matricula && `Matrícula ${d.matricula}`,
+            d.resultado === 'COM_PROBLEMA' && `com problema${d.obs ? `: ${d.obs}` : ''}`,
+            d.resultado === 'NAO_DEVOLVIDO' && `não devolvido${d.obs ? `: ${d.obs}` : ''}`,
+            d.balcao,
+        ].filter(Boolean).join(' · ');
+        case 'emprestimo.cancelar':
+        case 'emprestimo.reabrir': return [d.item, d.matricula && `Matrícula ${d.matricula}`, d.balcao].filter(Boolean).join(' · ');
+        case 'emprestimo.item.status': return [d.item, d.status === 'MANUTENCAO' ? 'manutenção' : d.status === 'DISPONIVEL' ? 'liberado' : d.status].filter(Boolean).join(' · ');
+        case 'emprestimo.aluno.nome': return [d.nome, item.entidade_id && `Matrícula ${item.entidade_id}`].filter(Boolean).join(' · ');
+        case 'emprestimo.bloqueio.criar': return [d.matricula && `Matrícula ${d.matricula}`, d.motivo, d.ate && `até ${String(d.ate).split('-').reverse().join('/')}`].filter(Boolean).join(' · ');
+        case 'emprestimo.bloqueio.remover': return d.matricula ? `Matrícula ${d.matricula}` : '';
         case 'equipe.convidar':
         case 'equipe.membro.atualizar': return [d.email, modulos && `módulos: ${modulos}`].filter(Boolean).join(' · ');
         case 'equipe.membro.remover': return d.email || '';

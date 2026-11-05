@@ -6,6 +6,7 @@ import { useUI } from '../contexts/UIContext';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { formatarDuracao, minutosEntre, inputDataHoraSP, inputInicioDoDiaSP } from '../../backend_core/utils/emprestimoRegras';
+import { usePontosEmprestimo } from '../hooks/useEmprestimos';
 
 // Período padrão = hoje no horário de Brasília (antes: fuso do navegador)
 const getInicioHojeLocal = () => inputInicioDoDiaSP();
@@ -49,11 +50,14 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
     const [mostrarTodoHistorico, setMostrarTodoHistorico] = useState(false);
 
     const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
+    // Ponto de empréstimo ('' = todos que o login vê). O filtro só aparece com mais de um.
+    const { pontos } = usePontosEmprestimo(session, currentPredioId, 'relatorio');
+    const [pontoFiltro, setPontoFiltro] = useState('');
 
     const { data: dados, isLoading: loading, isError, isFetching } = useQuery({
-        queryKey: ['relatorios_emprestimos', currentPredioId, filtroInicio, filtroFim],
+        queryKey: ['relatorios_emprestimos', currentPredioId, filtroInicio, filtroFim, pontoFiltro],
         queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?inicio=${filtroInicio}&fim=${filtroFim}`, {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?${new URLSearchParams({ inicio: filtroInicio, fim: filtroFim, ...(pontoFiltro ? { ponto: pontoFiltro } : {}) })}`, {
                 headers: {
                     'Authorization': `Bearer ${session?.access_token}`,
                     'x-predio-id': currentPredioId
@@ -128,6 +132,15 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 </div>
 
                 <form className="filtros-wrapper" onSubmit={handleAtualizar}>
+                    {pontos.length > 1 && (
+                        <div className="input-filtro-box">
+                            <label>PONTO</label>
+                            <select value={pontoFiltro} onChange={e => setPontoFiltro(e.target.value)} className="input-filtro">
+                                <option value="">Todos os pontos</option>
+                                {pontos.map(p => <option key={p.id} value={p.id}>{p.nome}{!p.ativo ? ' (inativo)' : ''}</option>)}
+                            </select>
+                        </div>
+                    )}
                     <div className="input-filtro-box">
                         <label>INÍCIO</label>
                         <input type="datetime-local" value={inputInicio} onChange={e => setInputInicio(e.target.value)} className="input-filtro" />
@@ -280,11 +293,14 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                                                             {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}
                                                         </td>
                                                         <td>
-                                                            {h.dataDevolucao ? (
+                                                            {h.status === 'EXTRAVIADO' ? (
+                                                                <span className="tag-status perdido">Não devolvido</span>
+                                                            ) : h.dataDevolucao ? (
                                                                 <span className="tag-status concluido">{calcularDuracaoTotal(h.dataRetirada, h.dataDevolucao)}</span>
                                                             ) : (
                                                                 <span className="tag-status pendente">Pendente</span>
                                                             )}
+                                                            {h.ocorrencia === 'DEVOLVIDO_COM_PROBLEMA' && <span className="tag-status problema" style={{ marginLeft: '4px' }}>Com problema</span>}
                                                         </td>
                                                     </tr>
                                                 ))}

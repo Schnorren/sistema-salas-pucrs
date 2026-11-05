@@ -49,6 +49,16 @@ export const useEquipe = (session, predioId) => {
         staleTime: 10 * 60 * 1000 // módulos raramente mudam — cache de 10min
     });
 
+    // Pontos de empréstimo do prédio (checkboxes de quem tem o módulo Empréstimos)
+    const { data: pontosEmprestimo = [] } = useQuery({
+        queryKey: ['equipe_pontos_emprestimo', predioId, userId],
+        queryFn: async () => {
+            const res = await fetch(`${base}/api/equipe/pontos-emprestimo`, { headers: getHeaders() });
+            return parseResponse(res);
+        },
+        enabled: !!predioId && !!userId
+    });
+
     const loading = loadEquipe || loadPerfis || loadModulos;
     const error = errorEquipe?.message || null;
 
@@ -97,6 +107,7 @@ export const useEquipe = (session, predioId) => {
         equipe,
         perfis,
         modulos,
+        pontosEmprestimo,
         loading,
         error,
         carregarDados: invalidarEquipe,

@@ -1,5 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
 import { supabase } from '../supabase';
 import { lerBalcao } from '../utils/balcao';
 
@@ -10,7 +10,26 @@ async function parseResponse(res) {
     return json;
 }
 
-export const useEmprestimos = (session, predioId, categoriaId) => {
+const API = `${import.meta.env.VITE_API_URL}/api/emprestimos`;
+
+// Pontos de empréstimo que este login vê. uso = 'balcao' (os que opera) ou
+// 'relatorio' (os do relatório — quem tem Relatórios/Gestão vê o prédio todo).
+export const usePontosEmprestimo = (session, predioId, uso = 'balcao') => {
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    const query = useQuery({
+        queryKey: ['emprestimos', 'pontos', predioId, userId, uso],
+        queryFn: async () => parseResponse(await fetch(`${API}/pontos${uso === 'relatorio' ? '?uso=relatorio' : ''}`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'x-predio-id': predioId || '' }
+        })),
+        enabled: !!predioId && !!userId
+    });
+    return { pontos: query.data || [], carregando: query.isLoading, erro: query.error?.message || null };
+};
+
+// Balcão de um PONTO de empréstimo. Todas as queries ficam sob ['emprestimos', …]
+// para o Realtime invalidar tudo do prédio por prefixo.
+export const useEmprestimos = (session, predioId, pontoId, buscaHistorico = '') => {
     const queryClient = useQueryClient();
     const token = session?.access_token;
     const userId = session?.user?.id;
@@ -22,143 +41,120 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
         // Nome deste computador (login compartilhado na recepção) — ver utils/balcao.js
         'x-balcao': encodeURIComponent(lerBalcao())
     });
+    const get = async (caminho) => parseResponse(await fetch(`${API}${caminho}`, { headers: getHeaders() }));
+    const enviar = async (metodo, caminho, corpo) => parseResponse(await fetch(`${API}${caminho}`, {
+        method: metodo, headers: getHeaders(), body: corpo ? JSON.stringify(corpo) : undefined
+    }));
 
-    // userId na queryKey evita colisão de cache entre usuários de prédios diferentes
-    const { data: categorias = [], isLoading: loadCat } = useQuery({
-        queryKey: ['categorias', predioId, userId],
-        queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/categorias`, { headers: getHeaders() });
-            return parseResponse(res);
-        },
-        enabled: !!predioId && !!userId
+    const habilitado = !!predioId && !!userId;
+
+    // Acervo do ponto + empréstimos em andamento + duração típica de cada item.
+    // Além do Realtime, refaz a cada minuto: os PCs da recepção ficam o dia todo
+    // abertos e o websocket pode cair sem avisar.
+    const painelQuery = useQuery({
+        queryKey: ['emprestimos', 'painel', predioId, pontoId, userId],
+        queryFn: () => get(`/painel?ponto=${encodeURIComponent(pontoId)}`),
+        enabled: habilitado && !!pontoId,
+        refetchInterval: 60 * 1000
     });
 
-    const { data: itensDisponiveis = [], isLoading: loadItens } = useQuery({
-        queryKey: ['itens', predioId, categoriaId, userId],
-        queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/categorias/${categoriaId}/itens`, { headers: getHeaders() });
-            return parseResponse(res);
+    const historicoQuery = useInfiniteQuery({
+        queryKey: ['emprestimos', 'historico', predioId, pontoId, userId, buscaHistorico],
+        queryFn: ({ pageParam }) => {
+            const params = new URLSearchParams({ ponto: pontoId });
+            if (buscaHistorico) params.set('busca', buscaHistorico);
+            if (pageParam) params.set('antes', pageParam);
+            return get(`/historico?${params}`);
         },
-        enabled: !!predioId && !!categoriaId && !!userId
+        initialPageParam: '',
+        getNextPageParam: (ultima) => ultima?.proximo || undefined,
+        enabled: habilitado && !!pontoId
     });
 
-    // loadAtivos e loadHist são independentes — o wizard não bloqueia enquanto o histórico carrega
-    const { data: emprestimosAtivos = [], isLoading: loadAtivos } = useQuery({
-        queryKey: ['emprestimosAtivos', predioId, userId],
-        queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/ativos`, { headers: getHeaders() });
-            return parseResponse(res);
-        },
-        enabled: !!predioId && !!userId
-    });
-
-    const { data: historico = [], isLoading: loadHist } = useQuery({
-        queryKey: ['historico', predioId, userId],
-        queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/historico`, { headers: getHeaders() });
-            return parseResponse(res);
-        },
-        enabled: !!predioId && !!userId
-    });
-
-    // Granular: wizard pronto quando categorias e ativos carregaram; histórico pode chegar depois
-    const loadingWizard = loadCat || loadAtivos;
-    const loadingHistorico = loadHist;
-    const loadingItens = loadItens;
-    // Compatibilidade com código existente que usa `loading`
-    const loading = loadingWizard || loadingHistorico;
+    const invalidar = () => {
+        queryClient.invalidateQueries({ queryKey: ['emprestimos', 'painel', predioId] });
+        queryClient.invalidateQueries({ queryKey: ['emprestimos', 'historico', predioId] });
+    };
 
     const retirarMutation = useMutation({
-        mutationFn: async (dados) => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/retirar`, {
-                method: 'POST', headers: getHeaders(), body: JSON.stringify(dados)
-            });
-            return parseResponse(res);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId, userId] });
-            queryClient.invalidateQueries({ queryKey: ['historico', predioId, userId] });
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId, categoriaId, userId] });
-        }
+        mutationFn: (dados) => enviar('POST', '/retirar', dados),
+        onSuccess: invalidar
     });
-
     const devolverMutation = useMutation({
-        mutationFn: async (emprestimoId) => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/devolver/${emprestimoId}`, {
-                method: 'POST', headers: getHeaders()
-            });
-            return parseResponse(res);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId, userId] });
-            queryClient.invalidateQueries({ queryKey: ['historico', predioId, userId] });
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId, categoriaId, userId] });
-        }
+        mutationFn: ({ id, resultado = 'OK', obs = null }) => enviar('POST', `/devolver/${id}`, { resultado, obs }),
+        onSuccess: invalidar
     });
-
-    const manutencaoMutation = useMutation({
-        mutationFn: async ({ itemId, status, observacao }) => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/itens/${itemId}/manutencao`, {
-                method: 'PUT', headers: getHeaders(), body: JSON.stringify({ status, observacoes: observacao })
-            });
-            return parseResponse(res);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId, categoriaId, userId] });
-        }
+    const cancelarMutation = useMutation({
+        mutationFn: ({ id, motivo = null }) => enviar('POST', `/cancelar/${id}`, { motivo }),
+        onSuccess: invalidar
+    });
+    const reabrirMutation = useMutation({
+        mutationFn: (id) => enviar('POST', `/reabrir/${id}`),
+        onSuccess: invalidar
+    });
+    const statusMutation = useMutation({
+        mutationFn: ({ itemId, status, observacoes = null }) =>
+            enviar('PUT', `/itens/${itemId}/manutencao`, { status, observacoes }),
+        onSuccess: invalidar
+    });
+    const nomeMutation = useMutation({
+        mutationFn: ({ matricula, nome }) => enviar('PUT', `/aluno/${encodeURIComponent(matricula)}`, { nome }),
+        onSuccess: invalidar
     });
 
     // Propaga o erro: quem chama precisa distinguir "aluno sem cadastro" de
     // "consulta falhou" (senão uma queda de rede vira 'aluno novo' silenciosamente)
-    // Item de qualquer categoria do prédio (null se não existir)
-    const buscarItem = async (termo) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/itens/buscar?q=${encodeURIComponent(termo)}`, { headers: getHeaders() });
-        return parseResponse(res);
-    };
+    const consultarAluno = (matricula) =>
+        get(`/aluno/${encodeURIComponent(matricula)}?ponto=${encodeURIComponent(pontoId)}`);
 
-    const consultarAluno = async (matricula) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/aluno/${encodeURIComponent(matricula)}`, { headers: getHeaders() });
-        return parseResponse(res);
-    };
-
+    // Realtime: o outro PC registrou algo → refaz painel e histórico deste prédio.
+    // Registros filtram por prédio (coluna predio_id); a RLS ainda corta os de
+    // pontos que este login não opera. Itens não têm predio_id: a RLS filtra.
     useEffect(() => {
         if (!predioId) return;
-
         const channel = supabase.channel(`emprestimos_${predioId}`);
-
-        // Invalida por prefixo parcial — afeta todas as queryKeys que começam com esses valores,
-        // incluindo as com userId e categoriaId como sufixo
+        channel.on('postgres_changes',
+            { event: '*', schema: 'public', table: 'emprestimos_registro', filter: `predio_id=eq.${predioId}` },
+            () => {
+                queryClient.invalidateQueries({ queryKey: ['emprestimos', 'painel', predioId] });
+                queryClient.invalidateQueries({ queryKey: ['emprestimos', 'historico', predioId] });
+            });
         channel.on('postgres_changes', { event: '*', schema: 'public', table: 'emprestimo_itens' }, () => {
-            queryClient.invalidateQueries({ queryKey: ['itens', predioId], exact: false });
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId], exact: false });
+            queryClient.invalidateQueries({ queryKey: ['emprestimos', 'painel', predioId] });
         });
-
-        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'emprestimos_registro' }, () => {
-            queryClient.invalidateQueries({ queryKey: ['emprestimosAtivos', predioId], exact: false });
-            queryClient.invalidateQueries({ queryKey: ['historico', predioId], exact: false });
-        });
-
         channel.subscribe();
         return () => { supabase.removeChannel(channel); };
     }, [predioId, queryClient]);
 
+    const historico = useMemo(
+        () => (historicoQuery.data?.pages || []).flatMap(p => p.itens || []),
+        [historicoQuery.data]
+    );
+
     return {
-        categorias,
-        itensDisponiveis,
-        emprestimosAtivos,
+        ponto: painelQuery.data?.ponto || null,
+        itens: painelQuery.data?.itens || [],
+        ativos: painelQuery.data?.ativos || [],
+        carregandoPainel: painelQuery.isLoading,
+        erroPainel: painelQuery.error?.message || null,
         historico,
-        loading,
-        loadingWizard,
-        loadingHistorico,
-        loadingItens,
+        carregandoHistorico: historicoQuery.isLoading,
+        historicoTemMais: !!historicoQuery.hasNextPage,
+        carregandoMaisHistorico: historicoQuery.isFetchingNextPage,
+        carregarMaisHistorico: () => historicoQuery.fetchNextPage(),
+        consultarAluno,
         // Flags de mutação pendente — usadas para desabilitar botões e barrar double-submit
         retirando: retirarMutation.isPending,
         devolvendo: devolverMutation.isPending,
-        alterandoStatus: manutencaoMutation.isPending,
-        consultarAluno,
-        buscarItem,
-        registrarRetirada: (dados) => retirarMutation.mutateAsync(dados),
-        registrarDevolucao: (id) => devolverMutation.mutateAsync(id),
-        alterarStatusManutencao: (itemId, status, obs) => manutencaoMutation.mutateAsync({ itemId, status, observacao: obs })
+        cancelando: cancelarMutation.isPending,
+        reabrindo: reabrirMutation.isPending,
+        alterandoStatus: statusMutation.isPending,
+        corrigindoNome: nomeMutation.isPending,
+        retirar: (dados) => retirarMutation.mutateAsync(dados),
+        devolver: (dados) => devolverMutation.mutateAsync(dados),
+        cancelar: (dados) => cancelarMutation.mutateAsync(dados),
+        reabrir: (id) => reabrirMutation.mutateAsync(id),
+        alterarStatus: (dados) => statusMutation.mutateAsync(dados),
+        corrigirNome: (dados) => nomeMutation.mutateAsync(dados),
     };
 };

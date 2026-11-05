@@ -36,6 +36,8 @@ const ORDEM = [
   'trocas_sala_replica_identity.sql',
   'contatos.sql',
   'contatos_seed.sql',
+  'emprestimos_v2.sql',
+  'emprestimos_v2_rpcs.sql',
   'rls_policies.sql',
   'auditoria_log.sql',
 ];

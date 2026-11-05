@@ -19,6 +19,7 @@ import MeuPerfil from './MeuPerfil';
 const WeeklyHeatmap = lazy(() => import('./WeeklyHeatmap'));
 const HistoricalReports = lazy(() => import('./HistoricalReports'));
 const RelatoriosEmprestimos = lazy(() => import('./RelatoriosEmprestimos'));
+const GestaoEmprestimos = lazy(() => import('./GestaoEmprestimos'));
 import { useContatos } from '../hooks/useContatos';
 import { buscarNoDiretorio } from '../utils/contatosBusca';
 
@@ -286,11 +287,13 @@ export default function Dashboard({ session }) {
   const canViewRelatorios = (acesso.permissoes?.includes('relatorios') || isAdmin) && hasPredioContext;
   const canEditGrade = (acesso.permissoes?.includes('edicao_grade') || isAdmin) && hasPredioContext;
   const canViewEquipe = (acesso.permissoes?.includes('equipe') || isAdmin) && hasPredioContext;
+  // Cadastro do acervo de empréstimos (pontos, categorias, itens), limite e suspensões
+  const canGerirEmprestimos = (acesso.permissoes?.includes('gestao_emprestimos') || isAdmin) && hasPredioContext;
   // Contatos: leitura livre para qualquer autenticado e sem gate de prédio
   // (o diretório é institucional/global). Só a edição é gated.
   const canEditContatos = acesso.permissoes?.includes('edicao_contatos') || isAdmin;
 
-  const isGestor = isAdmin || canViewRelatorios || canViewEquipe || canViewEmprestimos || canEditGrade || canViewOperacional;
+  const isGestor = isAdmin || canViewRelatorios || canViewEquipe || canViewEmprestimos || canGerirEmprestimos || canEditGrade || canViewOperacional;
 
   // Mesmo gating das abas, aplicado à URL: quem digita o endereço de uma tela
   // sem permissão (ou sem prédio) volta para a Planta. É só UX — o backend
@@ -304,7 +307,8 @@ export default function Dashboard({ session }) {
     canEditGrade && { to: ROTAS.atualizarGrade, rotulo: 'Atualizar Grade CSV/PDF' },
     canEditGrade && { to: ROTAS.salasPredio, rotulo: 'Salas do Prédio' },
     canViewEquipe && { to: ROTAS.equipe, rotulo: 'Gestão de Equipe' },
-    (canViewEmprestimos || canViewRelatorios) && { to: ROTAS.relatorioEmprestimos, rotulo: 'Relatório de Empréstimos' },
+    (canViewEmprestimos || canViewRelatorios || canGerirEmprestimos) && { to: ROTAS.relatorioEmprestimos, rotulo: 'Relatório de Empréstimos' },
+    canGerirEmprestimos && { to: ROTAS.gestaoEmprestimos, rotulo: 'Gestão de Empréstimos' },
     // Painel Admin saiu das abas (só admin vê)
     isAdmin && { to: ROTAS.admin, rotulo: 'Painel Admin' },
   ]
@@ -579,7 +583,8 @@ export default function Dashboard({ session }) {
           />
           <Route path={ROTAS.salasPredio} element={restrita(canEditGrade, <SalasPredio session={session} acesso={acesso} />)} />
           <Route path={ROTAS.equipe} element={restrita(canViewEquipe, <GestaoEquipe session={session} acesso={acesso} />)} />
-          <Route path={ROTAS.relatorioEmprestimos} element={restrita(canViewEmprestimos || canViewRelatorios, <RelatoriosEmprestimos session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.relatorioEmprestimos} element={restrita(canViewEmprestimos || canViewRelatorios || canGerirEmprestimos, <RelatoriosEmprestimos session={session} acesso={acesso} />)} />
+          <Route path={ROTAS.gestaoEmprestimos} element={restrita(canGerirEmprestimos, <GestaoEmprestimos session={session} acesso={acesso} />)} />
 
           {/* Endereço desconhecido → Planta */}
           <Route path="*" element={<Navigate to={ROTAS.planta} replace />} />

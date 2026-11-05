@@ -8,7 +8,7 @@ export default function GestaoEquipe({ session, acesso }) {
     const { toast, showConfirm } = useUI();
     
     const { 
-        equipe, perfis, modulos, loading, error,
+        equipe, perfis, modulos, pontosEmprestimo, loading, error,
         carregarDados, atualizarMembro, convidarMembro, removerMembro
     } = useEquipe(session, predioAtivo || acesso?.predioId);
     
@@ -16,6 +16,8 @@ export default function GestaoEquipe({ session, acesso }) {
     const [emailBusca, setEmailBusca] = useState('');
     const [cargoSelecionado, setCargoSelecionado] = useState('');
     const [permissoesEditadas, setPermissoesEditadas] = useState([]);
+    // Pontos de empréstimo que o membro opera (só valem com o módulo Empréstimos)
+    const [pontosEditados, setPontosEditados] = useState([]);
     const [usuarioSelecionado, setUsuarioSelecionado] = useState(null);
     const [buscaCargo, setBuscaCargo] = useState('');
     const [dropdownAberto, setDropdownAberto] = useState(false);
@@ -55,6 +57,7 @@ export default function GestaoEquipe({ session, acesso }) {
         setCargoSelecionado(user.perfil_id || '');
         setBuscaCargo(user.perfil_nome || ''); 
         setPermissoesEditadas(user.permissoes || []);
+        setPontosEditados(user.pontos_emprestimo || []);
         setDropdownAberto(false);
     };
 
@@ -65,13 +68,25 @@ export default function GestaoEquipe({ session, acesso }) {
         setCargoSelecionado('');
         setBuscaCargo('');
         setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
+        setPontosEditados([]);
         setDropdownAberto(false);
     };
 
+    const pontosAtivos = pontosEmprestimo.filter(p => p.ativo);
+
     const togglePermissao = (modId) => {
+        const marcando = !permissoesEditadas.includes(modId);
         setPermissoesEditadas(prev =>
             prev.includes(modId) ? prev.filter(p => p !== modId) : [...prev, modId]
         );
+        // Prédio com um ponto só: liberar o módulo já libera o ponto
+        if (modId === 'emprestimos' && marcando && pontosAtivos.length === 1 && !pontosEditados.length) {
+            setPontosEditados([pontosAtivos[0].id]);
+        }
+    };
+
+    const togglePonto = (pontoId) => {
+        setPontosEditados(prev => prev.includes(pontoId) ? prev.filter(p => p !== pontoId) : [...prev, pontoId]);
     };
 
     const handleRemover = async (user) => {
@@ -93,8 +108,14 @@ export default function GestaoEquipe({ session, acesso }) {
             nome: nomeBusca.trim(),
             email: emailBusca.trim(),
             perfil_id: cargoSelecionado,
-            permissoes: permissoesEditadas
+            permissoes: permissoesEditadas,
+            pontosEmprestimo: permissoesEditadas.includes('emprestimos') ? pontosEditados : []
         };
+
+        if (permissoesEditadas.includes('emprestimos') && pontosEmprestimo.length > 0 && !pontosEditados.length && !permissoesEditadas.includes('gestao_emprestimos')) {
+            const seguir = await showConfirm('Nenhum ponto de empréstimo marcado: este membro não vai conseguir usar o balcão. Salvar mesmo assim?', 'Pontos de empréstimo');
+            if (!seguir) return;
+        }
 
         if (modoEdicao) {
             try {
@@ -259,6 +280,31 @@ export default function GestaoEquipe({ session, acesso }) {
                         );
                     })}
                 </div>
+
+                {permissoesEditadas.includes('emprestimos') && pontosEmprestimo.length > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>PONTOS DE EMPRÉSTIMO QUE ATENDE</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {pontosEmprestimo.map(p => {
+                                const marcado = pontosEditados.includes(p.id);
+                                return (
+                                    <button type="button" key={p.id} onClick={() => togglePonto(p.id)}
+                                        style={{
+                                            padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: marcado ? 'bold' : 'normal',
+                                            border: `2px solid ${marcado ? '#3b82f6' : 'var(--border)'}`,
+                                            background: marcado ? 'rgba(59, 130, 246, 0.1)' : 'transparent', color: 'var(--text)',
+                                            opacity: p.ativo ? 1 : 0.6
+                                        }}>
+                                        {marcado ? '✓ ' : ''}📍 {p.nome}{!p.ativo && ' (inativo)'}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b', marginTop: '6px' }}>
+                            O membro só vê e opera os pontos marcados. Quem tem Gestão de Empréstimos vê todos.
+                        </div>
+                    </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
                     {modoEdicao && (

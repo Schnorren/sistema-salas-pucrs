@@ -18,3 +18,15 @@ export const rotuloResponsavel = (texto) => {
   const [email, balcao] = String(texto).split(' · ');
   return balcao || (email || '').split('@')[0];
 };
+
+// Ponto de empréstimo deste computador (por prédio): o PC da recepção abre
+// sempre no seu ponto, mesmo que o login opere mais de um.
+const chavePonto = (predioId) => `balcao_ponto:${predioId || ''}`;
+
+export const lerPontoSalvo = (predioId) => {
+  try { return localStorage.getItem(chavePonto(predioId)) || ''; } catch { return ''; }
+};
+
+export const salvarPontoSalvo = (predioId, pontoId) => {
+  try { localStorage.setItem(chavePonto(predioId), String(pontoId || '')); } catch { /* modo privado */ }
+};

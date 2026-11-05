@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   minutosEntre, formatarDuracao, rotuloDataHora, inputDataHoraSP, inputInicioDoDiaSP, resolverItemPorTermo,
+  hojeSP, normalizarNome, normalizarMatricula, podeDesfazer, restanteParaDesfazerMs, JANELA_DESFAZER_MIN,
+  mediana, calcularMedianas, preverDevolucao, previsaoDaCategoria,
 } from '../backend_core/utils/emprestimoRegras.js';
 
 // Instante em horário de Brasília (UTC-3, sem horário de verão)
@@ -69,4 +71,99 @@ test('bipagem por nome só quando um único item casa (acento indiferente)', () 
   assert.equal(resolverItemPorTermo([{ id: 'd', nome_item: 'Pebolim Média' }], 'media').item.id, 'd');
   assert.deepEqual(resolverItemPorTermo(itens, '   '), { item: null, ambiguos: [] });
   assert.deepEqual(resolverItemPorTermo(itens, 'xadrez'), { item: null, ambiguos: [] });
+});
+
+test('"hoje" é o dia de Brasília', () => {
+  assert.equal(hojeSP(br('2026-11-05T23:59:00')), '2026-11-05');
+  assert.equal(hojeSP(br('2026-11-06T00:01:00')), '2026-11-06');
+});
+
+test('nome do aluno padronizado', () => {
+  assert.equal(normalizarNome('  joão   DA silva '), 'João da Silva');
+  assert.equal(normalizarNome('ANA E SOUZA DOS SANTOS'), 'Ana e Souza dos Santos');
+  assert.equal(normalizarNome("maria-clara d'ávila"), "Maria-Clara D'Ávila");
+  assert.equal(normalizarNome('pedro henrique ii'), 'Pedro Henrique II');
+  assert.equal(normalizarNome('Da Costa'), 'Da Costa'); // partícula só fica minúscula no meio
+  assert.equal(normalizarNome('   '), '');
+  assert.equal(normalizarNome(null), '');
+});
+
+test('matrícula do crachá sem espaços', () => {
+  assert.equal(normalizarMatricula(' 2110 0123 \n'), '21100123');
+  assert.equal(normalizarMatricula(undefined), '');
+});
+
+test('desfazer só dentro da janela (espelho das RPCs: 10 min)', () => {
+  assert.equal(JANELA_DESFAZER_MIN, 10);
+  const registro = br('2026-11-05T10:00:00').toISOString();
+  assert.equal(podeDesfazer(registro, br('2026-11-05T10:09:59')), true);
+  assert.equal(podeDesfazer(registro, br('2026-11-05T10:10:01')), false);
+  assert.equal(restanteParaDesfazerMs(registro, br('2026-11-05T10:04:00')), 6 * 60000);
+  assert.equal(restanteParaDesfazerMs('lixo'), 0);
+  assert.equal(podeDesfazer(null), false);
+});
+
+test('mediana', () => {
+  assert.equal(mediana([5, 1, 3]), 3);
+  assert.equal(mediana([4, 1, 3, 2]), 2.5);
+  assert.equal(mediana([]), null);
+});
+
+// N devoluções de `minutos` cada, a partir de 05/11 08:00, do mais novo ao mais antigo
+const devolucoes = (itemId, minutosLista) => minutosLista.map((m, i) => {
+  const ini = new Date(br('2026-11-05T08:00:00').getTime() - i * 86400000);
+  return { item_id: itemId, data_retirada: ini.toISOString(), data_devolucao: new Date(ini.getTime() + m * 60000).toISOString() };
+});
+
+test('duração típica: por item, com 5+ amostras válidas', () => {
+  const itens = [{ id: 'a', categoria_id: 'sinuca' }];
+  const m = calcularMedianas(devolucoes('a', [30, 40, 50, 60, 70]), itens);
+  assert.deepEqual(m.get('a'), { mediana: 50, amostras: 5, fonte: 'item' });
+});
+
+test('duração típica: ignora desfeito na hora (< 2 min) e esquecido (> 12 h)', () => {
+  const itens = [{ id: 'a', categoria_id: 'c' }];
+  const m = calcularMedianas(devolucoes('a', [1, 30, 30, 30, 30, 30, 900]), itens);
+  assert.deepEqual(m.get('a'), { mediana: 30, amostras: 5, fonte: 'item' });
+  assert.equal(calcularMedianas(devolucoes('a', [1, 1, 30, 900]), itens).has('a'), false);
+});
+
+test('duração típica: item com pouco histórico usa a categoria', () => {
+  const itens = [{ id: 'bola1', categoria_id: 'pebolim' }, { id: 'bola2', categoria_id: 'pebolim' }];
+  const registros = [...devolucoes('bola1', [20, 20, 20]), ...devolucoes('bola2', [40, 40])];
+  const m = calcularMedianas(registros, itens);
+  assert.deepEqual(m.get('bola1'), { mediana: 20, amostras: 5, fonte: 'categoria' });
+  assert.equal(m.get('bola2').fonte, 'categoria');
+});
+
+test('duração típica: só as últimas 30 do item contam', () => {
+  const itens = [{ id: 'a', categoria_id: 'c' }];
+  const recentes = Array(30).fill(10);
+  const antigas = Array(40).fill(300);
+  assert.equal(calcularMedianas(devolucoes('a', [...recentes, ...antigas]), itens).get('a').mediana, 10);
+});
+
+test('previsão de volta: no tempo, passou do habitual e sem histórico', () => {
+  const desde = br('2026-11-05T14:00:00').toISOString();
+  const noTempo = preverDevolucao({ desde, medianaMin: 45 }, br('2026-11-05T14:25:00'));
+  assert.equal(noTempo.estado, 'no_tempo');
+  assert.equal(noTempo.texto, 'costuma voltar em ~20 min');
+  const passou = preverDevolucao({ desde, medianaMin: 45 }, br('2026-11-05T15:10:00'));
+  assert.equal(passou.estado, 'passou');
+  assert.equal(passou.texto, 'passou do tempo habitual (~45 min)');
+  assert.equal(preverDevolucao({ desde, medianaMin: null }, br('2026-11-05T14:25:00')).estado, 'sem_historico');
+  assert.equal(preverDevolucao({ desde, medianaMin: 45 }, br('2026-11-05T14:41:00')).texto, 'costuma voltar em ~4 min');
+  assert.equal(preverDevolucao({}), null);
+});
+
+test('previsão da categoria: só quando todos estão fora', () => {
+  const agora = br('2026-11-05T14:30:00');
+  const fora = (min, mediana) => ({
+    status: 'EMPRESTADO', mediana_min: mediana,
+    emprestimo: { dataRetirada: new Date(agora.getTime() - min * 60000).toISOString() },
+  });
+  assert.equal(previsaoDaCategoria([fora(10, 60), fora(20, 30)], agora).texto, 'próxima volta prevista em ~10 min');
+  assert.equal(previsaoDaCategoria([fora(10, 60), { status: 'DISPONIVEL' }], agora), null);
+  assert.equal(previsaoDaCategoria([fora(10, null), { status: 'MANUTENCAO' }], agora), null);
+  assert.equal(previsaoDaCategoria([], agora), null);
 });

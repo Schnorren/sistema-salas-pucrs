@@ -56,6 +56,7 @@ drop function if exists app_categoria_predio(uuid);
 drop function if exists app_categoria_predio(text);
 drop function if exists app_item_predio(uuid);
 drop function if exists app_item_predio(text);
+drop function if exists app_tem_ponto(text);
 
 create function app_is_admin()
   returns boolean language sql stable security definer set search_path = public as $$
@@ -91,12 +92,27 @@ create function app_item_predio(p_item text)
    where i.id::text = p_item;
 $$;
 
+-- Acesso a um ponto de empréstimo: admin; quem tem 'gestao_emprestimos' no
+-- prédio do ponto; ou o login vinculado ao ponto (emprestimo_ponto_usuarios).
+-- Requer emprestimos_v2.sql aplicado antes.
+create function app_tem_ponto(p_ponto text)
+  returns boolean language sql stable security definer set search_path = public as $$
+  select app_is_admin() or exists (
+    select 1
+      from emprestimo_pontos p
+     where p.id::text = p_ponto
+       and p.predio_id::text = app_predio_id()
+       and (app_has_modulo('gestao_emprestimos')
+            or exists (select 1 from emprestimo_ponto_usuarios pu
+                        where pu.ponto_id = p.id and pu.user_id = auth.uid())));
+$$;
+
 -- Só authenticated: toda policy é `to authenticated`. O REVOKE de PUBLIC/anon é
 -- necessário porque o Supabase concede EXECUTE a anon em função nova do public.
 revoke all on function app_is_admin(), app_predio_id(), app_has_modulo(text),
-  app_categoria_predio(text), app_item_predio(text) from public, anon;
+  app_categoria_predio(text), app_item_predio(text), app_tem_ponto(text) from public, anon;
 grant execute on function app_is_admin(), app_predio_id(), app_has_modulo(text),
-  app_categoria_predio(text), app_item_predio(text) to authenticated;
+  app_categoria_predio(text), app_item_predio(text), app_tem_ponto(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 2. usuarios_acessos — cada um lê só o próprio acesso (admin lê todos).
@@ -156,8 +172,11 @@ create policy itens_select on emprestimo_itens for select to authenticated
   using (app_is_admin() or app_categoria_predio(categoria_id::text) = app_predio_id());
 
 alter table emprestimos_registro enable row level security;
+-- Registros trazem nome e matrícula do aluno (inclusive no payload do
+-- Realtime): só quem opera/gerencia AQUELE ponto lê. Outro ponto do mesmo
+-- prédio (ex.: Secretaria × Recepção) não recebe os eventos.
 create policy reg_select on emprestimos_registro for select to authenticated
-  using (app_is_admin() or app_item_predio(item_id::text) = app_predio_id());
+  using (app_tem_ponto(ponto_id::text));
 
 -- ---------------------------------------------------------------------
 -- 7. Tabelas sem acesso direto pela anon key — RLS habilitado sem policy
@@ -179,5 +198,6 @@ alter table contato_cursos    enable row level security;
 --   where schemaname = 'public'
 --   and tablename in ('usuarios_acessos','predios','perfis','avisos','trocas_sala',
 --     'emprestimo_categorias','emprestimo_itens','emprestimos_registro',
---     'salas','grade','sistema_modulos','alunos_cache','contatos','contato_cursos')
+--     'salas','grade','sistema_modulos','alunos_cache','contatos','contato_cursos',
+--     'emprestimo_pontos','emprestimo_ponto_usuarios','emprestimo_bloqueios','app_migracoes')
 --   order by tablename;

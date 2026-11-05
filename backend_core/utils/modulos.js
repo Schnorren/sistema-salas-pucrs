@@ -12,6 +12,8 @@ export const MODULOS = {
     EDICAO_GRADE: 'edicao_grade',
     EQUIPE: 'equipe',
     EDICAO_CONTATOS: 'edicao_contatos',
+    // Cadastro do acervo de empréstimos (pontos, categorias, itens), limite e bloqueios
+    GESTAO_EMPRESTIMOS: 'gestao_emprestimos',
 };
 
 export const MODULOS_VALIDOS = Object.values(MODULOS);
