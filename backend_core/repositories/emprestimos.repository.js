@@ -21,7 +21,7 @@ const CAMPOS_REGISTRO = `
     data_retirada, resp_retirada, balcao_retirada,
     data_devolucao, resp_devolucao, balcao_devolucao,
     status, ocorrencia, obs_devolucao, encerrado_em, encerrado_por,
-    predio_id, ponto_id
+    predio_id, ponto_id, transferido_de
 `;
 
 async function rpc(nome, params, mensagemPadrao) {
@@ -259,6 +259,27 @@ class EmprestimosRepository {
         return { registros: lista.slice(0, limite), temMais: lista.length > limite };
     }
 
+    // Troca de titular: quem estava com o item antes (registros que os de
+    // `ids` substituíram) e quem ficou com ele depois (sem as trocas desfeitas).
+    // Devolve { anteriores: Map(id → nome), seguintes: Map(id do anterior → nome) }.
+    async getNomesDasTrocas({ anteriores = [], transferidos = [] } = {}) {
+        const vazio = { data: [], error: null };
+        const [antes, depois] = await Promise.all([
+            anteriores.length
+                ? supabase.from('emprestimos_registro').select('id, nome_aluno').in('id', anteriores)
+                : vazio,
+            transferidos.length
+                ? supabase.from('emprestimos_registro').select('transferido_de, nome_aluno, status').in('transferido_de', transferidos)
+                : vazio,
+        ]);
+        if (antes.error) throw antes.error;
+        if (depois.error) throw depois.error;
+        return {
+            anteriores: new Map((antes.data || []).map(r => [r.id, r.nome_aluno])),
+            seguintes: new Map((depois.data || []).filter(r => r.status !== 'CANCELADO').map(r => [r.transferido_de, r.nome_aluno])),
+        };
+    }
+
     async getItemIdsPorNome(pontoIds, termo) {
         const { data, error } = await supabase
             .from('emprestimo_itens')
@@ -276,6 +297,15 @@ class EmprestimosRepository {
             p_predio_id: predioId, p_item_id: itemId, p_matricula: matricula,
             p_nome: nome, p_resp: resp, p_balcao: balcao || null
         }, 'Erro ao registrar o empréstimo.');
+    }
+
+    // Troca de titular numa transação (ver emprestimo_transferir em
+    // supabase/migrations/emprestimos_v2_rpcs.sql)
+    transferirRpc({ predioId, emprestimoId, matricula, nome, resp, balcao }) {
+        return rpc('emprestimo_transferir', {
+            p_predio_id: predioId, p_emprestimo_id: emprestimoId, p_matricula: matricula,
+            p_nome: nome, p_resp: resp, p_balcao: balcao || null
+        }, 'Erro ao trocar o titular do empréstimo.');
     }
 
     devolverRpc({ predioId, emprestimoId, resultado, obs, resp, balcao }) {

@@ -905,6 +905,52 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
+/* ---- Troca de titular (o item passa para outro aluno sem voltar ao balcão) ---- */
+.botoes-devolucao { display: flex; gap: 8px; align-items: stretch; }
+.botoes-devolucao > .btn-devolver,
+.botoes-devolucao > .btn-action-primary { flex: 1; width: auto; }
+.btn-trocar-titular {
+  padding: 10px 12px; border-radius: var(--radius); cursor: pointer; white-space: nowrap;
+  background: var(--blue-b); color: var(--blue); border: 1px solid rgba(26, 78, 150, 0.25);
+  font-weight: 600; font-size: 13px; font-family: var(--sans); transition: background 0.2s, color 0.2s;
+}
+.btn-trocar-titular:hover:not(:disabled) { background: var(--blue); color: #fff; }
+.btn-trocar-titular:disabled { opacity: .5; cursor: default; }
+.btn-trocar-titular.grande { padding: 16px 18px; font-size: 15px; }
+.botoes-linha-devolucao { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-trocar-mini {
+  background: transparent; color: var(--blue); border: 1px solid rgba(26, 78, 150, 0.3);
+  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap;
+}
+.btn-trocar-mini:disabled { opacity: .5; cursor: default; }
+.tag-status.troca { background: var(--blue-b); color: var(--blue); }
+
+.modal-troca-titular {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-troca-titular-caixa {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; width: 460px; max-width: 92vw; max-height: 92vh; overflow-y: auto;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+}
+.modal-troca-titular-caixa h3 { margin: 0 0 6px; }
+.modal-troca-titular-texto { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.modal-troca-titular-texto b { color: var(--text); }
+.modal-troca-titular .mono { font-family: var(--mono); font-size: 12px; }
+.modal-troca-titular .card-aluno-identificado { margin: 12px 0 0; }
+.modal-troca-titular .alerta-balcao { margin: 10px 0 0; }
+.modal-troca-titular-acoes { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.btn-secundario-balcao,
+.btn-trocar-confirmar {
+  padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-family: var(--sans); font-size: 13px;
+}
+.btn-secundario-balcao { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-trocar-confirmar { background: var(--blue); color: #fff; border: none; }
+.btn-secundario-balcao:disabled,
+.btn-trocar-confirmar:disabled,
+.btn-trocar-confirmar[aria-disabled="true"] { opacity: .5; cursor: default; }
+
 .table-historico {
   width: 100%;
   font-size: 13px;

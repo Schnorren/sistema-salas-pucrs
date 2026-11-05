@@ -95,6 +95,11 @@ export const useEmprestimos = (session, predioId, pontoId, buscaHistorico = '') 
         mutationFn: ({ id, resultado = 'OK', obs = null }) => enviar('POST', `/devolver/${id}`, { resultado, obs }),
         onSuccess: invalidar
     });
+    // Troca de titular: o item passa para outro aluno sem voltar ao balcão
+    const transferirMutation = useMutation({
+        mutationFn: ({ id, matricula, nomeAluno }) => enviar('POST', `/transferir/${id}`, { matricula, nomeAluno }),
+        onSuccess: invalidar
+    });
     const cancelarMutation = useMutation({
         mutationFn: ({ id, motivo = null }) => enviar('POST', `/cancelar/${id}`, { motivo }),
         onSuccess: invalidar
@@ -157,12 +162,14 @@ export const useEmprestimos = (session, predioId, pontoId, buscaHistorico = '') 
         // Flags de mutação pendente — usadas para desabilitar botões e barrar double-submit
         retirando: retirarMutation.isPending,
         devolvendo: devolverMutation.isPending,
+        transferindo: transferirMutation.isPending,
         cancelando: cancelarMutation.isPending,
         reabrindo: reabrirMutation.isPending,
         alterandoStatus: statusMutation.isPending,
         corrigindoNome: nomeMutation.isPending,
         retirar: (dados) => retirarMutation.mutateAsync(dados),
         devolver: (dados) => devolverMutation.mutateAsync(dados),
+        transferir: (dados) => transferirMutation.mutateAsync(dados),
         cancelar: (dados) => cancelarMutation.mutateAsync(dados),
         reabrir: (id) => reabrirMutation.mutateAsync(id),
         alterarStatus: (dados) => statusMutation.mutateAsync(dados),

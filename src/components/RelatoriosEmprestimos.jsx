@@ -78,7 +78,7 @@ function Kpi({ titulo, valor, sub, cor }) {
     );
 }
 
-const TAG_SITUACAO = { aberto: 'pendente', nao_devolvido: 'perdido', problema: 'problema', devolvido: 'concluido' };
+const TAG_SITUACAO = { aberto: 'pendente', nao_devolvido: 'perdido', problema: 'problema', devolvido: 'concluido', transferido: 'concluido' };
 
 export default function RelatoriosEmprestimos({ session, acesso, rede = false }) {
     const { predioAtivo, predioNome: predioNomeContexto } = usePredio();
@@ -387,6 +387,7 @@ export default function RelatoriosEmprestimos({ session, acesso, rede = false })
                                                     <td>
                                                         <span className={`tag-status ${TAG_SITUACAO[reg.situacao]}`}>{descreverRetirada(reg)}</span>
                                                         {reg.situacao === 'problema' && <span className="tag-status problema" style={{ marginLeft: 4 }}>Com problema</span>}
+                                                        {reg.situacao === 'transferido' && <span className="tag-status troca" style={{ marginLeft: 4 }}>Passou a outro aluno</span>}
                                                     </td>
                                                 </tr>
                                             ))}

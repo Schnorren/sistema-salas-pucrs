@@ -10,6 +10,7 @@ import { hojeSP } from '../../backend_core/utils/emprestimoRegras';
 const ACOES = {
     'emprestimo.retirar': 'Empréstimo registrado',
     'emprestimo.devolver': 'Devolução registrada',
+    'emprestimo.transferir': 'Troca de titular do empréstimo',
     'emprestimo.item.status': 'Status de item alterado',
     'emprestimo.cancelar': 'Empréstimo desfeito',
     'emprestimo.reabrir': 'Devolução desfeita',
@@ -65,8 +66,9 @@ function resumir(item, nomeModulo) {
             d.resultado === 'NAO_DEVOLVIDO' && `não devolvido${d.obs ? `: ${d.obs}` : ''}`,
             d.balcao,
         ].filter(Boolean).join(' · ');
+        case 'emprestimo.transferir': return [d.item, d.de && d.para && `Matrícula ${d.de} → ${d.para}`, d.balcao].filter(Boolean).join(' · ');
         case 'emprestimo.cancelar':
-        case 'emprestimo.reabrir': return [d.item, d.matricula && `Matrícula ${d.matricula}`, d.balcao].filter(Boolean).join(' · ');
+        case 'emprestimo.reabrir': return [d.item, d.matricula && `Matrícula ${d.matricula}`, d.trocaDesfeita && 'troca de titular desfeita', d.balcao].filter(Boolean).join(' · ');
         case 'emprestimo.item.status': return [d.item, d.status === 'MANUTENCAO' ? 'manutenção' : d.status === 'DISPONIVEL' ? 'liberado' : d.status].filter(Boolean).join(' · ');
         case 'emprestimo.aluno.nome': return [d.nome, item.entidade_id && `Matrícula ${item.entidade_id}`].filter(Boolean).join(' · ');
         case 'emprestimo.bloqueio.criar': return [d.matricula && `Matrícula ${d.matricula}`, d.motivo, d.ate && `até ${String(d.ate).split('-').reverse().join('/')}`].filter(Boolean).join(' · ');

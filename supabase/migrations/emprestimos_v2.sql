@@ -194,6 +194,22 @@ create index if not exists idx_emprestimos_registro_ocorrencias  on emprestimos_
 alter type status_registro_emprestimo add value if not exists 'CANCELADO';
 alter type status_registro_emprestimo add value if not exists 'EXTRAVIADO';
 
+-- Troca de titular (emprestimo_transferir): o item passa de um aluno para
+-- outro sem voltar ao balcão. O registro de quem passou fica TRANSFERIDO (não
+-- é devolução: fica fora da previsão de volta, que só usa CONCLUIDO) e o do
+-- novo aluno aponta para ele em transferido_de (desfazer a troca o reabre).
+alter type status_registro_emprestimo add value if not exists 'TRANSFERIDO';
+alter table emprestimos_registro add column if not exists transferido_de uuid;
+do $$
+begin
+    if not exists (select 1 from pg_constraint where conname = 'emprestimos_registro_transferido_de_fkey') then
+        alter table emprestimos_registro
+            add constraint emprestimos_registro_transferido_de_fkey foreign key (transferido_de) references emprestimos_registro(id);
+    end if;
+end $$;
+create index if not exists idx_emprestimos_registro_transferido_de on emprestimos_registro (transferido_de)
+    where transferido_de is not null;
+
 -- ---------------------------------------------------------------------
 -- 5. Bloqueio manual (vale para todos os pontos do prédio)
 -- ---------------------------------------------------------------------

@@ -239,3 +239,19 @@ test('rede: filtro por prédio ou por ponto vira a lista de ids da API', () => {
   assert.deepEqual(selecaoDaRede(liberados, 'ponto:zzz').pontoIds, []);
   assert.equal(selecaoDaRede([], '').descricao, 'Todos os pontos liberados (0 prédios, 0 pontos)');
 });
+
+test('troca de titular: cada titular conta como retirada; quem passou tem tempo de uso e "Passou a outro aluno"', () => {
+  // Ana pegou às 10:00 e passou para Bruno às 10:25; Bruno devolveu às 10:40
+  const troca = [
+    reg('ping', RECEPCAO, '2026-03-02T13:00:00+00:00', '2026-03-02T13:25:00+00:00', { status: 'TRANSFERIDO' }),
+    reg('ping', RECEPCAO, '2026-03-02T13:25:00+00:00', '2026-03-02T13:40:00+00:00'),
+  ];
+  const r = montarRelatorio({ pontos, itens, registros: troca, retiradasPorAluno: [1, 1] }, periodo);
+  assert.equal(r.resumo.retiradas, 2);
+  assert.equal(r.resumo.alunos, 2);
+  assert.equal(r.resumo.minutosTotais, 40); // 25 + 15: o tempo total do item não muda
+  assert.deepEqual(r.registros.map(x => [x.situacao, x.duracaoMin]), [['devolvido', 15], ['transferido', 25]]);
+  assert.equal(descreverRetirada(r.registros[1]), '25 min');
+  const csv = linhasCsvRelatorio(r).join('\n');
+  assert.match(csv, /Passou a outro aluno/);
+});

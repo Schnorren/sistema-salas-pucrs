@@ -52,7 +52,11 @@ const responsavelComBalcao = (user, balcao) => {
     return balcao ? `${email} · ${balcao}` : email;
 };
 
-const mapearAtivo = (r) => {
+// Troca de titular: trocas = { anteriores: Map(id → nome), seguintes: Map(id → nome) }
+// (ver _nomesDasTrocas). Sem troca, os campos vêm null.
+const SEM_TROCAS = { anteriores: new Map(), seguintes: new Map() };
+
+const mapearAtivo = (r, trocas = SEM_TROCAS) => {
     const ret = separarBalcao(r.resp_retirada, r.balcao_retirada);
     return {
         id: r.id,
@@ -64,10 +68,13 @@ const mapearAtivo = (r) => {
         dataRetirada: r.data_retirada,
         responsavel: ret.responsavel,
         balcao: ret.balcao,
+        // Veio de uma troca de titular: desfazer devolve o item a quem estava antes
+        transferidoDe: r.transferido_de || null,
+        recebidoDe: r.transferido_de ? trocas.anteriores.get(r.transferido_de) || null : null,
     };
 };
 
-const mapearHistorico = (r) => {
+const mapearHistorico = (r, trocas = SEM_TROCAS) => {
     const ret = separarBalcao(r.resp_retirada, r.balcao_retirada);
     const dev = separarBalcao(r.resp_devolucao || r.encerrado_por, r.balcao_devolucao);
     return {
@@ -87,6 +94,9 @@ const mapearHistorico = (r) => {
         balcaoRetirada: ret.balcao,
         responsavel: dev.responsavel,
         balcaoDevolucao: dev.balcao,
+        transferidoDe: r.transferido_de || null,
+        recebidoDe: r.transferido_de ? trocas.anteriores.get(r.transferido_de) || null : null,
+        passouPara: r.status === 'TRANSFERIDO' ? trocas.seguintes.get(r.id) || null : null,
     };
 };
 
@@ -185,6 +195,21 @@ class EmprestimosService {
         return reg;
     }
 
+    // Nomes de quem passou e de quem recebeu o item nas trocas de titular
+    // destes registros (uma ida ao banco só quando há troca na lista). É só
+    // informação: se falhar, o balcão segue sem os nomes.
+    async _nomesDasTrocas(registros) {
+        const anteriores = [...new Set(registros.map(r => r.transferido_de).filter(Boolean))];
+        const transferidos = registros.filter(r => r.status === 'TRANSFERIDO').map(r => r.id);
+        if (!anteriores.length && !transferidos.length) return SEM_TROCAS;
+        try {
+            return await repository.getNomesDasTrocas({ anteriores, transferidos });
+        } catch (err) {
+            console.warn('[emprestimos] nomes das trocas de titular indisponíveis:', err?.message || err);
+            return SEM_TROCAS;
+        }
+    }
+
     async _itemOperavel(user, itemId) {
         exigirPredio(user);
         if (!itemId) throw new ErroPublico('Item não informado.');
@@ -205,7 +230,11 @@ class EmprestimosService {
             repository.getItensDoPonto(ponto.id),
             repository.getAtivosDoPonto(ponto.id),
         ]);
-        const medianas = calcularMedianas(await repository.getDuracoesRecentes(itens.map(i => i.id)), itens);
+        const [duracoes, trocas] = await Promise.all([
+            repository.getDuracoesRecentes(itens.map(i => i.id)),
+            this._nomesDasTrocas(ativos),
+        ]);
+        const medianas = calcularMedianas(duracoes, itens);
         const medianaDoItem = (id) => medianas.get(id)?.mediana ?? null;
         const ativoPorItem = new Map(ativos.map(r => [r.item_id, r]));
 
@@ -223,11 +252,11 @@ class EmprestimosService {
                     categoria_nome: i.categoria?.nome || null,
                     mediana_min: medianaDoItem(i.id),
                     amostras: medianas.get(i.id)?.amostras ?? 0,
-                    emprestimo: reg ? mapearAtivo(reg) : null,
+                    emprestimo: reg ? mapearAtivo(reg, trocas) : null,
                 };
             }),
             // Todos os empréstimos em andamento do ponto (painel da direita)
-            ativos: ativos.map(r => ({ ...mapearAtivo(r), mediana_min: medianaDoItem(r.item_id) })),
+            ativos: ativos.map(r => ({ ...mapearAtivo(r, trocas), mediana_min: medianaDoItem(r.item_id) })),
         };
     }
 
@@ -299,6 +328,24 @@ class EmprestimosService {
         });
     }
 
+    // Troca de titular: o item passa para outro aluno sem voltar ao balcão (o
+    // crachá retido passa a ser o dele). A RPC faz tudo numa transação e
+    // valida suspensão e limite do novo aluno no ponto, como na retirada.
+    async transferir(user, emprestimoId, { matricula, nomeAluno } = {}, balcao) {
+        const reg = await this._registroOperavel(user, emprestimoId);
+        if (reg.status !== 'ATIVO') throw new ErroPublico('Este empréstimo já foi encerrado.');
+        const mat = normalizarMatricula(matricula);
+        const nome = normalizarNome(nomeAluno);
+        if (!mat) throw new ErroPublico('Matrícula não informada.');
+        if (nome.length < 2) throw new ErroPublico('Informe o nome do aluno.');
+        if (mat === reg.matricula_aluno) throw new ErroPublico('Este aluno já está com o item.');
+        const registro = await repository.transferirRpc({
+            predioId: user.predio_id, emprestimoId: reg.id, matricula: mat, nome,
+            resp: user.email || 'Sistema', balcao,
+        });
+        return { registro, anterior: reg };
+    }
+
     async devolver(user, emprestimoId, { resultado, obs } = {}, balcao) {
         const res = String(resultado || RESULTADOS_DEVOLUCAO.OK).toUpperCase();
         if (!Object.values(RESULTADOS_DEVOLUCAO).includes(res)) {
@@ -355,8 +402,9 @@ class EmprestimosService {
         const { registros, temMais } = await repository.getHistorico({
             pontoIds: [ponto.id], antes: antesIso, termo, itemIdsDoTermo,
         });
+        const trocas = await this._nomesDasTrocas(registros);
         return {
-            itens: registros.map(mapearHistorico),
+            itens: registros.map(r => mapearHistorico(r, trocas)),
             proximo: temMais ? registros[registros.length - 1].data_retirada : null,
         };
     }
