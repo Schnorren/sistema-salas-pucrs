@@ -1,5 +1,5 @@
 import supabase from '../../backend_core/config/supabase.js';
-import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { withAuth, invalidarAcessoEmCache } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro, ErroPublico } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 import { sanitizarPermissoes } from '../../backend_core/utils/modulos.js';
@@ -180,6 +180,7 @@ async function handler(req, res) {
                 .eq('user_id', usuario.user_id)
                 .eq('predio_id', predioId);
             if (errUpd) throw errUpd;
+            invalidarAcessoEmCache(usuario.user_id);
 
             if (nome) {
                 await supabase.auth.admin.updateUserById(usuario.user_id, {
@@ -192,7 +193,7 @@ async function handler(req, res) {
                 userId: usuario.user_id, predioId, pontoIds: req.body?.pontosEmprestimo, permissoes: permissoesFinais
             });
 
-            registrarAuditoria({
+            await registrarAuditoria({
                 user: req.user, acao: 'equipe.membro.atualizar', entidade: 'usuarios_acessos',
                 entidadeId: usuario.user_id, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null, pontosEmprestimo }
             });
@@ -258,6 +259,7 @@ async function handler(req, res) {
                     permissoes: permissoesFinais
                 }, { onConflict: 'user_id' });
                 if (upErr) throw upErr;
+                invalidarAcessoEmCache(userId);
 
                 // `inviteUserByEmail` não reenvia nada para quem já existe: o acesso
                 // seria concedido em silêncio e o gestor veria "convite enviado" sem
@@ -290,7 +292,7 @@ async function handler(req, res) {
                 userId, predioId, pontoIds: req.body?.pontosEmprestimo, permissoes: permissoesFinais
             });
 
-            registrarAuditoria({
+            await registrarAuditoria({
                 user: req.user, acao: 'equipe.convidar', entidade: 'usuarios_acessos',
                 entidadeId: userId, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null, pontosEmprestimo }
             });
@@ -328,10 +330,11 @@ async function handler(req, res) {
                 .eq('predio_id', predioId);
 
             if (errDelete) throw errDelete;
+            invalidarAcessoEmCache(usuario.user_id);
 
             await gestaoEmprestimos.definirPontosDoUsuario({ userId: usuario.user_id, predioId, pontoIds: [], permissoes: [] });
 
-            registrarAuditoria({
+            await registrarAuditoria({
                 user: req.user, acao: 'equipe.membro.remover', entidade: 'usuarios_acessos',
                 entidadeId: usuario.user_id, predioId, detalhes: { email }
             });

@@ -160,7 +160,7 @@ class ContatosService {
             atualizado_por: user.id,
         });
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.criar',
             entidade: 'contatos',
@@ -184,7 +184,7 @@ class ContatosService {
         });
         if (!atualizado) throw new ErroPublico('Contato não encontrado.', 404);
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.atualizar',
             entidade: 'contatos',
@@ -202,7 +202,7 @@ class ContatosService {
 
         // Exclusão leva junto unidades/serviços filhos e os cursos (ON DELETE
         // CASCADE) — o log de auditoria é o único rastro que sobra.
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.excluir',
             entidade: 'contatos',
@@ -227,7 +227,7 @@ class ContatosService {
             throw err;
         }
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.curso_adicionar',
             entidade: 'contato_cursos',
@@ -243,7 +243,7 @@ class ContatosService {
         const removido = await contatosRepository.deletarCurso(cursoId);
         if (!removido) throw new ErroPublico('Curso não encontrado.', 404);
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.curso_remover',
             entidade: 'contato_cursos',

@@ -143,7 +143,7 @@ class AvisosService {
         if (!removido) throw new ErroPublico('Aviso não encontrado.', 404);
 
         // Exclusão é permanente e sai do histórico do mural — fica só no log de auditoria.
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'excluir_aviso',
             entidade: 'avisos',

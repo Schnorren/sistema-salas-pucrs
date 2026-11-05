@@ -85,19 +85,19 @@ async function handler(req, res) {
             if (salvar && ((req.method === 'POST' && !c3) || (req.method === 'PUT' && c3))) {
                 const [metodo, acao, entidade] = salvar;
                 const salvo = await gestao[metodo](user, c3 || null, body);
-                auditar(acao, entidade, salvo?.id, { novo: !c3, ...body });
+                await auditar(acao, entidade, salvo?.id, { novo: !c3, ...body });
                 return res.status(c3 ? 200 : 201).json(salvo);
             }
 
             if (req.method === 'POST' && c2 === 'bloqueios' && !c3) {
                 const bloqueio = await gestao.criarBloqueio(user, body);
-                auditar('emprestimo.bloqueio.criar', 'emprestimo_bloqueios', bloqueio.id,
+                await auditar('emprestimo.bloqueio.criar', 'emprestimo_bloqueios', bloqueio.id,
                     { matricula: bloqueio.matricula, motivo: bloqueio.motivo, ate: bloqueio.ate });
                 return res.status(201).json(bloqueio);
             }
             if (req.method === 'DELETE' && c2 === 'bloqueios' && c3) {
                 const bloqueio = await gestao.removerBloqueio(user, c3);
-                auditar('emprestimo.bloqueio.remover', 'emprestimo_bloqueios', c3, { matricula: bloqueio.matricula });
+                await auditar('emprestimo.bloqueio.remover', 'emprestimo_bloqueios', c3, { matricula: bloqueio.matricula });
                 return res.status(200).json({ success: true });
             }
             return res.status(404).json({ error: 'Endpoint não encontrado na Gestão de Empréstimos.' });
@@ -118,7 +118,7 @@ async function handler(req, res) {
             if (req.method === 'GET') return res.status(200).json(await service.consultarAluno(user, c2, q.ponto));
             if (req.method === 'PUT') {
                 const corrigido = await service.corrigirNome(user, c2, body.nome);
-                auditar('emprestimo.aluno.nome', 'alunos_cache', corrigido.matricula, { nome: corrigido.nome });
+                await auditar('emprestimo.aluno.nome', 'alunos_cache', corrigido.matricula, { nome: corrigido.nome });
                 return res.status(200).json(corrigido);
             }
         }
@@ -128,14 +128,14 @@ async function handler(req, res) {
             const registro = await service.retirar(user, {
                 itemId: body.itemId, matricula: body.matricula, nomeAluno: body.nomeAluno,
             }, balcao);
-            auditar('emprestimo.retirar', 'emprestimos_registro', registro?.id,
+            await auditar('emprestimo.retirar', 'emprestimos_registro', registro?.id,
                 { itemId: registro?.item_id, matricula: registro?.matricula_aluno, balcao: balcao || null });
             return res.status(201).json({ success: true, data: registro });
         }
 
         if (req.method === 'POST' && c1 === 'devolver' && c2) {
             const { registro, resultado, anterior } = await service.devolver(user, c2, { resultado: body.resultado, obs: body.obs }, balcao);
-            auditar('emprestimo.devolver', 'emprestimos_registro', c2, {
+            await auditar('emprestimo.devolver', 'emprestimos_registro', c2, {
                 resultado, obs: body.obs || null, matricula: anterior.matricula_aluno, balcao: balcao || null,
             });
             return res.status(200).json({ success: true, data: registro });
@@ -143,21 +143,21 @@ async function handler(req, res) {
 
         if (req.method === 'POST' && c1 === 'cancelar' && c2) {
             const { registro, anterior } = await service.cancelar(user, c2, { motivo: body.motivo }, balcao);
-            auditar('emprestimo.cancelar', 'emprestimos_registro', c2,
+            await auditar('emprestimo.cancelar', 'emprestimos_registro', c2,
                 { matricula: anterior.matricula_aluno, item: anterior.item?.nome_item || null, balcao: balcao || null });
             return res.status(200).json({ success: true, data: registro });
         }
 
         if (req.method === 'POST' && c1 === 'reabrir' && c2) {
             const { registro, anterior } = await service.reabrir(user, c2);
-            auditar('emprestimo.reabrir', 'emprestimos_registro', c2,
+            await auditar('emprestimo.reabrir', 'emprestimos_registro', c2,
                 { matricula: anterior.matricula_aluno, item: anterior.item?.nome_item || null, balcao: balcao || null });
             return res.status(200).json({ success: true, data: registro });
         }
 
         if (req.method === 'PUT' && c1 === 'itens' && c2 && c3 === 'manutencao') {
             const { item, status } = await service.alterarStatusItem(user, c2, body.status, body.observacoes);
-            auditar('emprestimo.item.status', 'emprestimo_itens', c2, { status, item: item.nome_item });
+            await auditar('emprestimo.item.status', 'emprestimo_itens', c2, { status, item: item.nome_item });
             return res.status(200).json({ success: true, message: 'Status do item atualizado.' });
         }
 

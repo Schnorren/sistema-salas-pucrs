@@ -437,7 +437,7 @@ class GradeService {
         gradeCacheMap[predio_id] = null;
         gradeCacheMap['GLOBAL'] = null;
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user, acao: 'grade.salas.visibilidade', entidade: 'sala', predioId: predio_id,
             detalhes: { exibidas: exibir.sort(ordenarNumeros), ocultadas: ocultar.sort(ordenarNumeros) },
         });
