@@ -64,12 +64,6 @@ export default function Dashboard({ session }) {
   const [searchParams] = useSearchParams();
 
   const [showAdminMenu, setShowAdminMenu] = useState(false);
-  // Cabeçalho (topbar + busca + abas) minimizável — preferência persistida
-  // por navegador, igual ao tema (ver Topbar.jsx)
-  const [headerCollapsed, setHeaderCollapsed] = useState(() => localStorage.getItem('headerCollapsed') === '1');
-  useEffect(() => {
-    localStorage.setItem('headerCollapsed', headerCollapsed ? '1' : '0');
-  }, [headerCollapsed]);
 
   const [searchQuery, setSearchQuery] = useState('');
   // Contato a destacar na aba Contatos (/contatos?id=..., vem da busca global).
@@ -316,18 +310,7 @@ export default function Dashboard({ session }) {
 
   return (
     <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <div
-        className="header-toggle"
-        onClick={() => setHeaderCollapsed(!headerCollapsed)}
-        title={headerCollapsed ? 'Mostrar cabeçalho' : 'Minimizar cabeçalho'}
-      >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ transform: headerCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
-          <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-
-      {!headerCollapsed && (
-        <>
+      <>
           {/* Cabeçalho em duas linhas: a busca fica na faixa de cima, junto de
               prédio, relógio e usuário; as abas ficam na de baixo. */}
           <Topbar
@@ -556,8 +539,7 @@ export default function Dashboard({ session }) {
               </div>
             )}
           </div>
-        </>
-      )}
+      </>
 
       <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
         <Suspense fallback={<div className="empty-st">Carregando...</div>}>
