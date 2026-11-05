@@ -55,7 +55,7 @@ const calcularSelecaoPeriodos = (aula, periodosSelecionados) => {
 };
 
 export default function Timeline({ acesso, initialDay, initialFiltro }) {
-  const { predioAtivo } = usePredio();
+  const { predioAtivo, predioNome } = usePredio();
   const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
   const predioAtual = predioAtivo || acesso?.predioId || '';
@@ -398,6 +398,13 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     const salaOrigem    = escapeHtml(aulaSelecionadaParaTroca.salaAtual);
     const diaSemana     = escapeHtml(aulaSelecionadaParaTroca.dia);
     // "Gerado em" no fuso da PUCRS, não no do browser (regra do projeto)
+    // Cabeçalho do cartaz por prédio: o logo do Living 360 só vale para o
+    // prédio 15; nos demais vai o logo da PUCRS + o nome do prédio em texto.
+    const nomePredioCartaz = predioNome || acesso?.predioNome || '';
+    const ehLiving360   = /living\s*360/i.test(nomePredioCartaz) || /(^|\D)15(\D|$)/.test(nomePredioCartaz);
+    const marcaPredio   = ehLiving360
+      ? `<img class="header-logo-living360" src="${logoLiving360}" alt="Living 360" />`
+      : (nomePredioCartaz ? `<div class="header-predio">${escapeHtml(nomePredioCartaz)}</div>` : '');
     const geradoEm      = escapeHtml(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
 
     // Linha em inglês — só inclui os campos preenchidos
@@ -464,6 +471,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
 
             .header-logo-pucrs { height: 48px; width: auto; display: block; }
             .header-logo-living360 { height: 42px; width: auto; display: block; }
+            .header-predio { font-size: 26px; font-weight: 800; color: #003DA5; letter-spacing: -0.3px; }
 
             .header-divider-v {
               width: 1px;
@@ -620,11 +628,10 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
         <body>
           <div class="page">
 
-            <!-- Cabeçalho — logos PUCRS + Living 360 -->
+            <!-- Cabeçalho — logo PUCRS + marca do prédio (Living 360 ou nome) -->
             <div class="header">
               <img class="header-logo-pucrs" src="${logoPucrs}" alt="PUCRS" />
-              <div class="header-divider-v"></div>
-              <img class="header-logo-living360" src="${logoLiving360}" alt="Living 360" />
+              ${marcaPredio ? `<div class="header-divider-v"></div>${marcaPredio}` : ''}
             </div>
 
             <!-- Faixa de atenção -->

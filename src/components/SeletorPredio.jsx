@@ -3,11 +3,12 @@ import { usePredio } from '../contexts/PredioContext';
 
 export default function SeletorPredio({ acesso, session }) {
     const [listaPredios, setListaPredios] = useState([]);
-    const { predioAtivo, setPredioAtivo } = usePredio();
+    const { predioAtivo, setPredioAtivo, setPredioNome } = usePredio();
 
     useEffect(() => {
         if (!acesso.isGlobal) {
             setPredioAtivo(acesso.predioId);
+            setPredioNome(acesso.predioNome || '');
             return;
         }
 
@@ -29,6 +30,12 @@ export default function SeletorPredio({ acesso, session }) {
         fetchPredios();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [acesso]); // predioAtivo e setPredioAtivo intencionalmente excluídos para evitar loop
+
+    // Admin global: o nome acompanha o prédio escolhido no select
+    useEffect(() => {
+        if (!acesso.isGlobal) return;
+        setPredioNome(listaPredios.find(p => p.id === predioAtivo)?.nome || '');
+    }, [acesso.isGlobal, listaPredios, predioAtivo, setPredioNome]);
 
     if (!acesso.isGlobal) {
         return <span className="seletor-estatico"> · {acesso.predioNome}</span>;

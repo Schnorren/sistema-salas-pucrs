@@ -17,6 +17,7 @@ async function handler(req, res) {
             if (endpoint === 'perfis')  return res.status(200).json(await service.listarPerfis());
             if (endpoint === 'usuarios') return res.status(200).json(await service.listarUsuarios());
             if (endpoint === 'modulos')  return res.status(200).json(await service.listarModulos());
+            if (endpoint === 'auditoria') return res.status(200).json(await service.listarAuditoria(req.query?.limite));
         } catch (error) {
             return responderErro(res, error);
         }
