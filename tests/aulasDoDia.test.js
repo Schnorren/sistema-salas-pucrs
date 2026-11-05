@@ -168,3 +168,36 @@ test('lista de trocas: aula da grade, períodos afetados e ordem por data/perío
   assert.deepEqual(orfa.afetados, ['C', 'D']);
   assert.deepEqual(listarTrocas(null, grade, proximosDias), []);
 });
+
+// ---------------------------------------------------------------- situacaoDaSala
+// Busca do topo e painel da sala da Planta (celular).
+test('situacaoDaSala: aula do período, troca que vale nele e a próxima aula', async () => {
+  const { situacaoDaSala } = await import('../src/utils/aulasDoDia.js');
+  const grade = [
+    ...['C', 'D'].map((p) => ({ dia_semana: 'Quinta', periodo: p, nome_aula: '46301-04/2 - PRODUÇÃO AUDIOVISUAL', sala: '204' })),
+    ...['E', 'E1'].map((p) => ({ dia_semana: 'Quinta', periodo: p, nome_aula: '46412-02/1 - FOTOGRAFIA', sala: '204' })),
+    { dia_semana: 'Sexta', periodo: 'A', nome_aula: 'OUTRO DIA', sala: '204' },
+  ];
+  const trocas = { 'Quinta-204-C': { predio_destino: '32', sala_destino: '410', periodos_str: 'D' } };
+
+  const emC = situacaoDaSala(grade, trocas, 'Quinta', '204', 'C');
+  assert.equal(emC.blocos.length, 2);
+  assert.equal(emC.atual.nomeAula, 'PRODUÇÃO AUDIOVISUAL');
+  assert.equal(emC.troca, null); // a troca cobre só o D
+  assert.equal(emC.proxima.nomeAula, 'FOTOGRAFIA');
+
+  const emD = situacaoDaSala(grade, trocas, 'Quinta', '204', 'D');
+  assert.equal(emD.troca.sala_destino, '410');
+
+  const livre = situacaoDaSala(grade, trocas, 'Quinta', '204', 'B');
+  assert.equal(livre.atual, null);
+  assert.equal(livre.proxima.chave, 'Quinta-204-C');
+
+  // Fora do horário: a próxima é a que começa depois do minuto de agora
+  assert.equal(situacaoDaSala(grade, trocas, 'Quinta', '204', null, 11 * 60).proxima.nomeAula, 'FOTOGRAFIA');
+  assert.equal(situacaoDaSala(grade, trocas, 'Quinta', '204', null, 23 * 60).proxima, null);
+  // Outro dia (sem minuto): a primeira aula do dia
+  assert.equal(situacaoDaSala(grade, trocas, 'Quinta', '204', null).proxima.chave, 'Quinta-204-C');
+  // Sala sem aula
+  assert.deepEqual(situacaoDaSala(grade, trocas, 'Quinta', '999', 'C'), { blocos: [], atual: null, troca: null, proxima: null });
+});

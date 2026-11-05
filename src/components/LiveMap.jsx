@@ -1,16 +1,30 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
-import { slotsDoDia, blocosDaSala, blocoNoPeriodo, trocaNoPeriodo } from '../utils/aulasDoDia';
-import { PERIODS, PERIOD_OPTIONS, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { slotsDoDia, blocosDaSala, blocoNoPeriodo, trocaNoPeriodo, situacaoDaSala, salaCoincide, parsearNomeAula } from '../utils/aulasDoDia';
+import { PERIODS, PERIOD_OPTIONS, extractPeriodCode, isInternalClass, getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
 import { useMomentoAtual, useDiaQueAcompanhaHoje } from '../hooks/useMomentoAtual';
+import { useCelular } from '../hooks/useCelular';
+import { ROTAS } from '../rotas';
+import PainelSala from './celular/PainelSala';
+import Icone from './celular/Icone';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
 
-export default function LiveMap({ acesso }) {
+// No celular (useCelular): "Consultar sala" no topo (abre a busca do
+// Dashboard com teclado numérico — onConsultarSala), dia e período em dois
+// botões, salas em 3 colunas e, ao tocar numa sala, o painel da sala
+// (no computador isso é o tooltip do mouse).
+//   chaves = autorizações de chave do prédio (cache do Dashboard), ou null sem
+//            a permissão de avisos
+export default function LiveMap({ acesso, canEditGrade = false, chaves = null, onConsultarSala }) {
+  const celular = useCelular();
+  const navigate = useNavigate();
+  const [salaAberta, setSalaAberta] = useState(null);
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
@@ -79,7 +93,8 @@ export default function LiveMap({ acesso }) {
       contagem: {
         total: salasProcessadas.length,
         livres: salasProcessadas.filter(s => !s.ocupada).length,
-        ocupadas: salasProcessadas.filter(s => s.ocupada).length
+        ocupadas: salasProcessadas.filter(s => s.ocupada).length,
+        trocadas: salasProcessadas.filter(s => s.troca).length
       },
       andares: andares.filter(a => a.salas.length > 0)
     };
@@ -101,6 +116,87 @@ export default function LiveMap({ acesso }) {
   if (loading) return <div className="empty-st">Carregando mapa das salas do CDN...</div>;
   if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ {error}</div>;
   if (!dataProcessed || !dataProcessed.andares) return <div className="empty-st">Nenhum dado de sala retornado. Atualize a grade do prédio.</div>;
+
+  if (celular) {
+    const ehHoje = day === momento.dia;
+    const periodoExibido = dataProcessed.periodoAtual;
+    const ehAgora = ehHoje && per === 'auto' && !!periodoExibido;
+    const { livres, ocupadas, trocadas } = dataProcessed.contagem;
+    const exemplo = dataProcessed.andares[0]?.salas[0]?.numero;
+
+    let painel = null;
+    if (salaAberta) {
+      const agora = getDataSaoPaulo();
+      const situacao = situacaoDaSala(rawGradeData.grade, trocas, day, salaAberta, periodoExibido, ehHoje ? agora.getHours() * 60 + agora.getMinutes() : null);
+      const irParaLinha = (extra) => navigate(`${ROTAS.linhaDoTempo}?${new URLSearchParams({ dia: day, sala: salaAberta, ...extra })}`);
+      painel = (
+        <PainelSala
+          sala={salaAberta} dia={day} periodo={periodoExibido} ehAgora={ehAgora} situacao={situacao}
+          chaves={Array.isArray(chaves) ? chaves.filter(c => salaCoincide(c.sala_id, salaAberta)) : null}
+          canEditGrade={canEditGrade}
+          onFechar={() => setSalaAberta(null)}
+          onVerDia={() => irParaLinha({})}
+          onTrocar={(chave, { editar }) => irParaLinha(editar ? { aula: chave, trocar: '1' } : { aula: chave })}
+        />
+      );
+    }
+
+    return (
+      <div className="cel-pagina">
+        {onConsultarSala && (
+          <button type="button" className="cel-consulta" onClick={onConsultarSala}>
+            <Icone nome="lupa" /><span>Consultar sala</span>{exemplo && <kbd>ex.: {exemplo}</kbd>}
+          </button>
+        )}
+        <div className="cel-chips">
+          <select className="cel-chip" aria-label="Dia" value={day} onChange={e => setDay(e.target.value)}>
+            {ALL_DAYS.map(d => <option key={d} value={d}>{d}{d === momento.dia ? ' (hoje)' : ''}</option>)}
+          </select>
+          <select className="cel-chip" aria-label="Período" value={per} onChange={e => setPer(e.target.value)}>
+            <option value="auto">{momento.periodo ? `Agora (${momento.periodo})` : 'Agora (sem aula)'}</option>
+            {PERIOD_OPTIONS.map(p => <option key={p.code} value={p.code}>Período {p.code} · {p.lb}</option>)}
+          </select>
+        </div>
+        <div className="cel-contagem">
+          <span className="g"><b>{livres}</b>{livres === 1 ? 'livre' : 'livres'}</span>
+          <span className="a"><b>{ocupadas}</b>{ocupadas === 1 ? 'ocupada' : 'ocupadas'}</span>
+          <span className="r"><b>{trocadas}</b>{trocadas === 1 ? 'trocada' : 'trocadas'}</span>
+        </div>
+
+        {dataProcessed.andares.map(andar => (
+          <section key={andar.label} className="cel-andar">
+            <div className="cel-andar-hd">
+              <span>{andar.label}</span>
+              <span>{andar.salas.filter(s => s.ocupada).length} de {andar.salas.length} ocupadas</span>
+            </div>
+            <div className="cel-tiles">
+              {andar.salas.map(sala => (
+                <button
+                  key={sala.numero}
+                  type="button"
+                  className={`room-tile ${sala.ocupada ? 'busy' : 'free'}`}
+                  onClick={() => setSalaAberta(sala.numero)}
+                  aria-label={`Sala ${sala.numero}: ${sala.troca ? 'trocada' : sala.ocupada ? 'ocupada' : 'livre'}`}
+                  style={sala.troca ? { position: 'relative', paddingTop: '22px', borderColor: 'var(--red)', background: 'rgba(239, 68, 68, 0.12)' } : undefined}
+                >
+                  {sala.troca && (
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, background: 'var(--red)', color: '#fff', fontSize: '9.5px', fontWeight: 'bold', textAlign: 'center', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      🔁 P.{sala.troca.predio_destino} · SL.{sala.troca.sala_destino}
+                    </div>
+                  )}
+                  <div className="rt-n">{sala.numero}</div>
+                  <div className="rt-s" style={sala.troca ? { color: 'var(--red)' } : undefined}>{sala.troca ? 'Trocada' : sala.ocupada ? 'Ocupada' : 'Livre'}</div>
+                  {/* Só o nome: no bloco estreito o código (97316-04/1) tomaria o espaço */}
+                  <div className="rt-c">{sala.ocupada ? parsearNomeAula(sala.disciplina).nomeAula : '—'}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+        {painel}
+      </div>
+    );
+  }
 
   return (
     <div className="view active" id="vMap" style={{ display: 'flex', height: '100%' }}>

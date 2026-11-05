@@ -1,33 +1,25 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
 import SeletorPredio from './SeletorPredio';
+import { sairDaConta } from '../utils/sessao';
 import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
 
-export default function Topbar({ session, acesso, onAbrirPerfil, busca }) {
-  const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
+// Topo do computador. No celular o Dashboard usa o TopoCelular. O tema vem do
+// Dashboard (useTema), que vale para os dois layouts.
+export default function Topbar({ session, acesso, onAbrirPerfil, busca, escuro, onAlternarTema }) {
+  const isDark = escuro;
   // Horário de Brasília (regra do projeto), não o fuso do computador
   const [time, setTime] = useState(getDataSaoPaulo());
   const [saindo, setSaindo] = useState(false);
 
   const handleSignOut = async () => {
     setSaindo(true);
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setSaindo(false);
-      // Se falhar, tenta limpar a sessão localmente mesmo assim
-      await supabase.auth.signOut({ scope: 'local' });
-    }
+    if (!(await sairDaConta())) setSaindo(false);
   };
 
   useEffect(() => {
     const timer = setInterval(() => setTime(getDataSaoPaulo()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    document.body.classList.toggle('dark-mode', isDark);
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
 
   const pad = (n) => String(n).padStart(2, '0');
   const nomeUsuario = session?.user?.user_metadata?.nome 
@@ -85,7 +77,7 @@ export default function Topbar({ session, acesso, onAbrirPerfil, busca }) {
         </button>
         <button 
           className="tb-btn" 
-          onClick={() => setIsDark(!isDark)}
+          onClick={onAlternarTema}
           title="Alternar Tema"
           style={{ 
             background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer',

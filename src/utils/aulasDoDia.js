@@ -78,6 +78,22 @@ export const blocoNoPeriodo = (blocos, code) => {
   return (blocos || []).find((b) => i >= b.idxIni && i <= b.idxFim) || null;
 };
 
+// Situação de uma sala num dia: os blocos de aula, o bloco no `periodo`, a
+// troca que vale nele e a próxima aula. Usada pela busca do topo e pelo painel
+// da sala da Planta no celular. Sem período (fora do horário de aula), a
+// próxima é a primeira que começa depois de `minutoAgora` (minutos desde
+// 00:00); sem `minutoAgora` (outro dia), é a primeira do dia.
+export function situacaoDaSala(gradeBruta, trocas, dia, sala, periodo, minutoAgora = null) {
+  const blocos = blocosDaSala(slotsDoDia(gradeBruta, dia).get(sala), dia, sala);
+  const atual = periodo ? blocoNoPeriodo(blocos, periodo) : null;
+  const emMinutos = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return h * 60 + m; };
+  let proxima;
+  if (periodo) proxima = blocos.find((b) => b.idxIni > IDX_PERIODO[periodo]);
+  else if (minutoAgora == null) proxima = blocos[0];
+  else proxima = blocos.find((b) => emMinutos(b.inicio) > minutoAgora);
+  return { blocos, atual, troca: atual ? trocaNoPeriodo(trocas, atual, periodo) : null, proxima: proxima || null };
+}
+
 // Um registro de troca vale para o bloco, mas pode cobrir só parte dos
 // períodos (periodos_str "L,M" de um bloco LMNP). Registros antigos gravavam o
 // bloco inteiro concatenado sem vírgula ("LMNP"); nesse formato nenhuma parte

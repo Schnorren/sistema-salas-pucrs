@@ -1,3 +1,4 @@
+import { useCelular } from '../hooks/useCelular';
 import { horarioDosPeriodos, dataCurta } from '../utils/aulasDoDia';
 import { OVERLAY, CARTAO, BOTAO, BOTAO_PERIGO, BOTAO_PEQUENO } from '../utils/estilosModalTroca';
 
@@ -9,10 +10,12 @@ const rotuloDoDia = (item) => {
 // Lista das trocas de sala que ainda vão acontecer (hoje e os próximos 6 dias),
 // para reimprimir, editar e desfazer sem procurar a célula vermelha na grade.
 // itens = listarTrocas() de utils/aulasDoDia (já ordenados).
+// No celular abre como painel que sobe de baixo e sem "Reimprimir".
 export default function ModalListaTrocas({ itens, ate, canEditGrade, desfazendoChave, onFechar, onVerNaGrade, onImprimir, onEditar, onDesfazer }) {
+  const celular = useCelular(); // painel que sobe: tocar fora fecha (só no celular)
   return (
-    <div style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-lista-trocas">
-      <div style={{ ...CARTAO, width: '760px', display: 'flex', flexDirection: 'column' }}>
+    <div className="modal-folha" style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-lista-trocas" onClick={celular ? onFechar : undefined}>
+      <div className="modal-cartao" style={{ ...CARTAO, width: '760px', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
         <h2 id="titulo-lista-trocas" style={{ margin: '0 0 4px 0', color: 'var(--text)' }}>🔁 Trocas de sala</h2>
         <div style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
           De hoje até {ate}. Cada troca vale só para a data dela.
@@ -46,9 +49,9 @@ export default function ModalListaTrocas({ itens, ate, canEditGrade, desfazendoC
                       ⚠️ Esta aula não está mais na grade atual (a grade foi reimportada).
                     </div>
                   )}
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px', flexWrap: 'wrap' }}>
+                  <div className="lista-trocas-acoes" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px', flexWrap: 'wrap' }}>
                     {bloco && <button type="button" onClick={() => onVerNaGrade(item)} style={{ ...BOTAO, ...BOTAO_PEQUENO }}>Ver na grade</button>}
-                    <button type="button" onClick={() => onImprimir(item)} style={{ ...BOTAO, ...BOTAO_PEQUENO }}>🖨️ Reimprimir</button>
+                    <button type="button" className="so-computador" onClick={() => onImprimir(item)} style={{ ...BOTAO, ...BOTAO_PEQUENO }}>🖨️ Reimprimir</button>
                     {canEditGrade && bloco && <button type="button" onClick={() => onEditar(item)} style={{ ...BOTAO, ...BOTAO_PEQUENO }}>Editar</button>}
                     {canEditGrade && (
                       <button type="button" onClick={() => onDesfazer(item)} disabled={desfazendoChave === item.chave} style={{ ...BOTAO_PERIGO, ...BOTAO_PEQUENO }}>
@@ -62,7 +65,7 @@ export default function ModalListaTrocas({ itens, ate, canEditGrade, desfazendoC
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+        <div className="modal-acoes" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
           <button type="button" onClick={onFechar} style={BOTAO}>Fechar</button>
         </div>
       </div>

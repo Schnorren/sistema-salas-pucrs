@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Component, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, NavLink, Link, matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ROTAS } from '../rotas';
 import Topbar from './Topbar';
@@ -77,7 +77,21 @@ import { buscarAvisos } from '../hooks/useAvisos';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
 import { computarChavesDeBlocos, getDiaAtual, getCurrentPeriod, getDataSaoPaulo, PERIODS } from '../../backend_core/utils/timeHelpers';
-import { slotsDoDia, blocosDaSala, blocoNoPeriodo, trocaNoPeriodo, salaCoincide, normalizar, IDX_PERIODO } from '../utils/aulasDoDia';
+import { situacaoDaSala, salaCoincide, normalizar, IDX_PERIODO } from '../utils/aulasDoDia';
+import { useCelular } from '../hooks/useCelular';
+import { useTema } from '../hooks/useTema';
+import TopoCelular from './celular/TopoCelular';
+import BarraInferior from './celular/BarraInferior';
+import BuscaCelular from './celular/BuscaCelular';
+import MenuMais from './celular/MenuMais';
+import Icone from './celular/Icone';
+
+// Telas que no celular abrem como no computador, com um aviso (decisão de
+// 05/11: não esconder; o balcão de empréstimos fica nos PCs da recepção).
+const TELAS_DE_COMPUTADOR = [
+  ROTAS.emprestimos, ROTAS.ocupacao, ROTAS.historicoAulas, ROTAS.atualizarGrade, ROTAS.equipe,
+  ROTAS.relatorioEmprestimos, ROTAS.gestaoEmprestimos, ROTAS.admin,
+];
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
@@ -105,6 +119,16 @@ export default function Dashboard({ session }) {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const searchRef = useRef(null);
+  // Layout de celular (barra de baixo, topo enxuto, busca em tela cheia)
+  const celular = useCelular();
+  const [escuro, setEscuro] = useTema();
+  const [buscaCelular, setBuscaCelular] = useState(null); // null | 'numero' | 'texto'
+  const campoBuscaCelular = useRef(null);
+  const fecharBuscaCelular = useCallback(() => {
+    setBuscaCelular(null);
+    setSearchQuery('');
+    campoBuscaCelular.current?.blur();
+  }, []);
   const adminMenuRef = useRef(null);
 
   // Recarga automática por chunk velho (ErrorBoundary): depois de 30 s de uso
@@ -245,32 +269,30 @@ export default function Dashboard({ session }) {
     if (!sala) return null;
     const hoje = getDiaAtual();
     const per = getCurrentPeriod();
-    const blocos = blocosDaSala(slotsDoDia(gradeData.grade, hoje).get(sala.numero), hoje, sala.numero);
-    const agora = per ? blocoNoPeriodo(blocos, per) : null;
     const dt = getDataSaoPaulo();
-    const minAgora = dt.getHours() * 60 + dt.getMinutes();
-    const aMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
-    const proxima = per
-      ? blocos.find(b => b.idxIni > IDX_PERIODO[per])
-      : blocos.find(b => aMin(b.inicio) > minAgora);
+    const { atual, troca, proxima } = situacaoDaSala(gradeData.grade, trocasAtivas, hoje, sala.numero, per, dt.getHours() * 60 + dt.getMinutes());
     return {
       numero: sala.numero, dia: hoje, per,
       inicioPer: per ? PERIODS[IDX_PERIODO[per]].lb : null,
-      agora, troca: agora ? trocaNoPeriodo(trocasAtivas, agora, per) : null, proxima,
+      agora: atual, troca, proxima,
       chaves: (avisosCache?.chaves || []).filter(c => salaCoincide(c.sala_id, sala.numero)),
     };
   }, [searchQuery, gradeData, trocasAtivas, avisosCache]);
 
   const handleSelectContato = (resultado) => {
     setShowDropdown(false);
+    fecharBuscaCelular();
     setSearchQuery('');
     navigate(`${ROTAS.contatos}?${new URLSearchParams({ id: resultado.contatoId })}`);
   };
 
+  // No celular, abre direto a agenda da sala (?sala=) em vez de filtrar a grade.
   const handleSelectResult = (result) => {
     setShowDropdown(false);
+    fecharBuscaCelular();
     setSearchQuery('');
-    navigate(`${ROTAS.linhaDoTempo}?${new URLSearchParams({ dia: result.dia_semana, filtro: result.sala })}`);
+    const params = celular ? { dia: result.dia_semana, sala: result.sala } : { dia: result.dia_semana, filtro: result.sala };
+    navigate(`${ROTAS.linhaDoTempo}?${new URLSearchParams(params)}`);
   };
 
   if (acesso.loading) {
@@ -348,13 +370,158 @@ export default function Dashboard({ session }) {
 
   const isGestaoActive = itensGestao.some(item => item.ativo);
 
+  // Resultados da busca: os mesmos no dropdown do computador e na busca em
+  // tela cheia do celular.
+  const resultadosBusca = (
+    <>
+        {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
+          <div className="sd-empty">Buscando na base...</div>
+        ) : searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
+          <div className="sd-empty">Nenhum registro encontrado.</div>
+        ) : (
+          <>
+            {salaConsultada && (
+              <>
+                <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>
+                  SALA {salaConsultada.numero} · {salaConsultada.per ? `AGORA (PER. ${salaConsultada.per} · ${salaConsultada.inicioPer})` : 'FORA DO HORÁRIO DE AULA'}
+                </div>
+                <div
+                  className="sd-item"
+                  style={salaConsultada.troca ? { background: 'rgba(239, 68, 68, 0.08)' } : undefined}
+                  onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}
+                >
+                  <div className="sd-room">{salaConsultada.numero}</div>
+                  <div className="sd-info">
+                    {salaConsultada.agora ? (
+                      <>
+                        <div className="sd-class">
+                          {salaConsultada.agora.nomeAula}
+                          {salaConsultada.agora.codCred && <span style={{ opacity: 0.7, fontWeight: 'normal' }}> · {salaConsultada.agora.codCred}</span>}
+                        </div>
+                        <div className="sd-meta">
+                          {salaConsultada.troca && (
+                            <>
+                              <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🔁 TRANSFERIDA → PRÉDIO {salaConsultada.troca.predio_destino} · SALA {salaConsultada.troca.sala_destino}</span>
+                              <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                            </>
+                          )}
+                          Per. {salaConsultada.agora.periodos.join('')}
+                          <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                          {salaConsultada.agora.inicio} às {salaConsultada.agora.fim}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="sd-class">Livre agora</div>
+                        <div className="sd-meta">
+                          {salaConsultada.proxima
+                            ? `Próxima aula: ${salaConsultada.proxima.nomeAula} às ${salaConsultada.proxima.inicio} (${salaConsultada.proxima.periodos.join('')})`
+                            : 'Sem mais aulas hoje nesta sala'}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {salaConsultada.agora && salaConsultada.proxima && (
+                  <div className="sd-item" onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}>
+                    <div className="sd-room" style={{ opacity: 0.6 }}>⏭</div>
+                    <div className="sd-info">
+                      <div className="sd-class">Depois: {salaConsultada.proxima.nomeAula}</div>
+                      <div className="sd-meta">às {salaConsultada.proxima.inicio} · Per. {salaConsultada.proxima.periodos.join('')}</div>
+                    </div>
+                  </div>
+                )}
+                {podeVerAvisos && (salaConsultada.chaves.length > 0 ? salaConsultada.chaves.map(c => (
+                  <div key={c.id} className="sd-item" onClick={() => { setShowDropdown(false); fecharBuscaCelular(); setSearchQuery(''); navigate(ROTAS.avisos); }}>
+                    <div className="sd-room">🔑</div>
+                    <div className="sd-info">
+                      <div className="sd-class">Autorização de chave: {c.aluno_nome}</div>
+                      <div className="sd-meta">
+                        {c.disciplina}
+                        {c.periodo && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>Per. {c.periodo}</>}
+                        {typeof c.data_prevista === 'string' && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>{c.data_prevista.split('-').reverse().join('/')}</>}
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="sd-item" style={{ cursor: 'default' }}>
+                    <div className="sd-room" style={{ opacity: 0.6 }}>🔑</div>
+                    <div className="sd-info"><div className="sd-class" style={{ fontWeight: 'normal' }}>Sem autorização de chave pendente para a {salaConsultada.numero}</div></div>
+                  </div>
+                ))}
+                {searchResults.length > 0 && (
+                  <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>AULAS DA SEMANA</div>
+                )}
+              </>
+            )}
+            {searchResults.map((res) => (
+              <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
+                <div className="sd-room">{res.sala}</div>
+                <div className="sd-info">
+                  <div className="sd-class">{res.nome}</div>
+                  <div className="sd-meta">
+                    <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
+                    <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                    Per. {res.periodosFormatados}
+                    <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                    {res.horarioInicio} às {res.horarioFim}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {searchResults.length > 0 && (
+              <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
+            )}
+    
+            {resultadosContatos.length > 0 && (
+              <>
+                <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>CONTATOS</div>
+                {resultadosContatos.map((res) => (
+                  <div key={res.chave} className="sd-item" onClick={() => handleSelectContato(res)}>
+                    <div className="sd-room">{res.tipo === 'curso' ? '🎓' : '📇'}</div>
+                    <div className="sd-info">
+                      <div className="sd-class">{res.titulo}</div>
+                      <div className="sd-meta">
+                        {res.subtitulo && <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.subtitulo}</span>}
+                        {res.subtitulo && res.telefone && <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>}
+                        {res.telefone}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+    </>
+  );
+
+  // Abre a busca do celular. O foco vai para o campo DENTRO do toque (a busca
+  // fica montada e escondida): só assim o iPhone abre o teclado. 'numero' =
+  // Consultar sala (teclado numérico); 'texto' = lupa do topo.
+  const abrirBuscaCelular = (teclado) => {
+    const campo = campoBuscaCelular.current;
+    if (campo) {
+      campo.inputMode = teclado === 'numero' ? 'numeric' : 'search';
+      campo.focus();
+    }
+    setBuscaCelular(teclado);
+  };
+
+  // Telas que continuam com o layout do computador no celular (decisão de 05/11)
+  const telaDeComputador = celular && TELAS_DE_COMPUTADOR.some(rota => matchPath({ path: rota, end: true }, location.pathname));
+
   return (
-    <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div id="app" className={celular ? 'app-celular' : undefined} style={celular ? undefined : { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      {celular ? (
+        <TopoCelular session={session} acesso={acesso} onBuscar={() => abrirBuscaCelular('texto')} />
+      ) : (
       <>
           {/* Cabeçalho em duas linhas: a busca fica na faixa de cima, junto de
               prédio, relógio e usuário; as abas ficam na de baixo. */}
           <Topbar
             session={session} acesso={acesso} onAbrirPerfil={() => navigate(ROTAS.perfil)}
+            escuro={escuro} onAlternarTema={() => setEscuro(e => !e)}
             busca={(
               <div className="search-bar search-bar--topo" ref={searchRef}>
                 <div className="search-input-wrap">
@@ -378,125 +545,7 @@ export default function Dashboard({ session }) {
     
                 {showDropdown && (
                   <div className="search-dropdown vis">
-                    {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
-                      <div className="sd-empty">Buscando na base...</div>
-                    ) : searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
-                      <div className="sd-empty">Nenhum registro encontrado.</div>
-                    ) : (
-                      <>
-                        {salaConsultada && (
-                          <>
-                            <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>
-                              SALA {salaConsultada.numero} · {salaConsultada.per ? `AGORA (PER. ${salaConsultada.per} · ${salaConsultada.inicioPer})` : 'FORA DO HORÁRIO DE AULA'}
-                            </div>
-                            <div
-                              className="sd-item"
-                              style={salaConsultada.troca ? { background: 'rgba(239, 68, 68, 0.08)' } : undefined}
-                              onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}
-                            >
-                              <div className="sd-room">{salaConsultada.numero}</div>
-                              <div className="sd-info">
-                                {salaConsultada.agora ? (
-                                  <>
-                                    <div className="sd-class">
-                                      {salaConsultada.agora.nomeAula}
-                                      {salaConsultada.agora.codCred && <span style={{ opacity: 0.7, fontWeight: 'normal' }}> · {salaConsultada.agora.codCred}</span>}
-                                    </div>
-                                    <div className="sd-meta">
-                                      {salaConsultada.troca && (
-                                        <>
-                                          <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🔁 TRANSFERIDA → PRÉDIO {salaConsultada.troca.predio_destino} · SALA {salaConsultada.troca.sala_destino}</span>
-                                          <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                                        </>
-                                      )}
-                                      Per. {salaConsultada.agora.periodos.join('')}
-                                      <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                                      {salaConsultada.agora.inicio} às {salaConsultada.agora.fim}
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="sd-class">Livre agora</div>
-                                    <div className="sd-meta">
-                                      {salaConsultada.proxima
-                                        ? `Próxima aula: ${salaConsultada.proxima.nomeAula} às ${salaConsultada.proxima.inicio} (${salaConsultada.proxima.periodos.join('')})`
-                                        : 'Sem mais aulas hoje nesta sala'}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            {salaConsultada.agora && salaConsultada.proxima && (
-                              <div className="sd-item" onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}>
-                                <div className="sd-room" style={{ opacity: 0.6 }}>⏭</div>
-                                <div className="sd-info">
-                                  <div className="sd-class">Depois: {salaConsultada.proxima.nomeAula}</div>
-                                  <div className="sd-meta">às {salaConsultada.proxima.inicio} · Per. {salaConsultada.proxima.periodos.join('')}</div>
-                                </div>
-                              </div>
-                            )}
-                            {podeVerAvisos && (salaConsultada.chaves.length > 0 ? salaConsultada.chaves.map(c => (
-                              <div key={c.id} className="sd-item" onClick={() => { setShowDropdown(false); setSearchQuery(''); navigate(ROTAS.avisos); }}>
-                                <div className="sd-room">🔑</div>
-                                <div className="sd-info">
-                                  <div className="sd-class">Autorização de chave: {c.aluno_nome}</div>
-                                  <div className="sd-meta">
-                                    {c.disciplina}
-                                    {c.periodo && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>Per. {c.periodo}</>}
-                                    {typeof c.data_prevista === 'string' && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>{c.data_prevista.split('-').reverse().join('/')}</>}
-                                  </div>
-                                </div>
-                              </div>
-                            )) : (
-                              <div className="sd-item" style={{ cursor: 'default' }}>
-                                <div className="sd-room" style={{ opacity: 0.6 }}>🔑</div>
-                                <div className="sd-info"><div className="sd-class" style={{ fontWeight: 'normal' }}>Sem autorização de chave pendente para a {salaConsultada.numero}</div></div>
-                              </div>
-                            ))}
-                            {searchResults.length > 0 && (
-                              <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>AULAS DA SEMANA</div>
-                            )}
-                          </>
-                        )}
-                        {searchResults.map((res) => (
-                          <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
-                            <div className="sd-room">{res.sala}</div>
-                            <div className="sd-info">
-                              <div className="sd-class">{res.nome}</div>
-                              <div className="sd-meta">
-                                <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.dia_semana}</span>
-                                <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                                Per. {res.periodosFormatados}
-                                <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
-                                {res.horarioInicio} às {res.horarioFim}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        {searchResults.length > 0 && (
-                          <div className="sd-footer">Clique para ver detalhes na Linha do Tempo</div>
-                        )}
-
-                        {resultadosContatos.length > 0 && (
-                          <>
-                            <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>CONTATOS</div>
-                            {resultadosContatos.map((res) => (
-                              <div key={res.chave} className="sd-item" onClick={() => handleSelectContato(res)}>
-                                <div className="sd-room">{res.tipo === 'curso' ? '🎓' : '📇'}</div>
-                                <div className="sd-info">
-                                  <div className="sd-class">{res.titulo}</div>
-                                  <div className="sd-meta">
-                                    {res.subtitulo && <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>{res.subtitulo}</span>}
-                                    {res.subtitulo && res.telefone && <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>}
-                                    {res.telefone}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </>
-                        )}
-                      </>
-                    )}
+                    {resultadosBusca}
                   </div>
                 )}
               </div>
@@ -588,13 +637,29 @@ export default function Dashboard({ session }) {
             )}
           </div>
       </>
+      )}
 
-      <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+      {telaDeComputador && (
+        <div className="cel-aviso-pc" role="note">
+          <Icone nome="computador" tamanho={16} /> Esta tela foi feita para o computador. No celular ela funciona, mas sem ajustes.
+        </div>
+      )}
+
+      <div className={celular ? 'cel-conteudo' : undefined} style={celular ? undefined : { flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
         {/* key: o erro de uma tela não "gruda" nas outras ao navegar */}
         <ErrorBoundary key={location.pathname}>
         <Suspense fallback={<div className="empty-st">Carregando...</div>}>
         <Routes>
-          <Route path={ROTAS.planta} element={<LiveMap session={session} acesso={acesso} />} />
+          <Route
+            path={ROTAS.planta}
+            element={
+              <LiveMap
+                session={session} acesso={acesso} canEditGrade={canEditGrade}
+                chaves={podeVerAvisos ? (avisosCache?.chaves || []) : null}
+                onConsultarSala={() => abrirBuscaCelular('numero')}
+              />
+            }
+          />
           <Route
             path={ROTAS.linhaDoTempo}
             element={
@@ -609,9 +674,15 @@ export default function Dashboard({ session }) {
           <Route path={ROTAS.emprestimos} element={restrita(canViewEmprestimos, <MuralEmprestimos session={session} acesso={acesso} />)} />
           <Route path={ROTAS.contatos} element={<MuralContatos session={session} acesso={acesso} canEditContatos={canEditContatos} contatoFocado={contatoFocado} />} />
           <Route path={ROTAS.admin} element={restrita(isAdmin, <AdminPanel session={session} acesso={acesso} />)} />
+          <Route
+            path={ROTAS.mais}
+            element={celular
+              ? <MenuMais session={session} acesso={acesso} itensGestao={itensGestao} canViewEmprestimos={canViewEmprestimos} escuro={escuro} onAlternarTema={() => setEscuro(e => !e)} />
+              : <Navigate to={ROTAS.planta} replace />}
+          />
           <Route path={ROTAS.perfil} element={<MeuPerfil session={session} onClose={() => navigate(ROTAS.planta)} />} />
 
-          <Route path={ROTAS.salasLivres} element={restrita(canViewOperacional, <div style={{ padding: 20 }}><FreeRooms session={session} acesso={acesso} /></div>)} />
+          <Route path={ROTAS.salasLivres} element={restrita(canViewOperacional, <div style={{ padding: celular ? 12 : 20 }}><FreeRooms session={session} acesso={acesso} /></div>)} />
           <Route path={ROTAS.ocupacao} element={restrita(canViewOperacional, <WeeklyHeatmap session={session} acesso={acesso} />)} />
           <Route path={ROTAS.historicoAulas} element={restrita(canViewRelatorios, <HistoricalReports session={session} acesso={acesso} />)} />
           <Route
@@ -633,6 +704,28 @@ export default function Dashboard({ session }) {
         </Suspense>
         </ErrorBoundary>
       </div>
+
+      {celular && (
+        <>
+          <BarraInferior canViewAvisos={canViewAvisos} totalTrocas={totalTrocasAtivas} totalAvisos={totalAvisosPendentes} />
+          <BuscaCelular
+            ref={campoBuscaCelular}
+            aberta={!!buscaCelular}
+            teclado={buscaCelular}
+            valor={searchQuery}
+            onMudar={setSearchQuery}
+            onFechar={fecharBuscaCelular}
+          >
+            {searchQuery.trim().length >= 2 ? resultadosBusca : (
+              <div className="cel-busca-dica">
+                {buscaCelular === 'numero'
+                  ? 'Digite o número da sala para ver a aula de agora, a próxima, a troca de sala e as autorizações de chave.'
+                  : 'Digite o número de uma sala, o nome ou o código de uma disciplina, ou um curso para achar o contato.'}
+              </div>
+            )}
+          </BuscaCelular>
+        </>
+      )}
     </div>
   );
 }
