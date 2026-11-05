@@ -66,7 +66,7 @@ export const UIProvider = ({ children }) => {
             </div>
 
             {modal && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div data-ui-modal="" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ background: 'var(--surface, #1e293b)', padding: '24px', borderRadius: '12px', width: '400px', border: '1px solid var(--border, #334155)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
                         <h3 style={{ margin: '0 0 10px 0', color: 'var(--text, #fff)' }}>{modal.title}</h3>
                         <p style={{ margin: '0 0 20px 0', color: 'var(--muted, #94a3b8)', fontSize: '14px', lineHeight: '1.5' }}>{modal.message}</p>

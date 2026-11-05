@@ -25,17 +25,20 @@ const dirMigrations = join(raiz, 'supabase', 'migrations');
 // Ordem importa: RPCs e tabelas antes das constraints/RLS que dependem delas.
 // Mantida em sincronia com a seção "Banco / Supabase" do CLAUDE.md.
 const ORDEM = [
-  'concluir_devolucao_rpc.sql',
-  'realizar_emprestimo_rpc.sql',
-  'estatisticas_emprestimos_rpc.sql',
+  'emprestimos_schema.sql',
+  'emprestimo_status_item_rpc.sql',
   'trocas_sala_data_aula.sql',
   'trocas_sala_semana.sql',
   'trocas_sala_predio_unique.sql',
   'trocas_sala_replica_identity.sql',
   'contatos.sql',
   'contatos_seed.sql',
+  'emprestimos_v2.sql',
+  'emprestimos_v2_rpcs.sql',
   'rls_policies.sql',
   'auditoria_log.sql',
+  // Remove as RPCs da v1. Só depois do deploy do código v2 — ver o cabeçalho do arquivo.
+  'emprestimos_limpeza.sql',
 ];
 
 const dryRun = process.argv.includes('--dry-run');

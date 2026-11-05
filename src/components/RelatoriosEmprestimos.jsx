@@ -5,23 +5,33 @@ import { useQuery } from '@tanstack/react-query';
 import { useUI } from '../contexts/UIContext';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { formatarDuracao, minutosEntre, inputDataHoraSP, inputInicioDoDiaSP } from '../../backend_core/utils/emprestimoRegras';
+import { usePontosEmprestimo } from '../hooks/useEmprestimos';
 
-const getInicioHojeLocal = () => {
-    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 10) + 'T00:00';
-};
+// Período padrão = hoje no horário de Brasília (antes: fuso do navegador)
+const getInicioHojeLocal = () => inputInicioDoDiaSP();
+const getAgoraLocal = () => inputDataHoraSP();
 
-const getAgoraLocal = () => {
-    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
-};
+const calcularDuracaoTotal = (inicioIso, fimIso) => formatarDuracao(minutosEntre(inicioIso, fimIso));
 
-const calcularDuracaoTotal = (inicioIso, fimIso) => {
-    if (!inicioIso || !fimIso) return '--';
-    const diffMs = new Date(fimIso) - new Date(inicioIso);
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 60) return `${diffMin} min`;
-    return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+// Fatia a captura da tela em páginas A4. Antes a imagem inteira ia para UMA
+// página e tudo que passasse da altura do A4 era cortado do PDF.
+const montarPdfPaginado = (canvas) => {
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const larguraPdf = pdf.internal.pageSize.getWidth();
+    const alturaPdf = pdf.internal.pageSize.getHeight();
+    const alturaPaginaPx = Math.floor(canvas.width * (alturaPdf / larguraPdf));
+
+    for (let y = 0, pagina = 0; y < canvas.height; y += alturaPaginaPx, pagina += 1) {
+        const alturaFatia = Math.min(alturaPaginaPx, canvas.height - y);
+        const fatia = document.createElement('canvas');
+        fatia.width = canvas.width;
+        fatia.height = alturaFatia;
+        fatia.getContext('2d').drawImage(canvas, 0, y, canvas.width, alturaFatia, 0, 0, canvas.width, alturaFatia);
+        if (pagina > 0) pdf.addPage();
+        pdf.addImage(fatia.toDataURL('image/png'), 'PNG', 0, 0, larguraPdf, (alturaFatia * larguraPdf) / canvas.width);
+    }
+    return pdf;
 };
 
 export default function RelatoriosEmprestimos({ session, acesso }) {
@@ -40,11 +50,14 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
     const [mostrarTodoHistorico, setMostrarTodoHistorico] = useState(false);
 
     const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
+    // Ponto de empréstimo ('' = todos que o login vê). O filtro só aparece com mais de um.
+    const { pontos } = usePontosEmprestimo(session, currentPredioId, 'relatorio');
+    const [pontoFiltro, setPontoFiltro] = useState('');
 
     const { data: dados, isLoading: loading, isError, isFetching } = useQuery({
-        queryKey: ['relatorios_emprestimos', currentPredioId, filtroInicio, filtroFim],
+        queryKey: ['relatorios_emprestimos', currentPredioId, filtroInicio, filtroFim, pontoFiltro],
         queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?inicio=${filtroInicio}&fim=${filtroFim}`, {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/estatisticas?${new URLSearchParams({ inicio: filtroInicio, fim: filtroFim, ...(pontoFiltro ? { ponto: pontoFiltro } : {}) })}`, {
                 headers: {
                     'Authorization': `Bearer ${session?.access_token}`,
                     'x-predio-id': currentPredioId
@@ -81,12 +94,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 logging: false
             });
 
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            const pdf = montarPdfPaginado(canvas);
             pdf.save(`Relatorio_Emprestimos_${new Date().getTime()}.pdf`);
 
             toast.success('PDF exportado com sucesso!');
@@ -124,6 +132,15 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 </div>
 
                 <form className="filtros-wrapper" onSubmit={handleAtualizar}>
+                    {pontos.length > 1 && (
+                        <div className="input-filtro-box">
+                            <label>PONTO</label>
+                            <select value={pontoFiltro} onChange={e => setPontoFiltro(e.target.value)} className="input-filtro">
+                                <option value="">Todos os pontos</option>
+                                {pontos.map(p => <option key={p.id} value={p.id}>{p.nome}{!p.ativo ? ' (inativo)' : ''}</option>)}
+                            </select>
+                        </div>
+                    )}
                     <div className="input-filtro-box">
                         <label>INÍCIO</label>
                         <input type="datetime-local" value={inputInicio} onChange={e => setInputInicio(e.target.value)} className="input-filtro" />
@@ -273,14 +290,17 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                                                         </td>
                                                         <td className="th-item">{h.nomeItem}</td>
                                                         <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>
-                                                            {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                            {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}
                                                         </td>
                                                         <td>
-                                                            {h.dataDevolucao ? (
+                                                            {h.status === 'EXTRAVIADO' ? (
+                                                                <span className="tag-status perdido">Não devolvido</span>
+                                                            ) : h.dataDevolucao ? (
                                                                 <span className="tag-status concluido">{calcularDuracaoTotal(h.dataRetirada, h.dataDevolucao)}</span>
                                                             ) : (
                                                                 <span className="tag-status pendente">Pendente</span>
                                                             )}
+                                                            {h.ocorrencia === 'DEVOLVIDO_COM_PROBLEMA' && <span className="tag-status problema" style={{ marginLeft: '4px' }}>Com problema</span>}
                                                         </td>
                                                     </tr>
                                                 ))}

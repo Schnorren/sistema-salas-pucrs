@@ -26,4 +26,5 @@ export const ROTAS = {
   salasPredio: '/gestao/salas-do-predio',
   equipe: '/gestao/equipe',
   relatorioEmprestimos: '/gestao/relatorio-emprestimos',
+  gestaoEmprestimos: '/gestao/emprestimos',
 };

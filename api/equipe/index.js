@@ -3,6 +3,7 @@ import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro, ErroPublico } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 import { sanitizarPermissoes } from '../../backend_core/utils/modulos.js';
+import gestaoEmprestimos from '../../backend_core/services/emprestimosGestao.service.js';
 
 // O Auth grava e-mail sempre em minúsculas — normalizar evita 404 na busca
 // (view) e erro de validação no convite por espaço/maiúscula digitados.
@@ -101,7 +102,19 @@ async function handler(req, res) {
                 .order('nome', { ascending: true });
 
             if (error) throw error;
-            return res.status(200).json(data);
+            // Pontos de empréstimo que cada membro opera (checkboxes do formulário)
+            const vinculos = await gestaoEmprestimos.vinculosPorUsuario(predioId);
+            return res.status(200).json((data || []).map(m => ({ ...m, pontos_emprestimo: vinculos.get(m.user_id) || [] })));
+        } catch (error) {
+            return responderErro(res, error);
+        }
+    }
+
+    // Pontos de empréstimo do prédio, para liberar por membro
+    if (req.method === 'GET' && caminho1 === 'pontos-emprestimo') {
+        try {
+            if (!predioId) return res.status(400).json({ error: "Prédio não informado." });
+            return res.status(200).json(await gestaoEmprestimos.pontosParaEquipe(predioId));
         } catch (error) {
             return responderErro(res, error);
         }
@@ -168,9 +181,14 @@ async function handler(req, res) {
                 });
             }
 
+            // Pontos de empréstimo: só os do prédio; sem o módulo Empréstimos, saem todos
+            const pontosEmprestimo = await gestaoEmprestimos.definirPontosDoUsuario({
+                userId: usuario.user_id, predioId, pontoIds: req.body?.pontosEmprestimo, permissoes: permissoesFinais
+            });
+
             registrarAuditoria({
                 user: req.user, acao: 'equipe.membro.atualizar', entidade: 'usuarios_acessos',
-                entidadeId: usuario.user_id, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null }
+                entidadeId: usuario.user_id, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null, pontosEmprestimo }
             });
 
             return res.status(200).json({ success: true });
@@ -260,9 +278,13 @@ async function handler(req, res) {
                 }
             }
 
+            const pontosEmprestimo = await gestaoEmprestimos.definirPontosDoUsuario({
+                userId, predioId, pontoIds: req.body?.pontosEmprestimo, permissoes: permissoesFinais
+            });
+
             registrarAuditoria({
                 user: req.user, acao: 'equipe.convidar', entidade: 'usuarios_acessos',
-                entidadeId: userId, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null }
+                entidadeId: userId, predioId, detalhes: { email, permissoes: permissoesFinais, perfil_id: perfil_id || null, pontosEmprestimo }
             });
 
             return res.status(201).json({ success: true, message: mensagem });
@@ -295,6 +317,8 @@ async function handler(req, res) {
                 .eq('predio_id', predioId);
 
             if (errDelete) throw errDelete;
+
+            await gestaoEmprestimos.definirPontosDoUsuario({ userId: usuario.user_id, predioId, pontoIds: [], permissoes: [] });
 
             registrarAuditoria({
                 user: req.user, acao: 'equipe.membro.remover', entidade: 'usuarios_acessos',

@@ -1,10 +1,13 @@
 export const STATUS_ITEM = {
     DISPONIVEL: 'DISPONIVEL',
     MANUTENCAO: 'MANUTENCAO',
-    EMPRESTADO: 'EMPRESTADO'
+    EMPRESTADO: 'EMPRESTADO',
+    PERDIDO: 'PERDIDO'           // "não devolveu": fora da lista até ser encontrado
 };
 
 export const STATUS_EMPRESTIMO = {
     ATIVO: 'ATIVO',
-    CONCLUIDO: 'CONCLUIDO'
+    CONCLUIDO: 'CONCLUIDO',
+    CANCELADO: 'CANCELADO',      // retirada desfeita (fora das estatísticas)
+    EXTRAVIADO: 'EXTRAVIADO'     // não devolvido
 };

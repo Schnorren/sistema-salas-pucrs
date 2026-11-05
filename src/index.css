@@ -769,7 +769,7 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
   display: flex;
   flex-direction: column;
 }
-.emp-aluno { font-size: 16px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; text-transform: capitalize; }
+.emp-aluno { font-size: 16px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
 .emp-mat { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .emp-item { font-size: 15px; font-weight: 600; color: var(--amber); }
 .emp-cod { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
@@ -799,6 +799,92 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
 .btn-devolver:hover {
   background: var(--red);
   color: #fff;
+}
+
+/* ---- Balcão de empréstimos: pontos, desfazer, alertas, previsão ---- */
+.wizard-header.step-5 { background: var(--red); }
+.faixa-balcao {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  padding: 6px 12px; font-size: 11px; color: var(--muted);
+  background: var(--panel2); border-bottom: 1px solid var(--border);
+}
+.faixa-balcao b { color: var(--text); }
+.link-balcao {
+  background: transparent; border: none; color: var(--blue); cursor: pointer;
+  font-size: 11px; font-weight: bold; padding: 0; font-family: var(--sans);
+}
+.link-balcao:disabled { opacity: .5; cursor: default; }
+.select-ponto {
+  font-size: 11px; font-weight: bold; padding: 3px 6px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text); font-family: var(--sans);
+}
+.faixa-desfazer {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; font-size: 12px; font-weight: 600;
+  background: var(--green-b); color: var(--green); border-bottom: 1px solid var(--border);
+}
+.btn-desfazer {
+  background: var(--panel); color: var(--green); border: 1px solid var(--green);
+  border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: bold; cursor: pointer; white-space: nowrap;
+}
+.btn-desfazer:disabled { opacity: .5; cursor: default; }
+.alerta-balcao {
+  font-size: 12px; line-height: 1.4; padding: 8px 10px; border-radius: var(--radius);
+  margin: -12px 0 14px 0; border: 1px solid var(--border);
+}
+.alerta-balcao + .alerta-balcao { margin-top: -6px; }
+.alerta-balcao.erro  { background: var(--red-b);   color: var(--red);   border-color: var(--red); }
+.alerta-balcao.aviso { background: var(--amber-b); color: var(--amber); border-color: var(--amber); }
+.alerta-balcao.info  { background: var(--blue-b);  color: var(--blue);  border-color: transparent; margin-top: 0; }
+.grupo-categoria-titulo {
+  font-size: 11px; font-weight: bold; color: var(--text2); text-transform: uppercase;
+  letter-spacing: .4px; margin-top: 6px;
+}
+.grupo-categoria-titulo span { text-transform: none; font-weight: normal; color: var(--muted); }
+.item-card-mini.emprestado { opacity: .75; border-style: dashed; }
+.item-card-mini.emprestado:hover { opacity: 1; background: var(--amber-b); border-color: var(--amber); }
+.item-card-mini.perdido { background: var(--red-b); border: 1px dashed var(--red); cursor: default; }
+.item-card-mini.perdido .nome { color: var(--red); }
+.previsao.no_tempo { color: var(--green); }
+.previsao.passou   { color: var(--amber); font-weight: 600; }
+.grade-escolha { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.item-escolha {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  padding: 14px; border-radius: var(--radius); border: 2px solid var(--border);
+  background: var(--panel2); color: var(--text); cursor: pointer; font-family: var(--sans);
+  transition: background .15s, border-color .15s;
+}
+.item-escolha .nome { font-size: 15px; font-weight: bold; }
+.item-escolha .estado { font-size: 11px; color: var(--muted); }
+.item-escolha.livre { border-color: var(--green); }
+.item-escolha.livre .estado { color: var(--green); font-weight: bold; }
+.item-escolha.livre:hover:not(:disabled) { background: var(--green-b); }
+.item-escolha.ocupado { opacity: .55; cursor: not-allowed; }
+.acoes-secundarias { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+.acoes-secundarias button {
+  background: transparent; border: none; padding: 0; cursor: pointer;
+  font-size: 11px; font-weight: 600; color: var(--muted); font-family: var(--sans);
+}
+.acoes-secundarias button:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
+.acoes-secundarias button:disabled { opacity: .5; cursor: default; }
+.linha-devolucao {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: var(--amber-b); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px;
+}
+.linha-devolucao .nome { font-size: 14px; font-weight: bold; color: var(--text); }
+.linha-devolucao .cod { font-size: 11px; color: var(--muted); }
+.btn-outro-item {
+  margin-top: 14px; padding: 10px; border-radius: var(--radius); cursor: pointer; font-weight: bold;
+  background: var(--green-b); color: var(--green); border: 1px dashed var(--green); font-family: var(--sans);
+}
+.emprestimo-card.passou { border-left-color: var(--red); }
+.tag-status.desfeito { background: var(--panel2); color: var(--muted); }
+.tag-status.perdido  { background: var(--red-b); color: var(--red); }
+.tag-status.problema { background: var(--amber-b); color: var(--amber); }
+.input-historico-busca {
+  width: 100%; padding: 10px 12px; margin-bottom: 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+  font-size: 13px; font-family: var(--sans); outline: none;
 }
 
 .btn-action-primary {
