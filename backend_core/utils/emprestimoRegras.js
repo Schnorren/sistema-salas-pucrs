@@ -148,26 +148,41 @@ export const mediana = (valores) => {
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 };
 
+// Limites da previsão de volta. O repository passa porItem/minMin/maxMin à RPC
+// emprestimo_duracoes_recentes, que já recorta no banco — por isso ficam aqui,
+// num lugar só, e não repetidos no SQL.
+//   porItem: últimas N devoluções do item · minimo: amostras para confiar na
+//   mediana · [minMin, maxMin]: fora disso é desfeito na hora / esquecido no sistema
+export const PREVISAO_VOLTA = Object.freeze({ porItem: 30, minimo: 5, minMin: 2, maxMin: 720 });
+
+// Durações (min) de um registro, do mais novo ao mais antigo: as que a RPC
+// emprestimo_duracoes_recentes já calculou ({ item_id, minutos: [...] }) ou a
+// de um registro bruto ({ item_id, data_retirada, data_devolucao }).
+const duracoesDoRegistro = (r) => {
+  if (Array.isArray(r?.minutos)) return r.minutos.map(Number);
+  const ini = paraData(r?.data_retirada);
+  const fim = paraData(r?.data_devolucao);
+  return ini && fim ? [(fim.getTime() - ini.getTime()) / 60000] : [];
+};
+
 // Duração típica de cada item, pelas devoluções mais recentes.
-//   registros: [{ item_id, data_retirada, data_devolucao }] do mais novo ao mais antigo
+//   registros: do mais novo ao mais antigo — [{ item_id, minutos: [...] }] (RPC,
+//              o que o painel usa) ou [{ item_id, data_retirada, data_devolucao }]
 //   itens:     [{ id, categoria_id }]
 // Ignora durações fora de [2 min, 12 h] (desfeito na hora / esquecido no
 // sistema). Usa as últimas `porItem` do item; com menos de `minimo` amostras,
 // cai para a mediana da categoria (itens iguais: "Bola 1", "Bola 2").
 // Retorna Map itemId → { mediana (min), amostras, fonte: 'item' | 'categoria' }.
 export const calcularMedianas = (registros, itens, opcoes = {}) => {
-  const { porItem = 30, minimo = 5, minMin = 2, maxMin = 720 } = opcoes;
+  const { porItem, minimo, minMin, maxMin } = { ...PREVISAO_VOLTA, ...opcoes };
   const duracoesPorItem = new Map();
   for (const r of registros || []) {
-    const ini = paraData(r?.data_retirada);
-    const fim = paraData(r?.data_devolucao);
-    if (!ini || !fim) continue;
-    const minutos = (fim.getTime() - ini.getTime()) / 60000;
-    if (!(minutos >= minMin && minutos <= maxMin)) continue;
-    const lista = duracoesPorItem.get(r.item_id) || [];
-    if (lista.length >= porItem) continue;
-    lista.push(minutos);
-    duracoesPorItem.set(r.item_id, lista);
+    const lista = duracoesPorItem.get(r?.item_id) || [];
+    for (const minutos of duracoesDoRegistro(r)) {
+      if (lista.length >= porItem) break;
+      if (minutos >= minMin && minutos <= maxMin) lista.push(minutos);
+    }
+    if (lista.length) duracoesPorItem.set(r.item_id, lista);
   }
 
   const catDoItem = new Map((itens || []).map(i => [i.id, i.categoria_id]));

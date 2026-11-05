@@ -1,5 +1,6 @@
 import supabase from '../config/supabase.js';
 import { ErroPublico } from '../utils/http.js';
+import { PREVISAO_VOLTA } from '../utils/emprestimoRegras.js';
 
 // Erros de regra de negócio levantados pelas RPCs (RAISE EXCEPTION → código P0001)
 // carregam mensagem segura para o usuário; qualquer outro erro é interno.
@@ -133,17 +134,16 @@ class EmprestimosRepository {
         return data || [];
     }
 
-    // Devoluções mais recentes dos itens (base da previsão de volta)
-    async getDuracoesRecentes(itemIds, limite = 1500) {
+    // Durações das devoluções mais recentes de cada item (base da previsão de
+    // volta): uma linha por item, { item_id, minutos: [...] }, já recortada no
+    // banco. O painel é recarregado a cada minuto em cada PC do balcão — não
+    // volte a trazer registros brutos (eram até 1.500 por recarga, ~200 KB).
+    async getDuracoesRecentes(itemIds) {
         if (!itemIds?.length) return [];
-        const { data, error } = await supabase
-            .from('emprestimos_registro')
-            .select('item_id, data_retirada, data_devolucao')
-            .in('item_id', itemIds)
-            .eq('status', 'CONCLUIDO')
-            .not('data_devolucao', 'is', null)
-            .order('data_retirada', { ascending: false })
-            .limit(limite);
+        const { porItem, minMin, maxMin } = PREVISAO_VOLTA;
+        const { data, error } = await supabase.rpc('emprestimo_duracoes_recentes', {
+            p_item_ids: itemIds, p_por_item: porItem, p_min_min: minMin, p_max_min: maxMin,
+        });
         if (error) throw error;
         return data || [];
     }

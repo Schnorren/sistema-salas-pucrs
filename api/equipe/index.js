@@ -4,6 +4,8 @@ import { responderErro } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 import { sanitizarPermissoes, MODULOS_SO_ADMIN } from '../../backend_core/utils/modulos.js';
 import gestaoEmprestimos from '../../backend_core/services/emprestimosGestao.service.js';
+import saudeService from '../../backend_core/services/saude.service.js';
+import { ehChamadaDoCron } from '../../backend_core/utils/cron.js';
 import { barrarEdicaoDeMembro, barrarRevogacao, barrarReconvite } from '../../backend_core/utils/equipeRegras.js';
 import { normalizarEmail, RE_EMAIL, traduzirErroDeConvite, urlDoApp, emailPermitido, ehContaExistente } from '../../backend_core/utils/convite.js';
 
@@ -297,11 +299,20 @@ async function handler(req, res) {
 
 const handlerAutenticado = withAuth(handler, 'equipe');
 
-// O cron da Vercel (keep-alive) não envia JWT — precisa responder ANTES do withAuth,
-// senão levaria 401 e a função nunca "esquentaria".
-export default function equipeEntrypoint(req, res) {
-    if (req.headers['x-vercel-cron'] === '1') {
-        return res.status(200).json({ status: 'keep-alive', timestamp: new Date() });
+// O cron diário da Vercel (keep-alive) não envia JWT — precisa responder ANTES
+// do withAuth, senão levaria 401. Ele toca o banco: sem isso o Supabase gratuito
+// pausa o projeto depois de 7 dias sem uso (ex.: recesso). Fica aqui, e não num
+// arquivo próprio em api/, para não criar mais uma função serverless.
+export default async function equipeEntrypoint(req, res) {
+    if (ehChamadaDoCron(req.headers)) {
+        try {
+            const saude = await saudeService.manterBancoAtivo();
+            return res.status(200).json({ status: 'keep-alive', ...saude, timestamp: new Date() });
+        } catch (err) {
+            // 503 aparece como falha nos logs do cron da Vercel
+            console.error('[cron keep-alive] o banco não respondeu:', err);
+            return res.status(503).json({ error: 'Banco indisponível.' });
+        }
     }
     return handlerAutenticado(req, res);
 }
