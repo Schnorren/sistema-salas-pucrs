@@ -3,6 +3,12 @@ import {
     PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
 } from '../utils/timeHelpers.js';
 import supabase from '../config/supabase.js';
+import {
+    STATUS_SALA, salaVisivel, situacaoDaSala, ordenarNumeros, separarSalasNovas,
+    resumirAgendaPorSala, RESUMO_VAZIO, filtrarPublicacao
+} from '../utils/salas.js';
+import { ErroPublico } from '../utils/http.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 const gradeCacheMap = {};
 
@@ -17,7 +23,8 @@ class GradeService {
 
         const data = await gradeRepository.buscarGradeCompleta(predio_id);
 
-        gradeCacheMap[cacheKey] = Array.isArray(data) ? data : [];
+        // Salas ocultas/pendentes ficam fora de tudo que o sistema mostra
+        gradeCacheMap[cacheKey] = Array.isArray(data) ? data.filter(g => salaVisivel(g.salas)) : [];
 
         return gradeCacheMap[cacheKey];
     }
@@ -49,8 +56,12 @@ class GradeService {
         return response;
     }
 
+    async _salasVisiveis(predio_id) {
+        return ((await gradeRepository.buscarSalas(predio_id)) || []).filter(salaVisivel);
+    }
+
     async obterStatusPlanta(diaSolicitado, periodoReferencia, predio_id) {
-        const salasDb = await gradeRepository.buscarSalas(predio_id) || [];
+        const salasDb = await this._salasVisiveis(predio_id);
             const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
             const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
 
@@ -115,9 +126,7 @@ class GradeService {
     async obterSalasLivres(diaSolicitado, predio_id) {
         const gradeBruta = await this._obterGradeOtimizada(predio_id);
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
-        const salasDb = await gradeRepository.buscarSalas(predio_id);
-
-        if (!salasDb) return [];
+        const salasDb = await this._salasVisiveis(predio_id);
 
         const salasLivres = salasDb.map(salaRef => {
             const occupiedPeriods = aulasDoDia
@@ -149,11 +158,13 @@ class GradeService {
                 gradeRepository.buscarGradeCompleta(predio_id),
                 gradeRepository.buscarSalas(predio_id)
             ]);
+            // Só salas visíveis (e os agendamentos delas) vão para o CDN
+            const { salas, grade } = filtrarPublicacao(salasDb, gradeBruta);
             const superIndex = {
                 predio_id,
                 atualizado_em: new Date().toISOString(),
-                salas: salasDb,
-                grade: gradeBruta,
+                salas,
+                grade,
             };
 
             const jsonString = JSON.stringify(superIndex);
@@ -169,12 +180,13 @@ class GradeService {
             if (error) throw error;
             return true;
         } catch (error) {
+            console.error('[grade] falha ao publicar o JSON estático:', error?.message || error);
             return false;
         }
     }
 
     async obterTimeline(diaSolicitado, predio_id) {
-        const salasDb = await gradeRepository.buscarSalas(predio_id) || [];
+        const salasDb = await this._salasVisiveis(predio_id);
         const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
         const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
         const periodoAtual = getCurrentPeriod();
@@ -209,6 +221,37 @@ class GradeService {
         };
     }
 
+    // Busca da barra do topo (GET /api/grade/busca): aulas da semana cujo nome,
+    // sala ou código contém o termo, agrupadas em blocos de períodos seguidos.
+    // Restaurada do backend antigo — o handler chamava este método, mas ele se
+    // perdeu na migração para serverless e a rota respondia 500.
+    async realizarBuscaGlobal(q, predio_id) {
+        if (!q || q.length < 2) return [];
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
+
+        const normalizarTexto = (texto) => texto ? String(texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+        const termoPesquisado = normalizarTexto(q);
+
+        const filtrados = gradeBruta.filter(d => {
+            const nomeNormalizado = normalizarTexto(d.nome_aula || d.disciplinas?.nome);
+            const salaNormalizada = normalizarTexto(d.salas?.numero || d.sala);
+            const codigoNormalizado = normalizarTexto(d.disciplinas?.codigo);
+            return nomeNormalizado.includes(termoPesquisado) || salaNormalizada.includes(termoPesquisado) || codigoNormalizado.includes(termoPesquisado);
+        });
+
+        const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+        const resultados = [];
+        dias.forEach(dia => {
+            const aulasDoDia = filtrados.filter(f => f.dia_semana === dia);
+            groupConsecutiveClasses(aulasDoDia).forEach(aula => resultados.push({ ...aula, dia_semana: dia }));
+        });
+
+        return resultados.sort((a, b) => {
+            if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
+            return String(a.sala).localeCompare(String(b.sala), undefined, { numeric: true });
+        }).slice(0, 15);
+    }
+
     _processarOcupacaoSemanl(gradeBruta, salasLista) {
         const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
         const ocupacaoBase = gradeBruta.map(g => ({
@@ -226,7 +269,7 @@ class GradeService {
     }
 
     async obterOcupacaoSemanal(predio_id) {
-        const salasDb = await gradeRepository.buscarSalas(predio_id);
+        const salasDb = await this._salasVisiveis(predio_id);
         const gradeBruta = await this._obterGradeOtimizada(predio_id);
         const listaNumeros = salasDb.map(s => s.numero);
         return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
@@ -320,8 +363,14 @@ class GradeService {
             Sala: simplificarSala(d.Sala || d.sala)
         }));
 
-        const salasUnicas = [...new Set(dadosFormatados.map(d => d.Sala))].filter(s => s).map(s => ({ numero: s, predio_id }));
-        const salasDb = await gradeRepository.upsertSalas(salasUnicas);
+        // Sala que o prédio ainda não conhecia entra como Pendente (oculta até
+        // alguém decidir). As existentes não são tocadas: a escolha de
+        // visibilidade sobrevive ao re-import.
+        const salasExistentes = await gradeRepository.buscarSalasComId(predio_id);
+        const primeiraImportacao = salasExistentes.length === 0;
+        const numerosNovos = separarSalasNovas(dadosFormatados.map(d => d.Sala), salasExistentes);
+        await gradeRepository.inserirSalasNovas(numerosNovos.map(numero => ({ numero, predio_id, status: STATUS_SALA.PENDENTE })));
+        const salasDb = numerosNovos.length ? await gradeRepository.buscarSalasComId(predio_id) : salasExistentes;
 
         const salaMap = {};
         salasDb.forEach(s => { salaMap[s.numero] = s.id });
@@ -342,7 +391,62 @@ class GradeService {
         gradeCacheMap[predio_id] = null;
         gradeCacheMap['GLOBAL'] = null;
 
-        return { sucesso: true, registrosInseridos: gradeInsert.length };
+        // Salas à espera de decisão (as novas desta importação + pendentes de
+        // importações anteriores), com o resumo da semana para a pergunta na tela
+        const numeroPorId = Object.fromEntries(salasDb.map(s => [s.id, s.numero]));
+        const resumo = resumirAgendaPorSala(gradeInsert.map(g => ({ sala: numeroPorId[g.sala_id], nome: g.nome_aula, tipo: g.tipo })));
+        const novas = new Set(numerosNovos);
+        const salasParaDecidir = salasDb
+            .filter(s => s.status === STATUS_SALA.PENDENTE)
+            .map(s => ({ numero: s.numero, situacao: 'pendente', nova: novas.has(s.numero), ...(resumo.get(s.numero) || RESUMO_VAZIO) }))
+            .sort((a, b) => ordenarNumeros(a.numero, b.numero));
+
+        return { sucesso: true, registrosInseridos: gradeInsert.length, primeiraImportacao, salasParaDecidir };
+    }
+
+    // GET /api/grade/salas — todas as salas do prédio (inclusive ocultas e
+    // pendentes) com o resumo da agenda atual de cada uma
+    async listarSalas(predio_id) {
+        const [salasDb, gradeBruta] = await Promise.all([
+            gradeRepository.buscarSalas(predio_id),
+            gradeRepository.buscarGradeCompleta(predio_id),
+        ]);
+        const resumo = resumirAgendaPorSala((gradeBruta || []).map(g => ({ sala: g.salas?.numero, nome: g.nome_aula, tipo: g.tipo })));
+        return (salasDb || [])
+            .map(s => ({ numero: s.numero, andar: s.andar, situacao: situacaoDaSala(s), ...(resumo.get(s.numero) || RESUMO_VAZIO) }))
+            .sort((a, b) => ordenarNumeros(a.numero, b.numero));
+    }
+
+    // PUT /api/grade/salas — { exibir: ['205'], ocultar: ['312'] }
+    async definirVisibilidadeSalas(predio_id, corpo, user) {
+        const lista = (v) => (Array.isArray(v) ? [...new Set(v.map(x => String(x).trim()).filter(Boolean))] : []);
+        const exibir = lista(corpo?.exibir);
+        const ocultar = lista(corpo?.ocultar);
+
+        if (!exibir.length && !ocultar.length) throw new ErroPublico('Nenhuma sala informada.');
+        if (exibir.some(n => ocultar.includes(n))) throw new ErroPublico('Uma sala não pode ser exibida e ocultada ao mesmo tempo.');
+
+        // Só salas deste prédio (req.user.predio_id): número de outro prédio é ignorado
+        const doPredio = new Set(((await gradeRepository.buscarSalas(predio_id)) || []).map(s => s.numero));
+        const desconhecidas = [...exibir, ...ocultar].filter(n => !doPredio.has(n));
+        if (desconhecidas.length) throw new ErroPublico(`Sala não encontrada neste prédio: ${desconhecidas.join(', ')}.`);
+
+        await gradeRepository.atualizarStatusSalas(predio_id, exibir, STATUS_SALA.ATIVA);
+        await gradeRepository.atualizarStatusSalas(predio_id, ocultar, STATUS_SALA.OCULTA);
+
+        gradeCacheMap[predio_id] = null;
+        gradeCacheMap['GLOBAL'] = null;
+
+        registrarAuditoria({
+            user, acao: 'grade.salas.visibilidade', entidade: 'sala', predioId: predio_id,
+            detalhes: { exibidas: exibir.sort(ordenarNumeros), ocultadas: ocultar.sort(ordenarNumeros) },
+        });
+
+        const publicado = await this.gerarEPublicarIndexEstatico(predio_id);
+        if (!publicado) {
+            throw new ErroPublico('A escolha foi salva, mas a grade não foi republicada. Clique em salvar de novo em instantes.', 502);
+        }
+        return { sucesso: true };
     }
 }
 
