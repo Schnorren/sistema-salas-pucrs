@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 if (!window.__GRADE_CACHE) {
     window.__GRADE_CACHE = {};
 }
@@ -14,20 +14,30 @@ export const avisarGradeRepublicada = (predioId) => {
 };
 
 export const useGrade = (predioId) => {
-    const [dados, setDados] = useState(window.__GRADE_CACHE[predioId] || null);
+    // Dado e erro guardados JUNTO do prédio a que pertencem. Antes, ao trocar
+    // de prédio (admin), as telas mostravam a grade do prédio anterior enquanto
+    // o novo carregava — e, se a carga do novo falhasse (prédio sem grade
+    // publicada), a busca do topo e o badge seguiam com a grade antiga.
+    const [estado, setEstado] = useState(() => ({ predioId, dados: window.__GRADE_CACHE[predioId] || null, error: null }));
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+    // Só a requisição mais recente pode mexer no estado (troca rápida A → B)
+    const requisicaoAtual = useRef(0);
+
+    const doPredio = estado.predioId === predioId;
+    const dados = doPredio ? estado.dados : (window.__GRADE_CACHE[predioId] || null);
+    const error = doPredio ? estado.error : null;
 
     const carregarGrade = useCallback(async (forcar = false) => {
         if (!predioId) return;
+        const id = ++requisicaoAtual.current;
         if (!forcar && window.__GRADE_CACHE[predioId]) {
-            setDados(window.__GRADE_CACHE[predioId]);
+            setEstado({ predioId, dados: window.__GRADE_CACHE[predioId], error: null });
+            setLoading(false);
             return;
         }
 
         setLoading(true);
         try {
-
             const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/grades/grade_predio_${predioId}.json?t=${new Date().getTime()}`;
             const res = await fetch(url);
 
@@ -37,14 +47,14 @@ export const useGrade = (predioId) => {
 
             const json = await res.json();
             window.__GRADE_CACHE[predioId] = json;
-            setDados(json);
-            setError(null);
+            if (id === requisicaoAtual.current) setEstado({ predioId, dados: json, error: null });
         } catch (err) {
-            setError(err.message);
+            if (id === requisicaoAtual.current) setEstado({ predioId, dados: null, error: err.message });
         } finally {
-            setLoading(false);
+            if (id === requisicaoAtual.current) setLoading(false);
         }
     }, [predioId]);
+
     useEffect(() => {
         carregarGrade();
     }, [carregarGrade]);
