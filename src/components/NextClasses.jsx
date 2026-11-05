@@ -5,6 +5,8 @@ import { useTrocasSala } from '../hooks/useTrocasSala';
 import { periodosAfetadosPelaTroca } from '../utils/aulasDoDia';
 import { PERIODS, PERIOD_OPTIONS, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
 import { useMomentoAtual, useDiaQueAcompanhaHoje } from '../hooks/useMomentoAtual';
+import { useCelular } from '../hooks/useCelular';
+import Icone from './celular/Icone';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -15,7 +17,10 @@ const normalizeText = (text) => {
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 };
 
+// No celular (useCelular): dia, período e ordem viram três botões numa linha e
+// os cartões ficam numa coluna só, mais baixos (src/celular.css, .cel-proximas).
 export default function NextClasses({ acesso }) {
+  const celular = useCelular();
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
@@ -117,7 +122,7 @@ export default function NextClasses({ acesso }) {
       </div>
       <div className="ncc">{aula.nome}</div>
       {troca && (
-        <div style={{ color: 'var(--red)', fontWeight: 'bold', fontSize: '11px', margin: '4px 0' }}>
+        <div className="nx-troca" style={{ color: 'var(--red)', fontWeight: 'bold', fontSize: '11px', margin: '4px 0' }}>
           🔁 Transferida para Prédio {troca.predio_destino} · Sala {troca.sala_destino} ({troca.afetados})
         </div>
       )}
@@ -135,7 +140,7 @@ export default function NextClasses({ acesso }) {
   };
 
   const renderCompactRow = (aula) => (
-    <div key={aula.id} style={{
+    <div key={aula.id} className="nx-linha" style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '12px 16px', borderBottom: '1px solid var(--border, #334155)',
       background: 'var(--surface, #1e293b)', borderRadius: '6px', marginBottom: '8px'
@@ -157,8 +162,31 @@ export default function NextClasses({ acesso }) {
   if (!dataProcessed) return <div className="empty-st">Erro ao processar os dados da matriz.</div>;
 
   return (
-    <div className="view active" id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+    <div className={`view active${celular ? ' cel-proximas' : ''}`} id="vNext" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
 
+      {celular ? (
+        <div style={{ paddingTop: '12px' }}>
+          <div className="cel-chips" style={{ margin: '0 0 10px', padding: '0 12px' }}>
+            <select className="cel-chip" aria-label="Dia" value={day} onChange={e => setDay(e.target.value)}>
+              {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select className="cel-chip" aria-label="Período de referência" value={per} onChange={e => setPer(e.target.value)}>
+              <option value="auto">{momento.periodo ? `Agora (${momento.periodo})` : 'Agora (sem aula)'}</option>
+              {PERIOD_OPTIONS.map(p => <option key={p.code} value={p.code}>{p.code} · {p.lb}</option>)}
+            </select>
+            <select className="cel-chip" aria-label="Ordenar" value={ordem} onChange={e => setOrdem(e.target.value)}>
+              <option value="sala">Por sala</option>
+              <option value="horario">Por hora</option>
+              <option value="nome">Por nome</option>
+            </select>
+          </div>
+          <label className="cel-busca-proximas">
+            <Icone nome="lupa" tamanho={18} />
+            <input type="search" placeholder="Disciplina ou sala" aria-label="Filtrar por disciplina ou sala" value={filtro} onChange={(e) => setFiltro(e.target.value)} />
+            {filtro && <button type="button" className="cel-limpar" onClick={() => setFiltro('')} aria-label="Limpar filtro">×</button>}
+          </label>
+        </div>
+      ) : (
       <div className="toolbar" style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderBottom: '1px solid var(--border, #334155)', paddingBottom: '16px', marginBottom: '16px' }}>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
@@ -226,6 +254,7 @@ export default function NextClasses({ acesso }) {
           )}
         </div>
       </div>
+      )}
 
       <div className="nx-body" id="nxBody" style={{ paddingBottom: '40px' }}>
         {dataProcessed.periodoAtualReferencia ? (

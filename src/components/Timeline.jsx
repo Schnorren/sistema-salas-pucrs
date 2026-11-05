@@ -4,6 +4,11 @@ import { useGrade } from '../hooks/useGrade';
 import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, getProximaOcorrencia, getProximosSeteDias, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useCelular } from '../hooks/useCelular';
+import MiniGrade from './celular/MiniGrade';
+import AgendaSala from './celular/AgendaSala';
+import Icone from './celular/Icone';
 import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
 import { useTrocasSala } from '../hooks/useTrocasSala';
@@ -63,7 +68,20 @@ const camposDaTroca = (aula, form) => {
 // Sem ela a aula abre só para consulta/reimpressão — a RLS de trocas_sala é a
 // barreira real; aqui é só para não oferecer um fluxo que vai falhar no fim.
 // abrirTrocas = valor de ?trocas= (badge da aba): muda a cada clique e abre a lista.
+//
+// Parâmetros de URL lidos aqui (vêm da Planta e da busca no celular):
+//   ?aula=<chave>[&trocar=1] — abre a aula (trocar=1: já no formulário de troca)
+//   ?sala=<número>           — no celular, abre a agenda da sala
+// No celular (useCelular) a grade vira a mini-grade (16 períodos sem texto) e
+// tocar numa sala abre a agenda dela; os modais de troca são os mesmos.
 export default function Timeline({ acesso, canEditGrade = false, initialDay, initialFiltro, abrirTrocas }) {
+  const celular = useCelular();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const salaAberta = celular ? searchParams.get('sala') : null;
+  const aulaDaUrl = searchParams.get('aula');
+  const trocarDaUrl = searchParams.get('trocar') === '1';
   const { predioAtivo, predioNome } = usePredio();
   const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
@@ -95,6 +113,29 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
 
   // Busca + Realtime vivem no hook (compartilhado com o badge do Dashboard)
   const trocasAtivas = useTrocasSala(predioAtual);
+
+  // ?aula= (painel da sala da Planta no celular): abre a aula assim que a grade
+  // carrega e tira o parâmetro da URL (voltar não reabre).
+  useEffect(() => {
+    if (!aulaDaUrl || !rawGradeData?.grade) return;
+    const bloco = blocoDaChave(rawGradeData.grade, aulaDaUrl);
+    if (bloco) {
+      const { data, semana } = getProximaOcorrencia(bloco.dia);
+      setAulaAberta({ ...bloco, data, semana }); // eslint-disable-line react-hooks/set-state-in-effect
+      setFormAberto(trocarDaUrl && canEditGrade);
+    }
+    setSearchParams(p => { const n = new URLSearchParams(p); n.delete('aula'); n.delete('trocar'); return n; }, { replace: true });
+  }, [aulaDaUrl, trocarDaUrl, rawGradeData, canEditGrade, setSearchParams]);
+
+  // Agenda da sala no celular: abrir empilha no histórico (o Voltar do celular
+  // fecha a agenda); fechar desempilha se foi aberta aqui.
+  const abrirSala = (sala) => setSearchParams(p => {
+    const n = new URLSearchParams(p); n.set('sala', sala); n.delete('trocas'); return n;
+  }, { state: { abriuSala: true } });
+  const fecharSala = () => {
+    if (location.state?.abriuSala) navigate(-1);
+    else setSearchParams(p => { const n = new URLSearchParams(p); n.delete('sala'); return n; }, { replace: true });
+  };
 
   const salvarTrocaMutation = useMutation({
     mutationFn: async ({ aula, campos }) => {
@@ -382,7 +423,8 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
     setListaAberta(false);
     setDay(item.dia);
     setAutoMode(false);
-    setFiltro(item.sala);
+    if (celular) abrirSala(item.sala);
+    else setFiltro(item.sala);
   };
 
   const editarDaLista = (item) => {
@@ -400,9 +442,8 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
   if (error) return <div className="empty-st" style={{ color: 'var(--red)' }}>⚠️ Erro: {error}</div>;
   if (!dataProcessed) return <div className="empty-st">Nenhuma matriz encontrada para este prédio.</div>;
 
-  return (
-    <div className="view active" id="vTl" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-
+  const modais = (
+    <>
       {aulaAberta && !formAberto && (
         <ModalAulaTroca
           aula={aulaAberta}
@@ -440,6 +481,75 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
           onDesfazer={(item) => desfazer(item.chave, item.registro.semana)}
         />
       )}
+    </>
+  );
+
+  if (celular) {
+    const dias = getProximosSeteDias();
+    const hojeOuDia = dias.find(o => o.dia === day);
+    const rotuloDia = hojeOuDia ? `${day}, ${dataCurta(hojeOuDia.data)}${hojeOuDia.emDias === 0 ? ' (hoje)' : ''}` : day;
+    const linhaAberta = salaAberta ? dataProcessed.timeline.find(l => l.sala === salaAberta) : null;
+    return (
+      <div className="cel-pagina" id="vTl">
+        {modais}
+        {/* Os próximos 7 dias com data: a troca vale para a data do dia escolhido */}
+        <div className="cel-dias" role="tablist" aria-label="Dia">
+          {dias.map(o => (
+            <button
+              key={o.dia} type="button" role="tab" aria-selected={o.dia === day}
+              className={`cel-dia${o.dia === day ? ' ativo' : ''}`}
+              onClick={() => { setDay(o.dia); setAutoMode(o.emDias === 0); }}
+            >
+              <b>{o.emDias === 0 ? 'Hoje' : o.dia.slice(0, 3)}</b><small>{dataCurta(o.data)}</small>
+            </button>
+          ))}
+        </div>
+
+        {salaAberta ? (
+          linhaAberta ? (
+            <AgendaSala
+              linha={linhaAberta} periodos={dataProcessed.periodosCabecalho} rotuloDia={rotuloDia}
+              trocas={trocasAtivas} onVoltar={fecharSala} onAbrirAula={abrirAula}
+            />
+          ) : (
+            <div className="empty-st">
+              A sala {salaAberta} não está na grade deste prédio.<br /><br />
+              <button type="button" className="cel-botao" onClick={fecharSala}>Ver todas as salas</button>
+            </div>
+          )
+        ) : (
+          <>
+            <div className="cel-filtro-linha">
+              <label className="cel-filtro">
+                <Icone nome="lupa" tamanho={16} />
+                <input ref={inputRef} type="search" placeholder="Sala ou disciplina" aria-label="Filtrar por sala ou disciplina" value={filtro} onChange={(e) => setFiltro(e.target.value)} />
+                {filtro && <button type="button" className="cel-limpar" onClick={() => setFiltro('')} aria-label="Limpar filtro">×</button>}
+              </label>
+              <button type="button" className={`cel-btn-trocas${totalTrocasNaGrade > 0 ? ' com' : ''}`} onClick={() => setListaAberta(true)}>
+                🔁 Trocas{totalTrocasNaGrade > 0 ? ` ${totalTrocasNaGrade}` : ''}
+              </button>
+            </div>
+            <div className="cel-legenda">
+              <span><i style={{ background: 'var(--blue)' }} />Regular</span>
+              <span><i style={{ background: 'var(--purple)' }} />Interno</span>
+              <span><i style={{ background: 'var(--red)' }} />Trocada</span>
+              <span><i style={{ boxShadow: '0 0 0 2px var(--accent) inset' }} />Agora</span>
+            </div>
+            {filteredTimeline.length === 0 ? (
+              <div className="empty-st">Nenhuma sala ou aula encontrada para "{filtro}".</div>
+            ) : (
+              <MiniGrade linhas={filteredTimeline} periodos={dataProcessed.periodosCabecalho} trocas={trocasAtivas} onAbrirSala={abrirSala} />
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="view active" id="vTl" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+      {modais}
 
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

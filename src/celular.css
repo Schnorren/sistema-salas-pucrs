@@ -1,0 +1,345 @@
+/* =====================================================================
+   Layout de celular (largura até 768 px — o mesmo limite de useCelular()).
+   Mesmo visual do computador: as cores vêm dos tokens de index.css (tema
+   claro e escuro); aqui muda só a arrumação. Protótipo aprovado em 05/11.
+   ===================================================================== */
+
+/* Só em um dos layouts. Botões de imprimir somem no celular: o aviso de
+   troca de sala é impresso pelo computador (decisão de 05/11). */
+.so-celular { display: none !important; }
+
+@media screen and (max-width: 768px) {
+  .so-computador { display: none !important; }
+  .so-celular { display: revert !important; }
+
+  /* Letra de 16 px nos campos: abaixo disso o iPhone dá zoom ao tocar. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: 16px !important; }
+
+  /* Janelas de troca de sala: painel que sobe de baixo / tela cheia. */
+  .modal-folha { align-items: flex-end !important; }
+  .modal-folha > .modal-cartao {
+    width: 100% !important; max-width: none !important; max-height: 88dvh !important;
+    border-radius: 18px 18px 0 0 !important; border-bottom: 0 !important;
+    padding: 10px 16px calc(18px + env(safe-area-inset-bottom)) !important;
+  }
+  .modal-folha > .modal-cartao::before {
+    content: ""; display: block; width: 40px; height: 4px; border-radius: 2px;
+    background: var(--border2); margin: 0 auto 14px;
+  }
+  .modal-tela-cheia { align-items: stretch !important; }
+  .modal-tela-cheia > .modal-cartao {
+    width: 100% !important; max-width: none !important; height: 100%; max-height: none !important;
+    border-radius: 0 !important; border: 0 !important; padding: calc(14px + env(safe-area-inset-top)) 16px 0 !important;
+  }
+  /* Botões no rodapé da tela mesmo com formulário curto */
+  .modal-tela-cheia > .modal-cartao { display: flex !important; flex-direction: column; }
+  .modal-tela-cheia > .modal-cartao > .so-celular { margin-top: auto; padding-top: 12px; }
+  .modal-tela-cheia .modal-acoes {
+    position: sticky; bottom: 0; background: var(--panel); margin: 0 -16px !important;
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
+  }
+  .modal-acoes { flex-direction: column-reverse; align-items: stretch !important; gap: 8px !important; }
+  .modal-acoes > button { width: 100%; min-height: 46px; font-size: 15px; }
+
+  /* Confirmações e avisos do sistema (UIContext). */
+  .ui-dialogo { width: calc(100vw - 32px) !important; max-width: 400px; }
+  .ui-dialogo button { min-height: 44px; }
+  .ui-toasts { left: 12px !important; right: 12px !important; bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
+}
+
+/* ------------------------------------------------------------ estrutura */
+/* #app.app-celular: precisa vencer o "#app { display: none }" de index.css */
+#app.app-celular { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+.cel-conteudo { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; background: var(--bg); }
+
+.cel-topo {
+  flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: env(safe-area-inset-top) 6px 0 14px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.cel-logo { font-weight: bold; font-size: 15px; letter-spacing: .5px; color: #3b82f6; }
+.cel-sep { width: 1px; height: 18px; background: var(--border2); }
+.cel-topo .seletor-estatico { font-weight: bold; font-size: 14px; color: var(--accent); white-space: nowrap; }
+.cel-topo .seletor-interativo { color: var(--accent); font-weight: bold; white-space: nowrap; }
+.cel-topo .seletor-interativo select { max-width: 120px; font-size: 16px; }
+.cel-topo-dir { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.cel-periodo {
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px; padding: 4px 9px;
+}
+.cel-periodo i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.cel-periodo.fora i { background: var(--muted); }
+.cel-icone {
+  width: 44px; height: 44px; display: grid; place-items: center; flex-shrink: 0;
+  border: 0; background: none; border-radius: 10px; color: var(--text); cursor: pointer;
+}
+
+/* Barra de baixo */
+.cel-barra {
+  flex-shrink: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  background: var(--panel); border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.cel-barra a {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 58px; font-size: 10.5px; color: var(--text2); text-decoration: none; white-space: nowrap;
+}
+.cel-barra a.active { color: var(--navy); font-weight: bold; }
+.cel-barra a.active::before {
+  content: ""; position: absolute; top: 0; left: 22%; right: 22%; height: 3px;
+  border-radius: 0 0 3px 3px; background: var(--navy);
+}
+.cel-barra .ic { position: relative; display: grid; place-items: center; }
+.cel-barra .badge {
+  position: absolute; top: -5px; left: 13px; min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 9px; color: #fff; font: bold 10.5px/17px var(--sans); text-align: center;
+}
+
+.cel-aviso-pc {
+  flex-shrink: 0; display: flex; gap: 8px; align-items: center;
+  padding: 8px 14px; font-size: 12.5px; color: var(--text2);
+  background: var(--panel2); border-bottom: 1px solid var(--border);
+}
+
+/* Página genérica do celular */
+.cel-pagina { padding: 12px 12px 24px; }
+
+/* ------------------------------------------------------------ busca em tela cheia */
+.cel-busca { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: var(--bg); }
+.cel-busca-topo {
+  flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+  padding: calc(8px + env(safe-area-inset-top)) 10px 8px 4px; border-bottom: 1px solid var(--border);
+}
+.cel-busca-campo {
+  flex: 1; display: flex; align-items: center; gap: 6px; min-height: 46px;
+  border: 2px solid #3b82f6; border-radius: 10px; padding: 0 4px 0 12px; background: var(--panel);
+}
+.cel-busca-campo input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-family: inherit; }
+.cel-busca-lista { flex: 1; overflow-y: auto; }
+/* Resultados reaproveitam o conteúdo do dropdown do computador */
+.cel-busca-lista .sd-item { padding: 12px 14px; }
+.cel-busca-lista .sd-class { font-size: 14px; }
+.cel-busca-lista .sd-meta { font-size: 12px; }
+.cel-busca-dica { padding: 24px 18px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+/* ------------------------------------------------------------ painel que sobe */
+.cel-folha-fundo { position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, .55); display: flex; align-items: flex-end; }
+.cel-folha {
+  width: 100%; max-height: 86dvh; overflow-y: auto; background: var(--panel);
+  border-radius: 18px 18px 0 0; border-top: 1px solid var(--border2);
+  padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, .35);
+}
+.cel-folha-alca { width: 40px; height: 4px; border-radius: 2px; background: var(--border2); margin: 0 auto 12px; }
+.cel-folha-topo { display: flex; align-items: flex-start; gap: 10px; }
+.cel-folha-fechar {
+  margin-left: auto; width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%;
+  border: 0; background: var(--panel2); color: var(--text2); display: grid; place-items: center; cursor: pointer;
+}
+.cel-sala-num { font-family: var(--mono); font-size: 26px; font-weight: bold; line-height: 1; color: var(--text); }
+.cel-pill { display: inline-block; font-size: 10.5px; font-weight: bold; letter-spacing: .5px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+.cel-pill.livre { background: var(--green-b); color: var(--green); }
+.cel-pill.ocupada { background: var(--amber-b); color: var(--amber); }
+.cel-pill.trocada { background: var(--red-b); color: var(--red); }
+.cel-sub { font-size: 13px; color: var(--text2); margin: 6px 0 14px; }
+.cel-bloco { border: 1px solid var(--border); border-radius: 8px; padding: 11px 12px; background: var(--panel2); }
+.cel-bloco + .cel-bloco { margin-top: 8px; }
+.cel-bloco.agora { border-color: var(--amber); background: var(--amber-b); }
+.cel-bloco-rot { font-family: var(--mono); font-size: 11px; color: var(--text2); letter-spacing: .4px; text-transform: uppercase; }
+.cel-bloco.agora .cel-bloco-rot { color: var(--amber); }
+.cel-bloco-nome { font-size: 15px; font-weight: bold; margin-top: 3px; color: var(--text); }
+.cel-bloco-meta { font-family: var(--mono); font-size: 11.5px; color: var(--text2); margin-top: 2px; }
+.cel-troca { margin-top: 10px; border: 1px solid var(--red); background: var(--red-b); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); }
+.cel-troca b { color: var(--red); }
+.cel-acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+.cel-acoes.uma { grid-template-columns: 1fr; }
+.cel-botao {
+  min-height: 46px; border-radius: 8px; border: 1px solid var(--border2); background: transparent;
+  color: var(--text); font-weight: bold; font-size: 14px; padding: 0 12px; cursor: pointer;
+}
+.cel-botao.primario { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+/* ------------------------------------------------------------ Planta */
+.cel-consulta {
+  width: 100%; display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 14px;
+  border-radius: 10px; border: 2px solid #3b82f6; background: var(--panel);
+  color: var(--text2); font-size: 15px; text-align: left; cursor: pointer; font-family: inherit;
+}
+.cel-consulta svg { color: #3b82f6; flex-shrink: 0; }
+.cel-consulta kbd { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
+.cel-chips { display: flex; gap: 6px; align-items: center; margin: 12px 0 10px; overflow-x: auto; scrollbar-width: none; }
+.cel-chips::-webkit-scrollbar { display: none; }
+select.cel-chip, .cel-chip {
+  width: auto; flex: 0 0 auto; appearance: none; -webkit-appearance: none;
+  min-height: 38px; padding: 0 28px 0 12px; border-radius: 19px;
+  border: 1px solid var(--border2); background-color: var(--panel); color: var(--text);
+  font-family: inherit; font-weight: bold; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+.cel-contagem { display: flex; gap: 6px; margin-bottom: 14px; }
+.cel-contagem span {
+  flex: 1; border: 1px solid var(--border); background: var(--panel2); border-radius: 6px; padding: 7px 9px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+}
+.cel-contagem b { display: block; font: bold 20px/1.1 var(--mono); }
+.cel-contagem .g b { color: var(--green); }
+.cel-contagem .a b { color: var(--amber); }
+.cel-contagem .r b { color: var(--red); }
+.cel-andar + .cel-andar { margin-top: 16px; }
+.cel-andar-hd {
+  display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--muted); padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.cel-andar-hd span + span { font-weight: normal; letter-spacing: .3px; text-transform: none; }
+.cel-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.cel-tiles .room-tile { min-height: 82px; padding: 8px 7px 8px 11px; cursor: pointer; text-align: left; font-family: inherit; color: inherit; width: 100%; }
+.cel-tiles .rt-c { font-size: 10.5px; max-height: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ------------------------------------------------------------ Linha do tempo: dias e filtro */
+.cel-dias { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px 10px; padding: 0 12px; }
+.cel-dias::-webkit-scrollbar { display: none; }
+.cel-dia {
+  flex-shrink: 0; min-width: 56px; padding: 5px 10px; border-radius: 10px; text-align: center; cursor: pointer;
+  border: 1px solid var(--border2); background: var(--panel); color: var(--text); font-family: inherit;
+}
+.cel-dia b { display: block; font-size: 13px; }
+.cel-dia small { display: block; font: 11px var(--mono); color: var(--text2); }
+.cel-dia.ativo { background: var(--navy); border-color: var(--navy); color: var(--bg); }
+.cel-dia.ativo small { color: var(--bg); opacity: .8; }
+.cel-filtro-linha { display: flex; gap: 6px; margin-bottom: 10px; }
+.cel-filtro {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px;
+  border: 1px solid var(--border2); border-radius: 8px; padding: 0 6px 0 10px; background: var(--panel); color: var(--muted);
+}
+.cel-filtro input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-family: inherit; }
+.cel-limpar { border: 0; background: none; color: var(--muted); width: 32px; height: 32px; cursor: pointer; font-size: 18px; }
+.cel-btn-trocas {
+  display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 11px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
+  font-weight: bold; font-size: 13px; white-space: nowrap; font-family: inherit;
+}
+.cel-btn-trocas.com { border-color: rgba(234, 88, 12, .5); background: rgba(234, 88, 12, .12); color: #ea580c; }
+.cel-legenda { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text2); margin-bottom: 8px; }
+.cel-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* Mini-grade: sala | 16 períodos */
+.cel-mg { display: grid; grid-template-columns: 40px 1fr; column-gap: 6px; }
+.cel-mg-cols { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; }
+.cel-mg-turnos { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 2px; }
+.cel-mg-turnos span { border-left: 1px solid var(--border2); padding-left: 3px; overflow: hidden; white-space: nowrap; }
+.cel-mg-regua { font: 10px var(--mono); color: var(--muted); text-align: center; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+.cel-mg-regua .agora { color: var(--accent); font-weight: bold; }
+.cel-mg-linha {
+  width: 100%; border: 0; border-bottom: 1px solid var(--border); background: none; color: inherit;
+  padding: 8px 0 7px; text-align: left; cursor: pointer; font-family: inherit;
+}
+.cel-mg-linha:active { background: var(--panel2); }
+.cel-mg-sala { font: bold 14px/18px var(--mono); color: var(--navy); }
+.cel-mg-sala.agora { color: var(--accent); }
+.cel-faixa { height: 18px; }
+.cel-faixa i { display: block; height: 100%; border-radius: 2px; background: var(--bg2); }
+.cel-faixa i.regular { background: var(--blue); }
+.cel-faixa i.interno { background: var(--purple); }
+.cel-faixa i.troca { background: var(--red); }
+.cel-faixa i.agora { box-shadow: 0 0 0 2px var(--accent) inset; }
+.cel-faixa i.regular.agora, .cel-faixa i.interno.agora, .cel-faixa i.troca.agora { box-shadow: 0 0 0 2px var(--accent); }
+.cel-mg-txt { grid-column: 2; font-size: 12px; color: var(--text2); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cel-mg-txt em { font-style: normal; color: var(--accent); font-weight: bold; }
+.cel-mg-txt strong { color: var(--red); }
+
+/* Agenda da sala */
+.cel-ag-cab { display: flex; align-items: center; gap: 4px; margin: 0 0 2px -6px; }
+.cel-ag-cab b { font: bold 22px var(--mono); color: var(--text); }
+.cel-ag-sub { font-size: 13px; color: var(--text2); margin-bottom: 12px; }
+.cel-ag-faixa { margin-bottom: 14px; }
+.cel-ag-faixa .cel-faixa { height: 26px; }
+.cel-ag { display: grid; grid-template-columns: 50px 1fr; gap: 10px; margin-bottom: 8px; }
+.cel-ag-hora { font: 12px/1.35 var(--mono); color: var(--text2); padding-top: 9px; text-align: right; }
+.cel-ag-card {
+  width: 100%; text-align: left; font-family: inherit; color: var(--text); cursor: pointer;
+  border: 1px solid var(--border); border-left: 4px solid var(--blue); border-radius: 6px; padding: 9px 11px; background: var(--blue-b);
+}
+.cel-ag.interno .cel-ag-card { border-left-color: var(--purple); background: var(--purple-b); }
+.cel-ag.agora .cel-ag-card { border-color: var(--amber); border-left-color: var(--amber); background: var(--amber-b); }
+.cel-ag.trocada .cel-ag-card { border-color: var(--red); border-left-color: var(--red); background: var(--red-b); }
+.cel-ag.livre .cel-ag-card { border: 1px dashed var(--border2); background: transparent; color: var(--muted); font-size: 13px; padding: 8px 11px; cursor: default; }
+.cel-ag-topo { display: flex; align-items: center; gap: 8px; }
+.cel-ag-per { font: bold 12px var(--mono); color: var(--text2); }
+.cel-ag-nome { font-weight: bold; font-size: 14px; margin-top: 2px; }
+.cel-ag-meta { font: 11.5px var(--mono); color: var(--text2); margin-top: 2px; }
+.cel-ag-troca { font-size: 12px; font-weight: bold; color: var(--red); margin-top: 3px; }
+.cel-tag-agora { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: .5px; color: var(--amber); border: 1px solid var(--amber); border-radius: 3px; padding: 1px 5px; }
+
+/* ------------------------------------------------------------ Próximas aulas */
+.cel-proximas .nx-body { padding: 4px 12px 24px; gap: 14px; }
+.cel-proximas .nx-cards { grid-template-columns: 1fr !important; gap: 6px; }
+.cel-proximas .nx-card { display: grid; grid-template-columns: 44px 1fr auto; column-gap: 10px; row-gap: 2px; align-items: start; padding: 10px 11px; }
+.cel-proximas .nct { grid-column: 1; grid-row: 1 / span 4; flex-direction: column; align-items: flex-start; gap: 3px; }
+.cel-proximas .ncr { font-size: 17px; font-weight: bold; }
+.cel-proximas .ncc { grid-column: 2; font-size: 13.5px; font-weight: bold; line-height: 1.3; }
+.cel-proximas .nx-troca { grid-column: 2 / span 2; }
+.cel-proximas .nct2 { grid-column: 2; font-size: 11px; }
+.cel-proximas .ncb { grid-column: 3; grid-row: 1; }
+.cel-proximas .nx-linha { flex-wrap: wrap; row-gap: 6px; }
+.cel-proximas .nx-linha > div:first-child { flex-wrap: wrap; row-gap: 4px; gap: 10px !important; }
+.cel-busca-proximas {
+  display: flex; align-items: center; gap: 8px; min-height: 46px; margin: 0 12px 6px;
+  border: 2px solid #3b82f6; border-radius: 10px; padding: 0 6px 0 12px; background: var(--panel); color: #3b82f6;
+}
+.cel-busca-proximas input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-family: inherit; }
+
+/* ------------------------------------------------------------ Mural de avisos */
+.cel-seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; margin-bottom: 12px; }
+.cel-seg button {
+  display: flex; justify-content: center; align-items: center; gap: 6px; min-height: 40px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text2); font-family: inherit; font-size: 13px; font-weight: bold; cursor: pointer;
+}
+.cel-seg button.ativo { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.cel-seg .qtd { font: bold 11px var(--mono); padding: 1px 6px; border-radius: 8px; background: var(--border); }
+.cel-fab {
+  position: fixed; right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 50;
+  display: flex; align-items: center; gap: 6px; height: 50px; padding: 0 18px; border-radius: 25px; border: 0;
+  background: #3b82f6; color: #fff; font-family: inherit; font-weight: bold; font-size: 14px; cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
+}
+
+/* ------------------------------------------------------------ Contatos */
+.cel-contato-acoes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.cel-contato-acoes a {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px; border-radius: 7px;
+  border: 1px solid var(--border2); font-size: 12px; font-weight: bold; color: var(--text); text-decoration: none;
+}
+.cel-contato-acoes a.ligar { background: var(--green-b); border-color: rgba(58, 170, 101, .4); color: var(--green); }
+
+/* ------------------------------------------------------------ Mais */
+.cel-mais { padding: 12px 12px 28px; }
+.cel-mais-grupo { font-size: 11px; font-weight: bold; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); margin: 18px 4px 6px; }
+.cel-mais-lista { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.cel-mais-item {
+  width: 100%; display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 12px;
+  border: 0; border-bottom: 1px solid var(--border); background: none; color: var(--text);
+  font-family: inherit; font-size: 15px; text-align: left; text-decoration: none; cursor: pointer;
+}
+.cel-mais-item:last-child { border-bottom: 0; }
+.cel-mais-item .dir { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.cel-mais-item.sair { color: var(--red); font-weight: bold; }
+.cel-tag-pc { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--text2); border: 1px solid var(--border2); border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
+.cel-perfil { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: var(--text); }
+.cel-perfil-ini { width: 42px; height: 42px; border-radius: 50%; background: #3b82f6; color: #fff; display: grid; place-items: center; font-weight: bold; font-size: 17px; flex-shrink: 0; }
+.cel-chave { width: 42px; height: 24px; border-radius: 12px; background: var(--border2); position: relative; flex-shrink: 0; }
+.cel-chave::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); transition: left .15s; }
+.cel-chave.ligada { background: var(--navy); }
+.cel-chave.ligada::after { left: 21px; }
+@media (prefers-reduced-motion: reduce) { .cel-chave::after { transition: none; } }
+
+@media screen and (max-width: 768px) {
+  .lista-trocas-acoes button { min-height: 40px; flex: 1; }
+}
+
+/* Campos de busca do celular já têm o próprio "×" de limpar */
+.cel-busca-campo input::-webkit-search-cancel-button,
+.cel-filtro input::-webkit-search-cancel-button,
+.cel-busca-proximas input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }

@@ -7,6 +7,7 @@ import ModalComentarAviso from './ModalComentarAviso';
 import { useUI } from '../contexts/UIContext';
 import { usePredio } from '../contexts/PredioContext';
 import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
+import { useCelular } from '../hooks/useCelular';
 
 // "Hoje" no fuso da PUCRS como AAAA-MM-DD (compara direto com data_prevista)
 const hojeISO = () => {
@@ -27,8 +28,13 @@ const prioStyle = {
     BAIXA: { color: '#9ca3af', border: '1px solid rgba(156, 163, 175, 0.3)', background: 'rgba(255,255,255,0.05)' },
 };
 
+// No celular (useCelular): as duas colunas viram duas abas (Chaves / Avisos),
+// "Entregar chave" ocupa a largura do cartão e "+ Novo registro" flutua
+// acima da barra de baixo.
 export default function MuralAvisos({ session, acesso }) {
     const { showConfirm, toast } = useUI();
+    const celular = useCelular();
+    const [abaCelular, setAbaCelular] = useState('chaves');
     const { predioAtivo } = usePredio();
 
     const {
@@ -112,11 +118,11 @@ export default function MuralAvisos({ session, acesso }) {
     if (error) return <p style={{ padding: 24, color: '#ef4444' }}>{error}</p>;
 
     return (
-        <div style={{ padding: '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: celular ? '12px 12px 96px' : '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: celular ? '12px' : '24px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>Mural de Operações</h2>
-                <button onClick={() => setIsModalNovoAvisoOpen(true)} disabled={isCriando} style={{
+                <button className="so-computador" onClick={() => setIsModalNovoAvisoOpen(true)} disabled={isCriando} style={{
                     padding: '8px 16px', background: '#3b82f6', color: '#fff',
                     border: 'none', borderRadius: '8px', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
@@ -126,9 +132,20 @@ export default function MuralAvisos({ session, acesso }) {
                 </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', flex: 1 }}>
+            {celular && (
+                <div className="cel-seg" role="tablist" aria-label="Tipo de registro">
+                    <button type="button" role="tab" aria-selected={abaCelular === 'chaves'} className={abaCelular === 'chaves' ? 'ativo' : undefined} onClick={() => setAbaCelular('chaves')}>
+                        Chaves <span className="qtd">{autorizacoesChaves.length}</span>
+                    </button>
+                    <button type="button" role="tab" aria-selected={abaCelular === 'avisos'} className={abaCelular === 'avisos' ? 'ativo' : undefined} onClick={() => setAbaCelular('avisos')}>
+                        Avisos <span className="qtd">{avisosGerais.length}</span>
+                    </button>
+                </div>
+            )}
 
-                <div>
+            <div style={{ display: 'grid', gridTemplateColumns: celular ? '1fr' : 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', flex: 1 }}>
+
+                <div style={celular && abaCelular !== 'chaves' ? { display: 'none' } : undefined}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                         <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>🔑</div>
                         <h3 style={{ fontSize: '15px', fontWeight: 'bold', margin: 0, color: '#e2e8f0' }}>Autorizações de Chaves</h3>
@@ -166,7 +183,7 @@ export default function MuralAvisos({ session, acesso }) {
                                     <span style={{ ...pillStyle, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Per. {aviso.periodo}</span>
                                 </div>
 
-                                <button onClick={() => handleConcluirChaveDireto(aviso.id)} disabled={isConcluindo} style={{ padding: '8px 16px', background: 'transparent', color: isConcluindo ? '#475569' : '#60a5fa', border: `1px solid ${isConcluindo ? '#334155' : '#3b82f6'}`, borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                                <button onClick={() => handleConcluirChaveDireto(aviso.id)} disabled={isConcluindo} style={{ ...(celular ? { width: '100%', minHeight: '44px', fontSize: '14px' } : {}), padding: '8px 16px', background: 'transparent', color: isConcluindo ? '#475569' : '#60a5fa', border: `1px solid ${isConcluindo ? '#334155' : '#3b82f6'}`, borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
                                     {isConcluindo ? 'Processando...' : '✓ Entregar chave'}
                                 </button>
                             </div>
@@ -174,7 +191,7 @@ export default function MuralAvisos({ session, acesso }) {
                     })}
                 </div>
 
-                <div>
+                <div style={celular && abaCelular !== 'avisos' ? { display: 'none' } : undefined}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                         <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>⚠️</div>
                         <h3 style={{ fontSize: '15px', fontWeight: 'bold', margin: 0, color: '#e2e8f0' }}>Avisos e Intercorrências</h3>
@@ -238,6 +255,10 @@ export default function MuralAvisos({ session, acesso }) {
                     <span>📋</span> Visualizar histórico de auditoria (Registros encerrados)
                 </button>
             </div>
+
+            {celular && (
+                <button type="button" className="cel-fab" onClick={() => setIsModalNovoAvisoOpen(true)} disabled={isCriando}>+ Novo registro</button>
+            )}
 
             {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} isPending={isCriando} predioId={predioAtivo || acesso?.predioId} />}
             {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} isPending={isConcluindo} />}

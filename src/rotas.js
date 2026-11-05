@@ -18,6 +18,8 @@ export const ROTAS = {
   contatos: '/contatos',
   admin: '/admin',
   perfil: '/perfil',
+  // Só no celular: o que não coube na barra de baixo (no computador volta para a Planta)
+  mais: '/mais',
   // Menu "Gestão"
   salasLivres: '/gestao/salas-livres',
   ocupacao: '/gestao/ocupacao',

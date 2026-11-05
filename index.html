@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover + env(safe-area-inset-*) em src/celular.css (barra do iPhone) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Ícone na tela de início do celular (abre em tela cheia). A cor acompanha o tema: useTema() -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#111418" />
+    <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Salas PUCRS" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <title>Gestão do Prédio</title>
   </head>
   <body>

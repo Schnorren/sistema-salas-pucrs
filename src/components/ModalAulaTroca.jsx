@@ -1,3 +1,4 @@
+import { useCelular } from '../hooks/useCelular';
 import { periodosAfetadosPelaTroca, horarioDosPeriodos, dataPorExtenso } from '../utils/aulasDoDia';
 import { OVERLAY, CARTAO, BOTAO, BOTAO_PRIMARIO, BOTAO_PERIGO } from '../utils/estilosModalTroca';
 
@@ -7,13 +8,16 @@ import { OVERLAY, CARTAO, BOTAO, BOTAO_PRIMARIO, BOTAO_PERIGO } from '../utils/e
 // ações de escrita só aparecem com 'edicao_grade' (canEditGrade).
 //
 // aula = bloco de blocoDaChave() + { data, semana } da ocorrência exibida.
+// No celular abre como painel que sobe de baixo (classes modal-* em
+// src/celular.css) e sem "Reimprimir": o aviso sai pelo computador.
 export default function ModalAulaTroca({ aula, registro, canEditGrade, desfazendo, onFechar, onTrocar, onDesfazer, onImprimir }) {
+  const celular = useCelular(); // painel que sobe: tocar fora fecha (só no celular)
   const afetados = registro ? periodosAfetadosPelaTroca(registro, aula.periodos) : [];
   const parcial = registro && afetados.length < aula.periodos.length;
 
   return (
-    <div style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-aula-troca">
-      <div style={{ ...CARTAO, width: '560px' }}>
+    <div className="modal-folha" style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-aula-troca" onClick={celular ? onFechar : undefined}>
+      <div className="modal-cartao" style={{ ...CARTAO, width: '560px' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px' }}>
           <h2 id="titulo-aula-troca" style={{ margin: 0, color: 'var(--text)', fontSize: '1.2rem', lineHeight: 1.3 }}>
             {aula.nomeAula || aula.nome}
@@ -51,7 +55,13 @@ export default function ModalAulaTroca({ aula, registro, canEditGrade, desfazend
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '22px', flexWrap: 'wrap' }}>
+        {registro && (
+          <div className="so-celular" style={{ marginTop: '12px', fontSize: '12px', color: 'var(--muted)' }}>
+            O aviso impresso sai pelo computador: Linha do tempo → Trocas → Reimprimir.
+          </div>
+        )}
+
+        <div className="modal-acoes" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '22px', flexWrap: 'wrap' }}>
           <button type="button" onClick={onFechar} style={BOTAO}>Fechar</button>
           {registro && canEditGrade && (
             <button type="button" onClick={onDesfazer} disabled={desfazendo} style={BOTAO_PERIGO}>
@@ -59,7 +69,7 @@ export default function ModalAulaTroca({ aula, registro, canEditGrade, desfazend
             </button>
           )}
           {registro && (
-            <button type="button" onClick={onImprimir} style={BOTAO}>🖨️ Reimprimir</button>
+            <button type="button" className="so-computador" onClick={onImprimir} style={BOTAO}>🖨️ Reimprimir</button>
           )}
           {canEditGrade && (
             <button type="button" autoFocus onClick={onTrocar} style={BOTAO_PRIMARIO}>

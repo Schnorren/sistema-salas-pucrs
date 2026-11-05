@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useCelular } from '../hooks/useCelular';
 import { periodosAfetadosPelaTroca, horarioDosPeriodos, dataPorExtenso } from '../utils/aulasDoDia';
 import { OVERLAY, CARTAO, ROTULO, CAMPO, BOTAO, BOTAO_PRIMARIO } from '../utils/estilosModalTroca';
 
@@ -8,7 +9,10 @@ import { OVERLAY, CARTAO, ROTULO, CAMPO, BOTAO, BOTAO_PRIMARIO } from '../utils/
 // já ocupada), então não há sugestão de salas livres.
 //
 // onSalvar(form, { imprimir }) — quem chama grava e, se pedido, imprime.
+// No celular ocupa a tela inteira, "Salvar" fica preso embaixo e não há
+// "Salvar e imprimir": o aviso é impresso pelo computador (decisão de 05/11).
 export default function ModalTrocaSala({ aula, registro, salvando, onCancelar, onSalvar }) {
+  const celular = useCelular();
   const [form, setForm] = useState(() => ({
     predio: registro?.predio_destino ?? '',
     sala: registro?.sala_destino ?? '',
@@ -37,8 +41,8 @@ export default function ModalTrocaSala({ aula, registro, salvando, onCancelar, o
   };
 
   return (
-    <div style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-troca-sala">
-      <form onSubmit={enviar} style={CARTAO}>
+    <div className="modal-tela-cheia" style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-troca-sala">
+      <form onSubmit={enviar} className="modal-cartao" style={CARTAO}>
         <h2 id="titulo-troca-sala" style={{ margin: '0 0 4px 0', color: 'var(--text)' }}>
           🔁 {registro ? 'Editar troca de sala' : 'Trocar de sala'}
         </h2>
@@ -93,11 +97,11 @@ export default function ModalTrocaSala({ aula, registro, salvando, onCancelar, o
         <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
           <label style={{ flex: 1 }}>
             <span style={{ ...ROTULO, fontWeight: 'normal' }}>Prédio</span>
-            <input autoFocus type="text" placeholder="Ex: 32" value={form.predio} onChange={alterar('predio')} style={CAMPO} required />
+            <input autoFocus={!celular} type="text" inputMode={celular ? 'numeric' : undefined} placeholder="Ex: 32" value={form.predio} onChange={alterar('predio')} style={CAMPO} required />
           </label>
           <label style={{ flex: 1 }}>
             <span style={{ ...ROTULO, fontWeight: 'normal' }}>Sala</span>
-            <input type="text" placeholder="Ex: 301" value={form.sala} onChange={alterar('sala')} style={CAMPO} required />
+            <input type="text" inputMode={celular ? 'numeric' : undefined} placeholder="Ex: 301" value={form.sala} onChange={alterar('sala')} style={CAMPO} required />
           </label>
         </div>
 
@@ -128,12 +132,15 @@ export default function ModalTrocaSala({ aula, registro, salvando, onCancelar, o
         </details>
 
         {/* "Salvar" vem antes no DOM: Enter num campo salva sem abrir a impressão */}
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <div className="so-celular" style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>
+          Para imprimir o aviso, use o computador: Linha do tempo → Trocas → Reimprimir.
+        </div>
+        <div className="modal-acoes" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button type="button" onClick={onCancelar} style={BOTAO}>Cancelar</button>
-          <button type="submit" data-acao="salvar" disabled={salvando} style={BOTAO}>
-            {salvando ? 'Salvando...' : 'Salvar'}
+          <button type="submit" data-acao="salvar" disabled={salvando} style={celular ? BOTAO_PRIMARIO : BOTAO}>
+            {salvando ? 'Salvando...' : celular ? 'Salvar troca' : 'Salvar'}
           </button>
-          <button type="submit" data-acao="imprimir" disabled={salvando} style={BOTAO_PRIMARIO}>
+          <button type="submit" data-acao="imprimir" className="so-computador" disabled={salvando} style={BOTAO_PRIMARIO}>
             🖨️ Salvar e imprimir aviso
           </button>
         </div>

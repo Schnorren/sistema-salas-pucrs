@@ -4,6 +4,8 @@ import { useUI } from '../contexts/UIContext';
 import { buscarNoDiretorio, normalizarTexto } from '../utils/contatosBusca';
 import ModalEditarContato from './ModalEditarContato';
 import ModalCursosContato from './ModalCursosContato';
+import { useCelular } from '../hooks/useCelular';
+import Icone from './celular/Icone';
 
 const pillStyle = {
     fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
@@ -33,8 +35,11 @@ function linkWhatsapp(numero) {
     return `https://wa.me/55${digitos}`;
 }
 
+// No celular (useCelular), cada contato ganha os botões Ligar, WhatsApp e
+// E-mail no topo da ficha (um toque abre o discador/app).
 export default function MuralContatos({ session, acesso, canEditContatos, contatoFocado }) {
     const { showConfirm, toast } = useUI();
+    const celular = useCelular();
     const {
         diretorio, loading, error,
         isSalvando, isExcluindo, isMexendoEmCursos,
@@ -121,8 +126,23 @@ export default function MuralContatos({ session, acesso, canEditContatos, contat
         const emails = contato.emails || [];
         const wpp = linkWhatsapp(contato.whatsapp);
 
+        const acoes = [
+            telefones[0] && { classe: 'ligar', href: `tel:${telefones[0].replace(/\D/g, '')}`, icone: 'telefone', rotulo: 'Ligar' },
+            wpp && { href: wpp, icone: 'conversa', rotulo: 'WhatsApp', externo: true },
+            emails[0] && { href: `mailto:${emails[0]}`, icone: 'email', rotulo: 'E-mail' },
+        ].filter(Boolean);
+
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {celular && acoes.length > 0 && (
+                    <div className="cel-contato-acoes" style={{ gridTemplateColumns: `repeat(${acoes.length}, minmax(0, 1fr))` }}>
+                        {acoes.map(a => (
+                            <a key={a.rotulo} href={a.href} className={a.classe} {...(a.externo ? { target: '_blank', rel: 'noreferrer' } : {})}>
+                                <Icone nome={a.icone} tamanho={18} />{a.rotulo}
+                            </a>
+                        ))}
+                    </div>
+                )}
                 {contato.descricao && (
                     <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>{contato.descricao}</div>
                 )}
@@ -272,7 +292,7 @@ export default function MuralContatos({ session, acesso, canEditContatos, contat
     };
 
     return (
-        <div style={{ padding: '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: celular ? '12px' : '24px', background: 'transparent', minHeight: '100%', color: '#f3f4f6', display: 'flex', flexDirection: 'column' }}>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
                 <div>
@@ -347,7 +367,7 @@ export default function MuralContatos({ session, acesso, canEditContatos, contat
                     ))}
                 </div>
             ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '0 24px', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(400px, 100%), 1fr))', gap: '0 24px', alignItems: 'start' }}>
                     {raizes.length === 0 ? (
                         <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#64748b', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.1)' }}>
                             Nenhum contato cadastrado.
