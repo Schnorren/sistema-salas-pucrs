@@ -35,6 +35,8 @@ const ORDEM = [
   'contatos_seed.sql',
   'emprestimos_v2.sql',
   'emprestimos_v2_rpcs.sql',
+  // Relatório de empréstimos v2 (dados brutos; contas no front)
+  'emprestimos_relatorio.sql',
   'rls_policies.sql',
   // Views não passam pela RLS: só a service role pode lê-las.
   'views_privilegios.sql',

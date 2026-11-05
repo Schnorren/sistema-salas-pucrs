@@ -12,7 +12,7 @@ import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 //                                      POST /cancelar/:id {motivo}     POST /reabrir/:id
 //                                      PUT  /itens/:id/manutencao {status, observacoes}
 //                                      GET  /historico?ponto=&busca=&antes=
-//   Relatório (emprestimos|relatorios) GET  /estatisticas?inicio=&fim=&ponto=
+//   Relatório (emprestimos|relatorios) GET  /relatorio?inicio=&fim=&ponto=
 //   Gestão (gestao_emprestimos)        GET  /gestao   GET /gestao/ocorrencias
 //                                      POST /gestao/{pontos,categorias,itens}  PUT /gestao/{...}/:id
 //                                      GET|POST /gestao/bloqueios  DELETE /gestao/bloqueios/:id
@@ -57,9 +57,9 @@ async function handler(req, res) {
 
     try {
         // ------------------------------------------------------- relatório
-        if (req.method === 'GET' && c1 === 'estatisticas') {
+        if (req.method === 'GET' && c1 === 'relatorio') {
             if (!podeVerRelatorio(user)) return negar(res, 'Acesso negado. Requer o módulo de Empréstimos ou Relatórios.');
-            return res.status(200).json(await service.estatisticas(user, { inicio: q.inicio, fim: q.fim, pontoId: q.ponto }));
+            return res.status(200).json(await service.relatorio(user, { inicio: q.inicio, fim: q.fim, pontoId: q.ponto }));
         }
 
         if (req.method === 'GET' && c1 === 'pontos') {

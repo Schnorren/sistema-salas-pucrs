@@ -1,6 +1,7 @@
 import repository from '../repositories/emprestimos.repository.js';
 import { ErroPublico } from '../utils/http.js';
 import { MODULOS } from '../utils/modulos.js';
+import { MAX_RETIRADAS_RELATORIO } from '../utils/limites.js';
 import {
     normalizarNome, normalizarMatricula, calcularMedianas, hojeSP, RESULTADOS_DEVOLUCAO,
 } from '../utils/emprestimoRegras.js';
@@ -87,11 +88,13 @@ const mapearHistorico = (r) => {
     };
 };
 
-// "2026-11-05T08:00" (datetime-local) → timestamptz de Brasília
-const paraTimestamptz = (valor) => {
+// "2026-11-05T08:00" (datetime-local, horário de Brasília) → timestamptz.
+// Com fimDoMinuto, vale até o último segundo daquele minuto: "até 23:59"
+// inclui a retirada das 23:59:30 (antes ficava de fora do relatório).
+const paraTimestamptz = (valor, { fimDoMinuto = false } = {}) => {
     const s = String(valor || '').trim();
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return `${s}:00-03:00`;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00:00-03:00`;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return `${s}:${fimDoMinuto ? '59.999' : '00'}-03:00`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T${fimDoMinuto ? '23:59:59.999' : '00:00:00'}-03:00`;
     return Number.isFinite(new Date(s).getTime()) ? s : null;
 };
 
@@ -316,14 +319,17 @@ class EmprestimosService {
     }
 
     // ------------------------------------------------------------- relatório
-    async estatisticas(user, { inicio, fim, pontoId } = {}) {
+    // Dados brutos do período (retiradas, acervo e pontos); os totais e
+    // gráficos saem de src/utils/relatorioEmprestimos.js, na tela e no PDF.
+    async relatorio(user, { inicio, fim, pontoId } = {}) {
         if (!podeVerRelatorio(user)) {
             throw new ErroPublico('Acesso negado. Requer o módulo de Empréstimos ou Relatórios.', 403);
         }
         const predioId = exigirPredio(user);
         const ini = paraTimestamptz(inicio);
-        const fimTs = paraTimestamptz(fim);
+        const fimTs = paraTimestamptz(fim, { fimDoMinuto: true });
         if (!ini || !fimTs) throw new ErroPublico('Parâmetros inicio e fim são obrigatórios.');
+        if (new Date(ini) > new Date(fimTs)) throw new ErroPublico('O início do período precisa ser antes do fim.');
 
         const pontos = await this.pontosDoRelatorio(user);
         let pontoIds;
@@ -334,7 +340,20 @@ class EmprestimosService {
             // null = prédio todo; atendente vê só os pontos dele ([] = nenhum)
             pontoIds = veTodosOsPontos(user) ? null : pontos.map(p => p.id);
         }
-        return repository.estatisticasRpc({ predioId, pontoIds, inicio: ini, fim: fimTs });
+        const dados = await repository.relatorioRpc({ predioId, pontoIds, inicio: ini, fim: fimTs });
+        const total = dados?.registros?.length || 0;
+        if (total > MAX_RETIRADAS_RELATORIO) {
+            throw new ErroPublico(
+                `O período tem ${total.toLocaleString('pt-BR')} retiradas, mais do que o relatório monta de uma vez `
+                + `(até ${MAX_RETIRADAS_RELATORIO.toLocaleString('pt-BR')}). Escolha um período menor.`, 422);
+        }
+        // Sem nome nem matrícula de aluno: o relatório é anônimo (dados confidenciais)
+        return {
+            pontos: dados?.pontos || [],
+            itens: dados?.itens || [],
+            registros: dados?.registros || [],
+            retiradasPorAluno: dados?.retiradasPorAluno || [],
+        };
     }
 }
 

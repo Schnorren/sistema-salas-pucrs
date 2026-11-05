@@ -13,7 +13,7 @@ const formatadorSP = new Intl.DateTimeFormat('en-CA', {
 });
 
 // { ano, mes, dia, hora, minuto } (strings com zero à esquerda) no fuso de Brasília
-const partesSP = (data) => {
+export const partesSP = (data) => {
   const p = Object.fromEntries(formatadorSP.formatToParts(data).map(x => [x.type, x.value]));
   return { ano: p.year, mes: p.month, dia: p.day, hora: p.hour, minuto: p.minute };
 };
