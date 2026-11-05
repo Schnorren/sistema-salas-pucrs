@@ -194,6 +194,8 @@ export default function Dashboard({ session }) {
   // Badge de trocas — busca própria + Realtime (hook compartilhado com a
   // Timeline): o número fica certo sem depender da aba Linha do Tempo já ter
   // sido aberta e acompanha trocas criadas/removidas por outros usuários.
+  // O hook só devolve trocas de hoje até 6 dias à frente (próxima ocorrência
+  // de cada dia), então o badge conta as trocas que ainda vão acontecer.
   const trocasAtivas = useTrocasSala(predioId);
   // Conta só trocas cuja aula ainda existe na grade atual (mesma regra de
   // exibição da Timeline) — um re-import pode mover/remover aulas e deixar
@@ -203,7 +205,7 @@ export default function Dashboard({ session }) {
     () => (gradeData?.grade ? computarChavesDeBlocos(gradeData.grade) : null),
     [gradeData]
   );
-  const totalTrocasSemana = useMemo(() => {
+  const totalTrocasAtivas = useMemo(() => {
     const chaves = Object.keys(trocasAtivas);
     if (!chavesGrade) return chaves.length; // grade ainda carregando — usa o total bruto
     return chaves.filter(c => chavesGrade.has(c)).length;
@@ -508,9 +510,9 @@ export default function Dashboard({ session }) {
               <NavLink to={ROTAS.planta} end className="navtab">Planta ao Vivo</NavLink>
               <NavLink to={ROTAS.linhaDoTempo} className="navtab">
                 Linha do Tempo
-                {totalTrocasSemana > 0 && (
-                  <span title="Trocas de sala ativas nesta semana" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
-                    {totalTrocasSemana}
+                {totalTrocasAtivas > 0 && (
+                  <span title="Trocas de sala de hoje e dos próximos 6 dias" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                    {totalTrocasAtivas}
                   </span>
                 )}
               </NavLink>
@@ -591,7 +593,7 @@ export default function Dashboard({ session }) {
             element={
               <ErrorBoundary>
                 {/* ?dia=&filtro= vem da busca global (link compartilhável) */}
-                <Timeline session={session} acesso={acesso} initialDay={searchParams.get('dia')} initialFiltro={searchParams.get('filtro')} />
+                <Timeline session={session} acesso={acesso} canEditGrade={canEditGrade} initialDay={searchParams.get('dia')} initialFiltro={searchParams.get('filtro')} />
               </ErrorBoundary>
             }
           />

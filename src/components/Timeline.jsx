@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
-import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, getSemanaAtual, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, getProximaOcorrencia, getProximosSeteDias, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase';
@@ -11,10 +11,16 @@ import { parsearNomeAula, periodosAfetadosPelaTroca } from '../utils/aulasDoDia'
 import logoPucrs from '../assets/logos/pucrs.jpeg';
 import logoLiving360 from '../assets/logos/living360.jpeg';
 
-const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 // Dia em inglês para a linha EN do cartaz de impressão
 const DAYS_EN = { Segunda: 'Monday', 'Terça': 'Tuesday', Quarta: 'Wednesday', Quinta: 'Thursday', Sexta: 'Friday', 'Sábado': 'Saturday', Domingo: 'Sunday' };
+const MESES_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DIA_EXTENSO = { Segunda: 'segunda-feira', 'Terça': 'terça-feira', Quarta: 'quarta-feira', Quinta: 'quinta-feira', Sexta: 'sexta-feira', 'Sábado': 'sábado', Domingo: 'domingo' };
+
+// Datas "AAAA-MM-DD" (getProximosSeteDias) formatadas sem passar por fuso:
+// "09/11", "segunda-feira, 09/11/2026" e "Monday, November 9, 2026".
+const dataCurta = (iso) => { const [, m, d] = String(iso).split('-'); return `${d}/${m}`; };
+const dataPorExtenso = (dia, iso) => { const [a, m, d] = String(iso).split('-'); return `${DIA_EXTENSO[dia] || dia}, ${d}/${m}/${a}`; };
+const dataEmIngles = (dia, iso) => { const [a, m, d] = String(iso).split('-').map(Number); return `${DAYS_EN[dia] || dia}, ${MESES_EN[m - 1]} ${d}, ${a}`; };
 
 // Fora do componente — funções puras sem dependência de estado.
 // parsearNomeAula e periodosAfetadosPelaTroca vêm de utils/aulasDoDia (compartilhados com Planta/Próximas aulas)
@@ -54,7 +60,11 @@ const calcularSelecaoPeriodos = (aula, periodosSelecionados) => {
   return { periodos: usados, periodosStrDb: usados.join(','), periodosStr: usados.join(''), horarioStr };
 };
 
-export default function Timeline({ acesso, initialDay, initialFiltro }) {
+// canEditGrade = mesma flag do Dashboard ('edicao_grade' ou admin, com prédio).
+// Sem ela a troca só pode ser consultada/reimpressa — a RLS de trocas_sala
+// continua sendo a barreira real; aqui é só para não abrir um fluxo que vai
+// falhar no fim.
+export default function Timeline({ acesso, canEditGrade = false, initialDay, initialFiltro }) {
   const { predioAtivo, predioNome } = usePredio();
   const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
@@ -93,7 +103,9 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
             aula_unique_key: aula.aulaUniqueKey,
-            semana: getSemanaAtual(),
+            // Semana da DATA da aula (fixada ao abrir o modal), não a de hoje:
+            // numa quinta, a troca de "Segunda" é da segunda que vem.
+            semana: aula.semana,
             predio_destino: limpar(form.predio),
             sala_destino: limpar(form.sala),
             motivo: limpar(form.motivo),
@@ -114,13 +126,13 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   });
 
   const removerTrocaMutation = useMutation({
-    mutationFn: async (aulaUniqueKey) => {
+    mutationFn: async ({ aulaUniqueKey, semana }) => {
         const { data, error } = await supabase
             .from('trocas_sala')
             .delete()
             .eq('predio_id', predioAtual)
             .eq('aula_unique_key', aulaUniqueKey)
-            .eq('semana', getSemanaAtual())
+            .eq('semana', semana)
             .select();
         if (error) throw error;
         // RLS nega DELETE silenciosamente (0 linhas) — transforma em erro visível
@@ -300,14 +312,29 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
 
     const registroExistente = trocasAtivas[slot.aulaUniqueKey];
 
+    // Sem 'edicao_grade' não há o que registrar — só abre troca já existente
+    // (para consultar e reimprimir o cartaz).
+    if (!registroExistente && !canEditGrade) return;
+
+    // A troca é da próxima ocorrência do dia exibido (hoje incluso) — fixada
+    // aqui para o modal, a gravação e o cartaz usarem a mesma data.
+    const ocorrencia = getProximaOcorrencia(day);
+
     if (!registroExistente) {
-        const confirma = await showConfirm('Deseja registrar uma alteração de sala para esta aula?', 'Registrar Troca de Sala');
+        const confirma = await showConfirm(
+            `Registrar uma troca de sala para esta aula em ${dataPorExtenso(day, ocorrencia.data)}? A troca vale só para essa data.`,
+            'Registrar Troca de Sala'
+        );
         if (!confirma) return;
     }
 
     // slot já carrega aulaUniqueKey/periodosStr/horarioStr (calculados no
-    // dataProcessed); `dia` entra para o cartaz de impressão.
-    setAulaSelecionadaParaTroca({ ...slot, salaAtual, dia: day });
+    // dataProcessed); `dia` e `dataAula` entram para o modal e o cartaz.
+    setAulaSelecionadaParaTroca({
+        ...slot, salaAtual, dia: day,
+        dataAula: ocorrencia.data,
+        semana: registroExistente?.semana || ocorrencia.semana,
+    });
 
     // Auto-preenchimento: cod/cred e nome limpo do padrão "97316-04/1 - NOME DA
     // AULA", já parseados na montagem da grade.
@@ -342,6 +369,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
 
   const handleSalvarTroca = (e) => {
     e.preventDefault();
+    if (!canEditGrade) return; // modal em modo consulta
     salvarTrocaMutation.mutate({ aula: aulaSelecionadaParaTroca, form: formTroca }, {
         onSuccess: () => {
             toast.success('Troca de sala registrada com sucesso!');
@@ -354,7 +382,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
   const handleRemoverTroca = async () => {
     const confirma = await showConfirm('Remover o aviso de troca desta aula? Ele deixa de aparecer na grade para todos.', 'Remover Troca de Sala');
     if (!confirma) return;
-    removerTrocaMutation.mutate(aulaSelecionadaParaTroca.aulaUniqueKey);
+    removerTrocaMutation.mutate({ aulaUniqueKey: aulaSelecionadaParaTroca.aulaUniqueKey, semana: aulaSelecionadaParaTroca.semana });
   };
 
   const handleImprimirCartaz = async () => {
@@ -365,18 +393,19 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     // O cartaz impresso precisa refletir o que está salvo: regrava quando o form
     // difere do registro (ou não há registro) — sem isso, editar um campo e clicar
     // direto em Imprimir gerava cartaz com dados novos e grade/banco com os velhos.
-    // Sem alterações, não grava: quem não tem 'edicao_grade' segue podendo reimprimir.
+    // Sem alterações, não grava; quem não tem 'edicao_grade' (modal em modo
+    // consulta, campos travados) só reimprime o que está salvo.
     const registro = trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
     const { periodosStrDb, periodosStr: periodosStrSelecao, horarioStr: horarioStrSelecao } =
         calcularSelecaoPeriodos(aulaSelecionadaParaTroca, formTroca.periodosSelecionados);
-    const formDifereDoSalvo = !registro ||
+    const formDifereDoSalvo = canEditGrade && (!registro ||
         limpar(registro.predio_destino)    !== limpar(formTroca.predio) ||
         limpar(registro.sala_destino)      !== limpar(formTroca.sala) ||
         limpar(registro.motivo)            !== limpar(formTroca.motivo) ||
         limpar(registro.nome_aula_editado) !== limpar(formTroca.nomeAulaEditado) ||
         limpar(registro.professor)         !== limpar(formTroca.professor) ||
         limpar(registro.cod_cred)          !== limpar(formTroca.codCred) ||
-        limpar(registro.periodos_str)      !== periodosStrDb;
+        limpar(registro.periodos_str)      !== periodosStrDb);
     if (formDifereDoSalvo) {
         try {
             await salvarTrocaMutation.mutateAsync({ aula: aulaSelecionadaParaTroca, form: formTroca });
@@ -396,7 +425,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     const periodos      = escapeHtml(periodosStrSelecao);
     const horario       = escapeHtml(horarioStrSelecao);
     const salaOrigem    = escapeHtml(aulaSelecionadaParaTroca.salaAtual);
-    const diaSemana     = escapeHtml(aulaSelecionadaParaTroca.dia);
+    // Data da aula por extenso: o cartaz fica na porta e precisa dizer que a
+    // troca vale só para aquele dia ("Segunda-feira, 09/11/2026").
+    const diaPorExtenso = dataPorExtenso(aulaSelecionadaParaTroca.dia, aulaSelecionadaParaTroca.dataAula);
+    const dataAula      = escapeHtml(diaPorExtenso.charAt(0).toUpperCase() + diaPorExtenso.slice(1));
+    const dataAulaEN    = escapeHtml(dataEmIngles(aulaSelecionadaParaTroca.dia, aulaSelecionadaParaTroca.dataAula));
     // "Gerado em" no fuso da PUCRS, não no do browser (regra do projeto)
     // Cabeçalho do cartaz por prédio: o logo do Living 360 só vale para o
     // prédio 15; nos demais vai o logo da PUCRS + o nome do prédio em texto.
@@ -412,7 +445,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
     if (codCred)   partesEN.push(`Code/Credits: ${codCred}`);
     if (professor) partesEN.push(`Instructor: ${professor}`);
     partesEN.push(`has been moved from Room ${salaOrigem} to Room ${salaDestino}, Building ${predioDestino}`);
-    partesEN.push(`${DAYS_EN[aulaSelecionadaParaTroca.dia] || diaSemana} · Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
+    partesEN.push(`${dataAulaEN} only · Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
     const linhaEN = partesEN.join(' · ');
 
     const blocoCodCred   = codCred   ? `
@@ -668,7 +701,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
               <!-- Períodos -->
               <div class="periodos-section">
                 <div class="periodos-badge">
-                  ${diaSemana} &nbsp;·&nbsp; PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
+                  ${dataAula} &nbsp;·&nbsp; PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
                 </div>
               </div>
 
@@ -708,11 +741,17 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
       {modalAvisoOpen && aulaSelecionadaParaTroca && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ background: 'var(--panel)', padding: '30px', borderRadius: '12px', width: '500px', border: '1px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-                <h2 style={{ margin: '0 0 10px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    🔁 Registrar Troca de Sala
+                <h2 style={{ margin: '0 0 6px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    🔁 {canEditGrade ? 'Registrar Troca de Sala' : 'Troca de Sala'}
                 </h2>
-                
+                {/* A troca é de uma data só — deixa explícito para qual */}
+                <div style={{ margin: '0 0 15px 0', fontSize: '13px', fontWeight: 'bold', color: 'var(--text)' }}>
+                    📅 Vale só para {dataPorExtenso(aulaSelecionadaParaTroca.dia, aulaSelecionadaParaTroca.dataAula)}
+                </div>
+
                 <form onSubmit={handleSalvarTroca} ref={formRef}>
+                    {/* Sem 'edicao_grade' o modal é só consulta: fieldset desabilita todos os campos */}
+                    <fieldset disabled={!canEditGrade} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                     <div style={{ padding: '15px', background: 'var(--panel2)', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '5px' }}>NOME DA DISCIPLINA (IMPRESSÃO)</div>
                         <input 
@@ -746,7 +785,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                                             title={marcado ? `Período ${p} muda de sala` : `Período ${p} permanece na sala de origem`}
                                             style={{
                                                 minWidth: '36px', padding: '8px 10px', borderRadius: '6px', fontWeight: 'bold',
-                                                fontFamily: 'var(--mono)', fontSize: '13px', cursor: 'pointer',
+                                                fontFamily: 'var(--mono)', fontSize: '13px', cursor: canEditGrade ? 'pointer' : 'default',
                                                 border: marcado ? '1px solid var(--blue)' : '1px solid var(--border)',
                                                 background: marcado ? 'var(--blue)' : 'var(--panel2)',
                                                 color: marcado ? '#fff' : 'var(--muted)',
@@ -788,12 +827,19 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                         <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>MOTIVO (CONTROLE INTERNO)</label>
                         <input type="text" placeholder="Ex: Problema no projetor..." value={formTroca.motivo} onChange={e => setFormTroca({...formTroca, motivo: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
                     </div>
+                    </fieldset>
+
+                    {!canEditGrade && (
+                        <div style={{ fontSize: '12px', color: 'var(--muted)', margin: '-10px 0 15px 0' }}>
+                            Somente consulta: registrar, alterar ou remover trocas exige a permissão de edição da grade.
+                        </div>
+                    )}
 
                     <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                         <button type="button" onClick={() => setModalAvisoOpen(false)} style={{ padding: '10px 16px', background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            Cancelar
+                            {canEditGrade ? 'Cancelar' : 'Fechar'}
                         </button>
-                        {trocasAtivas[aulaSelecionadaParaTroca.aulaUniqueKey] && (
+                        {canEditGrade && trocasAtivas[aulaSelecionadaParaTroca.aulaUniqueKey] && (
                             <button type="button" onClick={handleRemoverTroca} disabled={removerTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--red-b)', color: 'var(--red)', border: '1px solid rgba(160, 40, 40, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
                                 {removerTrocaMutation.isPending ? 'Removendo...' : 'Remover'}
                             </button>
@@ -801,9 +847,11 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                         <button type="button" onClick={handleImprimirCartaz} disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             🖨️ Imprimir
                         </button>
-                        <button type="submit" disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            {salvarTrocaMutation.isPending ? 'Salvando...' : 'Salvar Alteração'}
-                        </button>
+                        {canEditGrade && (
+                            <button type="submit" disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                {salvarTrocaMutation.isPending ? 'Salvando...' : 'Salvar Alteração'}
+                            </button>
+                        )}
                     </div>
                 </form>
             </div>
@@ -813,8 +861,12 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label>Dia:</label>
+          {/* Próximos 7 dias a partir de hoje, com data: o dia escolhido é a
+              próxima vez que ele acontece — é para essa data que vale a troca */}
           <select value={day} onChange={e => { setDay(e.target.value); setAutoMode(false); }}>
-            {ALL_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+            {getProximosSeteDias().map(o => (
+              <option key={o.dia} value={o.dia}>{o.dia}, {dataCurta(o.data)}{o.emDias === 0 ? ' (hoje)' : ''}</option>
+            ))}
           </select>
           <button
             onClick={() => { setAutoMode(true); setDay(getDiaAtual()); setTimeout(() => periodoAtualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }), 100); }}
@@ -910,7 +962,7 @@ export default function Timeline({ acesso, initialDay, initialFiltro }) {
                         onMouseEnter={() => slot.ocupado && setHoveredAulaId(slot.aulaUniqueKey)}
                         onMouseLeave={() => setHoveredAulaId(null)}
                         style={{
-                          flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'auto', minHeight: '100%', boxSizing: 'border-box', cursor: slot.ocupado ? 'pointer' : 'default', transition: 'all 0.2s ease', position: 'relative', overflow: 'hidden',
+                          flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'auto', minHeight: '100%', boxSizing: 'border-box', cursor: slot.ocupado && (canEditGrade || registroTroca) ? 'pointer' : 'default', transition: 'all 0.2s ease', position: 'relative', overflow: 'hidden',
                           
                           backgroundColor: temTroca ? 'rgba(239, 68, 68, 0.15)' : (isHovered ? 'rgba(255, 255, 255, 0.15)' : (isSearchMatch ? 'rgba(59, 130, 246, 0.25)' : undefined)),
                           

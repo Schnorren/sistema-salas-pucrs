@@ -14,7 +14,8 @@ export default function LiveMap({ acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
-  // Trocas de sala da semana (mesmo hook da Linha do tempo e do badge)
+  // Trocas de sala vigentes — de cada dia, a da próxima ocorrência, hoje
+  // incluso (mesmo hook da Linha do tempo e do badge)
   const trocas = useTrocasSala(predioAtual);
 
   // Dia/período de agora (Brasília); o dia escolhido volta para hoje a cada virada
