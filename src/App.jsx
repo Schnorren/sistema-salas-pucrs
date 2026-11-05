@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
@@ -25,6 +26,7 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [precisaDefinirSenha, setPrecisaDefinirSenha] = useState(senhaPendenteNaEntrada)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -40,13 +42,16 @@ export default function App() {
       if (event === 'SIGNED_OUT') {
         sessionStorage.removeItem(CHAVE_SENHA_PENDENTE)
         setPrecisaDefinirSenha(false)
+        // PCs da recepção são compartilhados: o próximo login não pode ver,
+        // nem por um instante, dados em cache da sessão anterior
+        queryClient.clear()
       }
       setSession(session)
       setIsAuthLoading(false)
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [queryClient])
 
   const concluirDefinicaoDeSenha = () => {
     sessionStorage.removeItem(CHAVE_SENHA_PENDENTE)

@@ -362,6 +362,7 @@ export default function Dashboard({ session }) {
                   </svg>
                   <input
                     className="search-input"
+                    aria-label="Buscar por código, disciplina, sala ou contato"
                     placeholder={`Buscar por código, disciplina ou sala...`}
                     autoComplete="off"
                     value={searchQuery}
@@ -369,7 +370,7 @@ export default function Dashboard({ session }) {
                     onFocus={() => searchQuery.length >= 2 && setShowDropdown(true)}
                   />
                   {searchQuery && (
-                    <button className="search-clear vis" onClick={() => setSearchQuery('')}>×</button>
+                    <button className="search-clear vis" onClick={() => setSearchQuery('')} aria-label="Limpar busca" title="Limpar busca">×</button>
                   )}
                 </div>
     
