@@ -44,8 +44,8 @@ grant select on table vw_equipe_predio to service_role;
 -- ---------------------------------------------------------------------
 -- 2. vw_relatorio_emprestimos — criada à mão, nenhum código usa.
 --    Fechada (e com security_invoker, para respeitar a RLS se um dia voltar
---    a ter grant). Pode ser removida; a definição está no histórico do git
---    desta migração (AUTONOMOUS_AUDIT_REPORT.md).
+--    a ter grant). Pode ser removida se o dashboard do Supabase também não a
+--    usar.
 -- ---------------------------------------------------------------------
 do $$
 begin
