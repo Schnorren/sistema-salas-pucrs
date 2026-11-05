@@ -5,13 +5,13 @@
 // Recebe o relatório JÁ montado por montarRelatorio() (relatorioEmprestimos.js)
 // — a tela e o PDF mostram os mesmos números. Roda no Node também
 // (tests/pdfRelatorioEmprestimos.test.js).
+//
+// O PDF é só o resumo: sem a lista de retiradas (decisão do usuário,
+// 05/11/2026). A lista continua na tela e na planilha.
 
 import { jsPDF } from 'jspdf';
 import { formatarDuracao } from '../../backend_core/utils/emprestimoRegras.js';
-import { formatarDataHora, formatarNumero, formatarHoras, descreverRetirada } from './relatorioEmprestimos.js';
-
-// Acima disso a tabela do PDF para e avisa: o registro completo vai na planilha
-export const MAX_LINHAS_TABELA_PDF = 1000;
+import { formatarDataHora, formatarNumero, formatarHoras } from './relatorioEmprestimos.js';
 
 // Paleta do tema claro (index.css)
 const COR = {
@@ -182,61 +182,6 @@ export const gerarPdfRelatorio = (rel, meta = {}, { compress = true } = {}) => {
     }
   };
 
-  // Tabela paginada: colunas [{ titulo, largura (fração), alinhar }]
-  const tabela = (titulo, sub, colunas, linhas, { total = linhas.length, nota } = {}) => {
-    const alturaLinha = 5.6;
-    const cabecalhoTabela = () => {
-      caixa(MARGEM, y, LARGURA, 6, COR.panel2, COR.border);
-      fonte(6.8, 'bold', COR.muted);
-      let cx = MARGEM;
-      for (const c of colunas) {
-        const w = c.largura * LARGURA;
-        const tx = c.alinhar === 'right' ? cx + w - 2 : c.alinhar === 'center' ? cx + w / 2 : cx + 2;
-        escrever(c.titulo.toUpperCase(), tx, y + 4, { align: c.alinhar || 'left' });
-        cx += w;
-      }
-      y += 6;
-    };
-    garantir(8 + 6 + alturaLinha * Math.min(3, Math.max(linhas.length, 1)));
-    y += tituloBloco(MARGEM, y, LARGURA, titulo, sub);
-    if (!linhas.length) { y += vazio(MARGEM, y); return; }
-    cabecalhoTabela();
-    linhas.forEach((linha, n) => {
-      if (y + alturaLinha > LIMITE_Y) {
-        novaPagina();
-        fonte(7.5, 'italic', COR.muted);
-        escrever(`${titulo} (continuação)`, MARGEM, y + 3);
-        y += 5;
-        cabecalhoTabela();
-      }
-      if (n % 2 === 1) caixa(MARGEM, y, LARGURA, alturaLinha, COR.panel2);
-      let cx = MARGEM;
-      colunas.forEach((c, i) => {
-        const w = c.largura * LARGURA;
-        const celula = linha[i];
-        const { texto, cor, negrito } = typeof celula === 'object' && celula !== null ? celula : { texto: celula };
-        fonte(7.5, negrito ? 'bold' : 'normal', cor || COR.text);
-        const tx = c.alinhar === 'right' ? cx + w - 2 : c.alinhar === 'center' ? cx + w / 2 : cx + 2;
-        escrever(caber(texto ?? '', w - 4), tx, y + 3.9, { align: c.alinhar || 'left' });
-        cx += w;
-      });
-      pdf.setDrawColor(...COR.border);
-      pdf.setLineWidth(0.1);
-      pdf.line(MARGEM, y + alturaLinha, MARGEM + LARGURA, y + alturaLinha);
-      y += alturaLinha;
-    });
-    if (total > linhas.length || nota) {
-      fonte(7.5, 'italic', COR.muted);
-      const aviso = total > linhas.length
-        ? `Mostrando ${formatarNumero(linhas.length)} de ${formatarNumero(total)}. ${nota || ''}`
-        : nota;
-      garantir(6);
-      escrever(aviso, MARGEM, y + 4);
-      y += 5;
-    }
-    y += ESPACO - 2;
-  };
-
   // Dois blocos lado a lado (mesma linha); cada um { altura, desenhar(x, y, w) }
   const META = (LARGURA - 8) / 2;
   const lado = (esq, dir) => {
@@ -341,29 +286,6 @@ export const gerarPdfRelatorio = (rel, meta = {}, { compress = true } = {}) => {
         },
       });
     }
-
-    // --------------------------------------------------------------- tabela
-    // Sem aluno (nome/matrícula): o relatório é anônimo — dados confidenciais.
-    const notaPlanilha = 'A lista completa está na planilha (Exportar planilha).';
-    const corSituacao = (reg) => ({ aberto: COR.blue, nao_devolvido: COR.red, problema: COR.amber })[reg.situacao] || COR.text;
-    const colunasRegistro = [
-      { titulo: 'Retirada', largura: 0.17 },
-      { titulo: 'Devolução', largura: 0.17 },
-      { titulo: 'Item', largura: rel.variosPontos ? 0.28 : 0.36 },
-      ...(rel.variosPontos ? [{ titulo: 'Ponto', largura: 0.12 }] : []),
-      { titulo: 'Categoria', largura: rel.variosPontos ? 0.12 : 0.14 },
-      { titulo: 'Duração', largura: rel.variosPontos ? 0.14 : 0.16 },
-    ];
-    tabela('Registro de retiradas', `${formatarNumero(r.retiradas)} retiradas, da mais recente para a mais antiga`, colunasRegistro,
-      rel.registros.slice(0, MAX_LINHAS_TABELA_PDF).map(reg => [
-        formatarDataHora(reg.retirada),
-        reg.devolucao ? formatarDataHora(reg.devolucao) : '--',
-        { texto: reg.item, negrito: true },
-        ...(rel.variosPontos ? [reg.ponto] : []),
-        reg.categoria,
-        { texto: `${descreverRetirada(reg)}${reg.situacao === 'problema' ? ' · problema' : ''}`, cor: corSituacao(reg), negrito: reg.situacao !== 'devolvido' },
-      ]),
-      { total: rel.registros.length, nota: rel.registros.length > MAX_LINHAS_TABELA_PDF ? notaPlanilha : null });
   };
 
   // Período vazio: só o cabeçalho, os cartões e o aviso (sem páginas de "nenhum registro")
