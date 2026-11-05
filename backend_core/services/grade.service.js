@@ -232,9 +232,11 @@ class GradeService {
         return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
     }
 
-    async _enviarParaPythonComRetry(buffer, filename) {
-        const PYTHON_API_URL = process.env.VITE_PYTHON_API_URL || process.env.PYTHON_API_URL;
-        
+    // `rota` troca o endpoint do extrator (ex.: '/analyze-bi'); padrão = extração da grade
+    async _enviarParaPythonComRetry(buffer, filename, rota = null) {
+        const BASE_PYTHON = process.env.VITE_PYTHON_API_URL || process.env.PYTHON_API_URL;
+        const PYTHON_API_URL = BASE_PYTHON && rota ? BASE_PYTHON.replace('/extract-pdf', rota) : BASE_PYTHON;
+
         if (!PYTHON_API_URL) {
             throw new Error("A URL da API Python não está definida nas variáveis de ambiente do backend.");
         }
@@ -267,6 +269,13 @@ class GradeService {
         }
         
         return await response.json();
+    }
+
+    // Histórico de aulas (BI): devolve o JSON cru do extrator ({ rawRecords, kpis }).
+    // Passa pelo backend para exigir login + módulo Relatórios e não expor o
+    // endereço do extrator no código do site.
+    async analisarBiPdf(buffer) {
+        return await this._enviarParaPythonComRetry(buffer, 'historico.pdf', '/analyze-bi');
     }
 
     async analisarGradeExternaPdf(buffer) {

@@ -27,9 +27,9 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', caughtErrors: 'none' }],
     },
   },
-  // Backend — API handlers e services (Node.js)
+  // Backend — API handlers, services e testes (Node.js)
   {
-    files: ['api/**/*.js', 'backend_core/**/*.js'],
+    files: ['api/**/*.js', 'backend_core/**/*.js', 'tests/**/*.js'],
     extends: [js.configs.recommended],
     languageOptions: {
       ecmaVersion: 2020,

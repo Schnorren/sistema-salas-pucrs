@@ -5,6 +5,14 @@ import ModalConcluirAviso from './ModalConcluirAviso';
 import ModalHistoricoAvisos from './ModalHistoricoAvisos';
 import ModalComentarAviso from './ModalComentarAviso';
 import { useUI } from '../contexts/UIContext';
+import { usePredio } from '../contexts/PredioContext';
+import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
+
+// "Hoje" no fuso da PUCRS como AAAA-MM-DD (compara direto com data_prevista)
+const hojeISO = () => {
+    const d = getDataSaoPaulo();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 const pillStyle = {
     fontSize: '11px', padding: '4px 8px', borderRadius: '6px',
@@ -21,6 +29,7 @@ const prioStyle = {
 
 export default function MuralAvisos({ session, acesso }) {
     const { showConfirm, toast } = useUI();
+    const { predioAtivo } = usePredio();
 
     const {
         avisos, loading, error,
@@ -51,6 +60,22 @@ export default function MuralAvisos({ session, acesso }) {
         } catch (err) {
             toast.error(err.message || 'Não foi possível concluir o registro.');
         }
+    };
+
+    // Autorização vencida = data prevista já passou e ninguém deu baixa. Não há
+    // arquivamento automático (o prazo é decisão da coordenação): o mural
+    // marca "Vencida" e oferece arquivar todas de uma vez.
+    const vencidas = autorizacoesChaves.filter(a => typeof a.data_prevista === 'string' && a.data_prevista < hojeISO());
+    const handleArquivarVencidas = async () => {
+        const confirmado = await showConfirm(`Mover ${vencidas.length} autorização(ões) vencida(s) para o histórico?`, 'Arquivar vencidas');
+        if (!confirmado) return;
+        let falhas = 0;
+        for (const aviso of vencidas) {
+            try { await concluirAviso(aviso.id, 'Arquivada: autorização vencida sem retirada da chave'); }
+            catch { falhas++; }
+        }
+        if (falhas) toast.error(`${falhas} autorização(ões) não puderam ser arquivadas. Tente de novo.`);
+        else toast.success('Autorizações vencidas movidas para o histórico.');
     };
 
     const handleConfirmarConclusaoGeral = async (obs) => {
@@ -108,6 +133,11 @@ export default function MuralAvisos({ session, acesso }) {
                         <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>🔑</div>
                         <h3 style={{ fontSize: '15px', fontWeight: 'bold', margin: 0, color: '#e2e8f0' }}>Autorizações de Chaves</h3>
                         <span style={{ ...pillStyle, background: 'rgba(255,255,255,0.1)', color: '#fff' }}>{autorizacoesChaves.length}</span>
+                        {vencidas.length > 0 && (
+                            <button onClick={handleArquivarVencidas} disabled={isConcluindo} style={{ marginLeft: 'auto', padding: '4px 10px', background: 'transparent', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                                Arquivar {vencidas.length} vencida{vencidas.length > 1 ? 's' : ''}
+                            </button>
+                        )}
                     </div>
 
                     {autorizacoesChaves.length === 0 ? (
@@ -118,6 +148,7 @@ export default function MuralAvisos({ session, acesso }) {
                         const dataFormatada = (typeof aviso.data_prevista === 'string' && aviso.data_prevista.includes('-'))
                             ? aviso.data_prevista.split('-').reverse().join('/')
                             : '--/--/----';
+                        const vencida = vencidas.includes(aviso);
 
                         return (
                             <div key={aviso.id} style={{ background: '#1e293b', border: '1px solid #334155', borderLeft: '4px solid #3b82f6', borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
@@ -131,6 +162,7 @@ export default function MuralAvisos({ session, acesso }) {
                                     <span style={pillStyle}>{aviso.sala_id}</span>
                                     <span style={pillStyle}>{aviso.disciplina}</span>
                                     <span style={pillStyle}>{dataFormatada}</span>
+                                    {vencida && <span style={{ ...pillStyle, background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.35)' }} title="A data prevista já passou e a chave não foi retirada">Vencida</span>}
                                     <span style={{ ...pillStyle, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Per. {aviso.periodo}</span>
                                 </div>
 
@@ -207,7 +239,7 @@ export default function MuralAvisos({ session, acesso }) {
                 </button>
             </div>
 
-            {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} isPending={isCriando} />}
+            {isModalNovoAvisoOpen && <ModalNovoAviso onClose={() => setIsModalNovoAvisoOpen(false)} onSave={handleSalvarNovo} isPending={isCriando} predioId={predioAtivo || acesso?.predioId} />}
             {avisoSelecionadoParaConcluir && <ModalConcluirAviso aviso={avisoSelecionadoParaConcluir} onClose={() => setAvisoSelecionadoParaConcluir(null)} onConfirm={handleConfirmarConclusaoGeral} isPending={isConcluindo} />}
             {avisoSelecionadoParaComentar && <ModalComentarAviso aviso={avisoSelecionadoParaComentar} onClose={() => setAvisoSelecionadoParaComentar(null)} onConfirm={handleSalvarNota} isPending={isComentando} />}
 

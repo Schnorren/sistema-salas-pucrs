@@ -14,12 +14,13 @@ Idioma do domínio, comentários, commits e UI: **português**. Mantenha esse pa
 vercel dev            # ÚNICA forma correta de rodar localmente (front + /api serverless juntos)
 npm run dev           # SÓ o frontend Vite — /api/** NÃO funciona; use apenas para UI pura
 npm run build         # build de produção (Vite → dist/)
-npm run lint          # ESLint (front + back). Deve passar limpo antes de commitar
+npm run lint          # ESLint (front + back). Deve passar sem erros antes de commitar
+npm test              # testes (node --test, sem dependência): regras de horário e de blocos de aula
 npm run migrate       # aplica as migrations via psql, na ordem certa (requer DATABASE_URL no .env)
 vercel --prod         # deploy manual de produção (normalmente automático via push)
 ```
 
-Não há suíte de testes (nenhum test runner instalado). "Verificar" = `npm run lint` + rodar `vercel dev` e exercitar o fluxo.
+Testes só cobrem funções puras ([tests/](tests/), `node --test`, sem test runner instalado): regras de horário do timeHelpers e de blocos/trocas de [aulasDoDia.js](src/utils/aulasDoDia.js), incluindo a **paridade** das chaves de bloco front × `computarChavesDeBlocos()`. Imports usados pelos testes precisam de extensão `.js`. "Verificar" = `npm run lint` + `npm test` + rodar `vercel dev` e exercitar o fluxo.
 
 ## Arquitetura — o que não é óbvio
 
@@ -63,13 +64,13 @@ Não coloque query no handler nem regra de negócio no repository.
 
 **`timeHelpers.js` é código compartilhado front+back.** Mesmo estando em [backend_core/utils/timeHelpers.js](backend_core/utils/timeHelpers.js), os componentes React o importam via caminho relativo (`../../backend_core/utils/timeHelpers`). É a **fonte única** de: `PERIODS` (períodos PUCRS A–P com horários), `getCurrentPeriod()` (usa timezone `America/Sao_Paulo` e "ponte" um intervalo ≤30 min para o período seguinte), `groupConsecutiveClasses()` (agrupa períodos consecutivos da mesma sala/aula), `getDiaAtual()`, `extractPeriodCode()`, `isInternalClass()`. Nunca duplique período/horário em componente — importe daqui.
 
-**Estado no front:** TanStack Query (`staleTime` 5 min, sem refetch no foco — [main.jsx](src/main.jsx)) + Supabase Realtime para push. Badge de avisos no Dashboard: `useQuery` com `enabled:false, staleTime:Infinity` que **só lê o cache** preenchido pelo MuralAvisos (`['avisos', predioId, userId]`) — não dispare fetch nessa key. Badge de trocas: [useTrocasSala](src/hooks/useTrocasSala.js) (fetch próprio + Realtime, key `['trocas_sala', predioId, semana]`, compartilhado com a Timeline), contando só trocas cuja chave existe na grade atual via `computarChavesDeBlocos()` do timeHelpers — que espelha a regra de blocos da Timeline; ao mudar uma, mude a outra.
+**Estado no front:** TanStack Query (`staleTime` 5 min, sem refetch no foco — [main.jsx](src/main.jsx)) + Supabase Realtime para push. Badge de avisos no Dashboard: `useQuery` na **mesma** key do MuralAvisos (`['avisos', predioId, userId]`) e com a **mesma** `queryFn` (`buscarAvisos` exportada de [useAvisos.js](src/hooks/useAvisos.js)); o canal Realtime do Dashboard invalida essa key em qualquer mudança. Nunca crie observer sem `queryFn` nessa key: ele sobrescreve as opções da query e quebra os refetch do Realtime ("No queryFn was passed"). **Trocas aparecem em todas as telas de grade:** Planta, Próximas aulas e a busca do topo (sala consultada) usam [aulasDoDia.js](src/utils/aulasDoDia.js) (`slotsDoDia`/`blocosDaSala`/`trocaNoPeriodo`), que espelha a regra de blocos da Timeline e de `computarChavesDeBlocos()`. Badge de trocas: [useTrocasSala](src/hooks/useTrocasSala.js) (fetch próprio + Realtime, key `['trocas_sala', predioId, semana]`, compartilhado com a Timeline), contando só trocas cuja chave existe na grade atual via `computarChavesDeBlocos()` do timeHelpers — que espelha a regra de blocos da Timeline; ao mudar uma, mude a outra.
 
 **Cache em memória nos services.** `grade.service.js` mantém `gradeCacheMap` por prédio; `processarUploadCsv` o invalida (`= null`) após republicar. Serverless é efêmero, então trate esse cache como best-effort.
 
 ## Pipeline de importação de grade (PDF → CDN)
 
-1. [UploadPDF.jsx](src/components/UploadPDF.jsx) envia `multipart/form-data` para `POST /api/grade/importar-pdf`.
+1. [UploadPDF.jsx](src/components/UploadPDF.jsx) envia `multipart/form-data` para `POST /api/grade/importar-pdf` — exige o módulo **`edicao_grade`** (o mesmo da tela; antes aceitava `grade`, o de leitura). O Histórico de aulas (BI) usa `POST /api/grade/analisar-pdf` (módulo `relatorios`), que repassa o PDF ao endpoint `/analyze-bi` do extrator — o navegador não chama mais o extrator direto (`VITE_PYTHON_API_URL` não é mais usada no front). Rotas com arquivo próprio em `api/grade/` precisam de rewrite explícito no [vercel.json](vercel.json) **antes** do catch-all `/api/grade/(.*)`.
 2. Handler ([importar-pdf.js](api/grade/importar-pdf.js)) desliga o bodyParser (`export const config = { api: { bodyParser: false } }`) e usa `formidable`.
 3. `grade.service.processarUploadPdf()` repassa o buffer para a **API Python externa** (`PYTHON_API_URL`, hospedada no Render — cold start de 10–40 s; erro vira HTTP 502).
 4. A resposta (`records`) é normalizada — `simplificarSala()` converte códigos `C.xx.xx.andar.sala` no número curto da sala.
@@ -94,6 +95,8 @@ Migrations em [supabase/migrations/](supabase/migrations/) — rode **nesta orde
 - ESLint ([eslint.config.js](eslint.config.js)) tem dois blocos: `src/**` (globals de browser, regras react-hooks/react-refresh) e `api/**` + `backend_core/**` (globals de Node). `no-unused-vars` ignora nomes `^[A-Z_]`.
 - Erros da API sempre voltam como `{ error: mensagem }`. No front, leia `data.error` (a mensagem real do servidor), não só o status HTTP.
 - Em mutações, desabilite o botão de submit enquanto a operação está pendente (`isPending`/`isCriando`) — padrão já seguido nos modais.
+- **Empréstimos com login compartilhado.** Os PCs da recepção usam a mesma conta; cada navegador guarda seu nome ("Balcão 1") em `localStorage.balcao` ([utils/balcao.js](src/utils/balcao.js)), enviado no header `x-balcao` (URL-encoded) pelo [useEmprestimos](src/hooks/useEmprestimos.js). O handler grava `resp_retirada`/`resp_devolucao` como `"email · Balcão 1"` (colunas de texto livre, sem migration). A bipagem procura o item em todas as categorias do prédio (`GET /api/emprestimos/itens/buscar?q=`) quando ele não está na categoria aberta.
+- **Falha ao carregar permissões ≠ conta órfã.** [useAuthAccess](src/hooks/useAuthAccess.js) devolve `erro` + `recarregar()`; o Dashboard mostra "Tentar de novo" em vez de "Acesso Restrito". O objeto retornado é memoizado (efeitos como o do SeletorPredio dependem da identidade de `acesso`).
 - `.env` (local) e Environment Variables na Vercel (prod). Prefixo `VITE_` = exposto ao browser; sem prefixo = só backend. `SUPABASE_SERVICE_ROLE_KEY` **jamais** com `VITE_`. Veja [.env.example](.env.example).
 - **Convite de equipe depende do provedor de e-mail do Supabase.** `POST /api/equipe/convidar` chama `auth.admin.inviteUserByEmail`; com o serviço de e-mail **interno** do Supabase (sem SMTP próprio) o limite padrão é de **2 e-mails/hora** e o 3º convite volta `email rate limit exceeded` (429). Corrija em Authentication → Emails/SMTP (SMTP próprio) + Auth → Rate Limits. No código, todo erro do GoTrue passa por `traduzirErroDeConvite()` em [api/equipe/index.js](api/equipe/index.js) — nunca deixe erro de provedor virar 500 genérico.
 - **Link do convite depende da Site URL do Supabase.** O e-mail aponta para o `redirect_to`; se o handler não mandar um, o Supabase usa a *Site URL* do dashboard, cujo default é `http://localhost:3000` (link quebrado para o convidado). Por isso `convidar` envia `redirectTo: urlDoApp()` — `APP_URL` na Vercel, com fallback para `VERCEL_PROJECT_PRODUCTION_URL`. O mesmo endereço precisa estar em Authentication → URL Configuration (Site URL + Redirect URLs), senão o Supabase ignora o `redirectTo` e volta a usar a Site URL. Nunca derive essa URL do header `Host` — seria open redirect.

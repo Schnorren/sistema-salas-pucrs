@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import SeletorPredio from './SeletorPredio';
+import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
 
 export default function Topbar({ session, acesso, onAbrirPerfil }) {
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') !== 'light');
-  const [time, setTime] = useState(new Date());
+  // Horário de Brasília (regra do projeto), não o fuso do computador
+  const [time, setTime] = useState(getDataSaoPaulo());
   const [saindo, setSaindo] = useState(false);
 
   const handleSignOut = async () => {
@@ -18,7 +20,7 @@ export default function Topbar({ session, acesso, onAbrirPerfil }) {
   };
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
+    const timer = setInterval(() => setTime(getDataSaoPaulo()), 1000);
     return () => clearInterval(timer);
   }, []);
 

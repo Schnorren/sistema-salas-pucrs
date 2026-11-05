@@ -3,6 +3,29 @@ import { useEmprestimos } from '../hooks/useEmprestimos';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { STATUS_ITEM } from '../utils/constants';
+import { lerBalcao, salvarBalcao, rotuloResponsavel } from '../utils/balcao';
+
+// Nome deste computador (os PCs da recepção usam o mesmo login) — gravado
+// junto do responsável em cada retirada/devolução. Ver utils/balcao.js.
+const NomeDoBalcao = () => {
+    const { showPrompt, toast } = useUI();
+    const [nome, setNome] = useState(lerBalcao);
+    const alterar = async () => {
+        const novo = await showPrompt('Como este computador deve aparecer no histórico? Ex.: Balcão 1', 'Nome deste computador');
+        if (!novo) return;
+        salvarBalcao(novo);
+        setNome(lerBalcao());
+        toast.success(`Este computador agora é "${lerBalcao()}".`);
+    };
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '6px 12px', fontSize: '11px', color: 'var(--muted)', background: 'var(--panel2)', borderBottom: '1px solid var(--border)' }}>
+            <span>🖥️ Este computador: <b style={{ color: 'var(--text)' }}>{nome || 'sem nome'}</b></span>
+            <button type="button" onClick={alterar} style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', padding: 0 }}>
+                {nome ? 'alterar' : 'dar nome'}
+            </button>
+        </div>
+    );
+};
 
 
 const calcularDuracaoTotal = (inicioIso, fimIso) => {
@@ -35,7 +58,7 @@ const TempoDecorrido = ({ dataIso }) => {
 
 const EmprestimoWizard = ({
     categorias, itensDisponiveis, emprestimosAtivos,
-    consultarAluno, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
+    consultarAluno, buscarItem, registrarRetirada, registrarDevolucao, alterarStatusManutencao,
     retirando, devolvendo, alterandoStatus,
     categoriaSel, setCategoriaSel
 }) => {
@@ -132,7 +155,7 @@ const EmprestimoWizard = ({
         setStep(2);
     };
 
-    const handleBiparItem = (e) => {
+    const handleBiparItem = async (e) => {
         e.preventDefault();
         const termo = inputItem.trim().toLowerCase();
         // Termo vazio casaria com qualquer nome via includes('') — Enter acidental emprestaria o 1º item
@@ -140,12 +163,28 @@ const EmprestimoWizard = ({
         const itemEncontrado = itensDisponiveis.find(i =>
             (i.patrimonio || '').toLowerCase() === termo || (i.nome_item || '').toLowerCase().includes(termo)
         );
+        if (itemEncontrado) { processarEscolhaItem(itemEncontrado); return; }
 
-        if (itemEncontrado) processarEscolhaItem(itemEncontrado);
-        else {
-            toast.error("Item não encontrado ou não disponível nesta categoria.");
-            setInputItem('');
+        // Não está na categoria aberta: procura em todas as categorias do prédio
+        let item = null;
+        try {
+            item = await buscarItem(termo);
+        } catch {
+            toast.error('Não foi possível procurar o item. Verifique a conexão e tente de novo.');
+            return;
         }
+        if (!item) {
+            toast.error('Item não encontrado neste prédio.');
+            setInputItem('');
+            return;
+        }
+        if (item.status === STATUS_ITEM.EMPRESTADO) {
+            toast.error(`"${item.nome_item}" já está emprestado.`);
+            setInputItem('');
+            return;
+        }
+        if (item.categoria_id && item.categoria_id !== categoriaSel) setCategoriaSel(item.categoria_id);
+        processarEscolhaItem(item);
     };
 
     const processarEscolhaItem = (item) => {
@@ -205,6 +244,7 @@ const EmprestimoWizard = ({
 
     return (
         <div className="wizard-panel">
+            <NomeDoBalcao />
             <div className={`wizard-header step-${step}`}>
                 <h3>
                     {step === 1 && "PASSO 1: Bipar Crachá"}
@@ -372,7 +412,7 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
                                         <div className="emp-cod">Cód: {emp.patrimonio}</div>
                                     </div>
                                     <div className="emp-footer">
-                                        <span>🕒 {new Date(emp.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        <span>🕒 {new Date(emp.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{emp.responsavel && <span style={{ opacity: 0.7 }}> · {rotuloResponsavel(emp.responsavel)}</span>}</span>
                                         <span className="tag-tempo"><TempoDecorrido dataIso={emp.dataRetirada} /></span>
                                     </div>
                                     <button onClick={() => handleDevolucaoDireta(emp.id, emp.nomeItem)} disabled={devolvendo} className="btn-devolver">⬇️ Receber Devolução</button>
@@ -412,6 +452,12 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
                                                     <span className="tag-status pendente">⏳ Pendente</span>
                                                 )}
                                             </div>
+                                            {(h.responsavelRetirada || h.responsavel) && (
+                                                <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '6px' }}>
+                                                    {h.responsavelRetirada && <>↑ {rotuloResponsavel(h.responsavelRetirada)}</>}
+                                                    {h.responsavel && <> ↓ {rotuloResponsavel(h.responsavel)}</>}
+                                                </div>
+                                            )}
                                         </td>
                                         <td>
                                             {h.dataDevolucao ? (

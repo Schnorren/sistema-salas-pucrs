@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, Component } from 'react';
+import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, NavLink, Link, matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ROTAS } from '../rotas';
 import Topbar from './Topbar';
@@ -7,28 +7,31 @@ import NextClasses from './NextClasses';
 import FreeRooms from './FreeRooms';
 import Timeline from './Timeline';
 import LiveMap from './LiveMap';
-import WeeklyHeatmap from './WeeklyHeatmap';
-import HistoricalReports from './HistoricalReports';
 import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
 import MuralContatos from './MuralContatos';
 import AdminPanel from './AdminPanel';
 import GestaoEquipe from './GestaoEquipe';
 import MeuPerfil from './MeuPerfil';
-import RelatoriosEmprestimos from './RelatoriosEmprestimos';
+// Telas de relatório carregam sob demanda: trazem gráficos (recharts) e
+// geração de PDF (jspdf/html2canvas), que as outras telas não usam.
+const WeeklyHeatmap = lazy(() => import('./WeeklyHeatmap'));
+const HistoricalReports = lazy(() => import('./HistoricalReports'));
+const RelatoriosEmprestimos = lazy(() => import('./RelatoriosEmprestimos'));
 import { useContatos } from '../hooks/useContatos';
 import { buscarNoDiretorio } from '../utils/contatosBusca';
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
+  // Detalhes técnicos vão para o console (F12), não para a tela
+  componentDidCatch(error, info) { console.error('Erro na tela:', error, info?.componentStack); }
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: '40px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: '13px' }}>
-          <strong>Erro ao carregar o componente:</strong><br /><br />
-          {this.state.error?.message}<br /><br />
-          <pre style={{ whiteSpace: 'pre-wrap', opacity: 0.7 }}>{this.state.error?.stack}</pre>
+        <div style={{ padding: '40px', color: 'var(--text)', fontSize: '14px' }}>
+          <strong style={{ color: 'var(--red)' }}>Esta tela encontrou um erro e não pôde ser exibida.</strong><br /><br />
+          <span style={{ color: 'var(--muted)' }}>Tente de novo. Se continuar, avise a coordenação informando o que estava fazendo.</span><br />
           <button onClick={() => this.setState({ error: null })} style={{ marginTop: '20px', padding: '8px 16px', cursor: 'pointer' }}>
             Tentar novamente
           </button>
@@ -43,10 +46,12 @@ import { useAuthAccess } from '../hooks/useAuthAccess';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { supabase } from '../supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { buscarAvisos } from '../hooks/useAvisos';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
-import { computarChavesDeBlocos } from '../../backend_core/utils/timeHelpers';
+import { computarChavesDeBlocos, getDiaAtual, getCurrentPeriod, getDataSaoPaulo, PERIODS } from '../../backend_core/utils/timeHelpers';
+import { slotsDoDia, blocosDaSala, blocoNoPeriodo, trocaNoPeriodo, salaCoincide, normalizar, IDX_PERIODO } from '../utils/aulasDoDia';
 
 export default function Dashboard({ session }) {
   const acesso = useAuthAccess(session);
@@ -146,12 +151,15 @@ export default function Dashboard({ session }) {
     [diretorioContatos, searchQuery]
   );
 
-  // Badge de avisos — useQuery com staleTime infinito para leitura reativa do
-  // cache sem disparar novo fetch (o dado é mantido pelo MuralAvisos)
+  // Badge de avisos — mesma query (e mesma queryFn) do MuralAvisos, então o
+  // número aparece desde o login e o cache é um só. O Realtime abaixo invalida.
+  const queryClient = useQueryClient();
+  const podeVerAvisos = Boolean(predioId && userId)
+    && Boolean(acesso.permissoes?.includes('avisos') || acesso.permissoes?.includes('admin'));
   const { data: avisosCache } = useQuery({
     queryKey: ['avisos', predioId, userId],
-    enabled: false, // nunca faz fetch — só lê o que já está no cache
-    staleTime: Infinity,
+    queryFn: () => buscarAvisos(session?.access_token, predioId),
+    enabled: podeVerAvisos,
   });
   const totalAvisosPendentes = (avisosCache?.chaves?.length || 0) + (avisosCache?.gerais?.length || 0);
 
@@ -180,11 +188,14 @@ export default function Dashboard({ session }) {
     const channel = supabase
       .channel(`dashboard_avisos_urgentes_${predioId}`)
       .on('postgres_changes', {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
         table: 'avisos',
         filter: `predio_id=eq.${predioId}`
       }, (payload) => {
+        // Mantém o badge certo em qualquer tela (o MuralAvisos tem canal próprio)
+        queryClient.invalidateQueries({ queryKey: ['avisos', predioId, userId] });
+        if (payload.eventType !== 'INSERT') return;
         const novoAviso = payload.new;
         if (novoAviso?.prioridade === 'ALTA' || novoAviso?.tipo === 'CHAVE') {
           toast.warning(`🔔 Novo aviso urgente: ${novoAviso.titulo || 'Aviso de chave'}`);
@@ -193,7 +204,32 @@ export default function Dashboard({ session }) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [predioId, toast]);
+  }, [predioId, userId, queryClient, toast]);
+
+  // Busca do topo: quando o texto é o número de uma sala, mostra no topo da
+  // lista o que importa no balcão — a aula de agora, troca de sala e
+  // autorização de chave pendente (horário de Brasília).
+  const salaConsultada = useMemo(() => {
+    const termo = normalizar(searchQuery);
+    const sala = termo ? (gradeData?.salas || []).find(s => normalizar(s.numero) === termo) : null;
+    if (!sala) return null;
+    const hoje = getDiaAtual();
+    const per = getCurrentPeriod();
+    const blocos = blocosDaSala(slotsDoDia(gradeData.grade, hoje).get(sala.numero), hoje, sala.numero);
+    const agora = per ? blocoNoPeriodo(blocos, per) : null;
+    const dt = getDataSaoPaulo();
+    const minAgora = dt.getHours() * 60 + dt.getMinutes();
+    const aMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+    const proxima = per
+      ? blocos.find(b => b.idxIni > IDX_PERIODO[per])
+      : blocos.find(b => aMin(b.inicio) > minAgora);
+    return {
+      numero: sala.numero, dia: hoje, per,
+      inicioPer: per ? PERIODS[IDX_PERIODO[per]].lb : null,
+      agora, troca: agora ? trocaNoPeriodo(trocasAtivas, agora, per) : null, proxima,
+      chaves: (avisosCache?.chaves || []).filter(c => salaCoincide(c.sala_id, sala.numero)),
+    };
+  }, [searchQuery, gradeData, trocasAtivas, avisosCache]);
 
   const handleSelectContato = (resultado) => {
     setShowDropdown(false);
@@ -209,6 +245,20 @@ export default function Dashboard({ session }) {
 
   if (acesso.loading) {
     return <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)' }}>Verificando credenciais de segurança...</div>;
+  }
+
+  // Falha de rede/sessão ao consultar as permissões NÃO é conta sem acesso
+  if (acesso.erro) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg)', color: 'var(--text)', textAlign: 'center', padding: '20px' }}>
+        <h2>Não foi possível verificar seu acesso</h2>
+        <p style={{ color: 'var(--muted)', marginTop: '10px' }}>Verifique a conexão com a internet e tente de novo.</p>
+        <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+          <button onClick={acesso.recarregar} style={{ padding: '10px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Tentar de novo</button>
+          <button onClick={() => supabase.auth.signOut()} style={{ padding: '10px 20px', background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer' }}>Sair da conta</button>
+        </div>
+      </div>
+    );
   }
 
   const isAdmin = acesso.permissoes?.includes('admin');
@@ -299,12 +349,86 @@ export default function Dashboard({ session }) {
     
             {showDropdown && (
               <div className="search-dropdown vis">
-                {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 ? (
+                {isSearching && searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
                   <div className="sd-empty">Buscando na base...</div>
-                ) : searchResults.length === 0 && resultadosContatos.length === 0 ? (
+                ) : searchResults.length === 0 && resultadosContatos.length === 0 && !salaConsultada ? (
                   <div className="sd-empty">Nenhum registro encontrado.</div>
                 ) : (
                   <>
+                    {salaConsultada && (
+                      <>
+                        <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>
+                          SALA {salaConsultada.numero} · {salaConsultada.per ? `AGORA (PER. ${salaConsultada.per} · ${salaConsultada.inicioPer})` : 'FORA DO HORÁRIO DE AULA'}
+                        </div>
+                        <div
+                          className="sd-item"
+                          style={salaConsultada.troca ? { background: 'rgba(239, 68, 68, 0.08)' } : undefined}
+                          onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}
+                        >
+                          <div className="sd-room">{salaConsultada.numero}</div>
+                          <div className="sd-info">
+                            {salaConsultada.agora ? (
+                              <>
+                                <div className="sd-class">
+                                  {salaConsultada.agora.nomeAula}
+                                  {salaConsultada.agora.codCred && <span style={{ opacity: 0.7, fontWeight: 'normal' }}> · {salaConsultada.agora.codCred}</span>}
+                                </div>
+                                <div className="sd-meta">
+                                  {salaConsultada.troca && (
+                                    <>
+                                      <span style={{ color: '#ef4444', fontWeight: 'bold' }}>🔁 TRANSFERIDA → PRÉDIO {salaConsultada.troca.predio_destino} · SALA {salaConsultada.troca.sala_destino}</span>
+                                      <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                                    </>
+                                  )}
+                                  Per. {salaConsultada.agora.periodos.join('')}
+                                  <span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>
+                                  {salaConsultada.agora.inicio} às {salaConsultada.agora.fim}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="sd-class">Livre agora</div>
+                                <div className="sd-meta">
+                                  {salaConsultada.proxima
+                                    ? `Próxima aula: ${salaConsultada.proxima.nomeAula} às ${salaConsultada.proxima.inicio} (${salaConsultada.proxima.periodos.join('')})`
+                                    : 'Sem mais aulas hoje nesta sala'}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {salaConsultada.agora && salaConsultada.proxima && (
+                          <div className="sd-item" onClick={() => handleSelectResult({ dia_semana: salaConsultada.dia, sala: salaConsultada.numero })}>
+                            <div className="sd-room" style={{ opacity: 0.6 }}>⏭</div>
+                            <div className="sd-info">
+                              <div className="sd-class">Depois: {salaConsultada.proxima.nomeAula}</div>
+                              <div className="sd-meta">às {salaConsultada.proxima.inicio} · Per. {salaConsultada.proxima.periodos.join('')}</div>
+                            </div>
+                          </div>
+                        )}
+                        {podeVerAvisos && (salaConsultada.chaves.length > 0 ? salaConsultada.chaves.map(c => (
+                          <div key={c.id} className="sd-item" onClick={() => { setShowDropdown(false); setSearchQuery(''); navigate(ROTAS.avisos); }}>
+                            <div className="sd-room">🔑</div>
+                            <div className="sd-info">
+                              <div className="sd-class">Autorização de chave: {c.aluno_nome}</div>
+                              <div className="sd-meta">
+                                {c.disciplina}
+                                {c.periodo && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>Per. {c.periodo}</>}
+                                {typeof c.data_prevista === 'string' && <><span style={{ color: 'var(--muted)', margin: '0 6px' }}>•</span>{c.data_prevista.split('-').reverse().join('/')}</>}
+                              </div>
+                            </div>
+                          </div>
+                        )) : (
+                          <div className="sd-item" style={{ cursor: 'default' }}>
+                            <div className="sd-room" style={{ opacity: 0.6 }}>🔑</div>
+                            <div className="sd-info"><div className="sd-class" style={{ fontWeight: 'normal' }}>Sem autorização de chave pendente para a {salaConsultada.numero}</div></div>
+                          </div>
+                        ))}
+                        {searchResults.length > 0 && (
+                          <div className="sd-footer" style={{ textAlign: 'left', fontWeight: 'bold', letterSpacing: '0.05em' }}>AULAS DA SEMANA</div>
+                        )}
+                      </>
+                    )}
                     {searchResults.map((res) => (
                       <div key={`${res.dia_semana}-${res.id}-${res.sala}`} className="sd-item" onClick={() => handleSelectResult(res)}>
                         <div className="sd-room">{res.sala}</div>
@@ -438,6 +562,7 @@ export default function Dashboard({ session }) {
       )}
 
       <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+        <Suspense fallback={<div className="empty-st">Carregando...</div>}>
         <Routes>
           <Route path={ROTAS.planta} element={<LiveMap session={session} acesso={acesso} />} />
           <Route
@@ -473,6 +598,7 @@ export default function Dashboard({ session }) {
           {/* Endereço desconhecido → Planta */}
           <Route path="*" element={<Navigate to={ROTAS.planta} replace />} />
         </Routes>
+        </Suspense>
       </div>
     </div>
   );

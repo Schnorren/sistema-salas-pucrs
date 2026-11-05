@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useUI } from '../contexts/UIContext';
 import { PERIOD_OPTIONS } from '../../backend_core/utils/timeHelpers';
+import { useGrade } from '../hooks/useGrade';
+import { slotsDoDia, blocosDaSala, diaDaData, normalizar, ordenarPeriodos } from '../utils/aulasDoDia';
 
 const inputStyle = {
     width: '100%', padding: '10px 14px',
@@ -15,7 +17,7 @@ const labelStyle = {
     textTransform: 'uppercase', letterSpacing: '0.05em'
 };
 
-export default function ModalNovoAviso({ onClose, onSave, isPending }) {
+export default function ModalNovoAviso({ onClose, onSave, isPending, predioId }) {
     const { toast } = useUI();
     const [tipo, setTipo] = useState('CHAVE');
     const [formData, setFormData] = useState({});
@@ -23,14 +25,23 @@ export default function ModalNovoAviso({ onClose, onSave, isPending }) {
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-    const handlePeriodoToggle = (letra) => {
-        let selecionados = formData.periodo ? formData.periodo.split('') : [];
-        selecionados = selecionados.includes(letra)
-            ? selecionados.filter(p => p !== letra)
-            : [...selecionados, letra];
-        selecionados.sort();
-        setFormData({ ...formData, periodo: selecionados.join('') });
+    // Períodos como LISTA de códigos (antes era uma string quebrada letra a
+    // letra, o que partia o "E1" em "E" + "1" e acendia o "E" junto).
+    const periodos = formData.periodos || [];
+    const handlePeriodoToggle = (codigo) => {
+        const novos = periodos.includes(codigo) ? periodos.filter(p => p !== codigo) : [...periodos, codigo];
+        setFormData({ ...formData, periodos: ordenarPeriodos(novos) });
     };
+
+    // Disciplina pela grade: com sala + data preenchidas, lista as aulas daquela
+    // sala no dia; um clique preenche disciplina e períodos (continua editável).
+    const { dados: grade } = useGrade(predioId || '');
+    const salaDaGrade = (grade?.salas || []).find(sl => normalizar(sl.numero) === normalizar(formData.sala_id))?.numero || null;
+    const diaSemana = diaDaData(formData.data_prevista);
+    const aulasDaSala = salaDaGrade && diaSemana
+        ? blocosDaSala(slotsDoDia(grade?.grade, diaSemana).get(salaDaGrade), diaSemana, salaDaGrade)
+        : [];
+    const escolherAula = (b) => setFormData({ ...formData, disciplina: b.nomeAula, periodos: [...b.periodos] });
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -39,7 +50,7 @@ export default function ModalNovoAviso({ onClose, onSave, isPending }) {
         // Envia só os campos do tipo ativo — alternar entre as abas não pode
         // vazar campos de CHAVE num aviso GERAL (e vice-versa).
         if (tipo === 'CHAVE') {
-            if (!formData.periodo || formData.periodo.length === 0) {
+            if (periodos.length === 0) {
                 toast.error("Selecione pelo menos um período.");
                 return;
             }
@@ -49,7 +60,7 @@ export default function ModalNovoAviso({ onClose, onSave, isPending }) {
                 sala_id: formData.sala_id,
                 disciplina: formData.disciplina,
                 data_prevista: formData.data_prevista,
-                periodo: formData.periodo
+                periodo: periodos.join('')
             });
             return;
         }
@@ -112,18 +123,39 @@ export default function ModalNovoAviso({ onClose, onSave, isPending }) {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                                     <div>
                                         <label style={labelStyle}>Disciplina / Motivo</label>
-                                        <input name="disciplina" placeholder="Ex: Cálculo I" required onChange={handleChange} style={inputStyle} />
+                                        <input name="disciplina" placeholder="Ex: Cálculo I" required value={formData.disciplina || ''} onChange={handleChange} style={inputStyle} />
                                     </div>
                                     <div>
                                         <label style={labelStyle}>Data Prevista</label>
                                         <input type="date" name="data_prevista" required onChange={handleChange} style={{ ...inputStyle, colorScheme: 'dark' }} />
                                     </div>
                                 </div>
+                                {salaDaGrade && diaSemana && (
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <label style={labelStyle}>Aulas da sala {salaDaGrade} em {formData.data_prevista.split('-').reverse().slice(0, 2).join('/')} ({diaSemana.toLowerCase()}) — clique para preencher</label>
+                                        {aulasDaSala.length === 0 ? (
+                                            <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>Nenhuma aula na grade para essa sala nesse dia.</p>
+                                        ) : aulasDaSala.map(b => {
+                                            const sel = formData.disciplina === b.nomeAula && b.periodos.join('') === periodos.join('');
+                                            return (
+                                                <button key={b.chave} type="button" onClick={() => escolherAula(b)} style={{
+                                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', width: '100%',
+                                                    padding: '8px 12px', marginBottom: '6px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left',
+                                                    border: sel ? '1px solid #3b82f6' : '1px solid #334155',
+                                                    background: sel ? 'rgba(59,130,246,0.15)' : '#0f172a', color: '#f1f5f9', fontSize: '13px'
+                                                }}>
+                                                    <b>{b.nomeAula}</b>
+                                                    <span style={{ color: '#94a3b8', fontSize: '12px', whiteSpace: 'nowrap' }}>{b.periodos.join('')} · {b.inicio}–{b.fim}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                                 <div>
                                     <label style={labelStyle}>Períodos Autorizados (Clique para selecionar)</label>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                                         {periodosDisponiveis.map(letra => {
-                                            const sel = formData.periodo?.includes(letra);
+                                            const sel = periodos.includes(letra);
                                             return (
                                                 <button key={letra} type="button" onClick={() => handlePeriodoToggle(letra)} style={{
                                                     width: '38px', height: '38px', borderRadius: '6px', cursor: 'pointer',
@@ -136,7 +168,7 @@ export default function ModalNovoAviso({ onClose, onSave, isPending }) {
                                         })}
                                     </div>
                                     <p style={{ fontSize: '13px', color: '#64748b', marginTop: '12px' }}>
-                                        Períodos Salvos: <span style={{ color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>{formData.periodo || 'Nenhum'}</span>
+                                        Períodos Salvos: <span style={{ color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>{periodos.join('') || 'Nenhum'}</span>
                                     </p>
                                 </div>
                             </>

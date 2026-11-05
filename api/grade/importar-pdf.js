@@ -9,9 +9,11 @@ export const config = { api: { bodyParser: false } };
 async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
 
-    const temPermissao = req.user?.permissoes?.includes('grade') || req.user?.permissoes?.includes('admin');
+    // Mesmo gate da tela (Dashboard: canEditGrade). Antes aceitava 'grade', o
+    // módulo de leitura — quem só via a grade conseguia substituí-la pela API.
+    const temPermissao = req.user?.permissoes?.includes('edicao_grade') || req.user?.permissoes?.includes('admin');
     if (!temPermissao) {
-        return res.status(403).json({ error: 'Acesso negado. Requer o módulo de Grade e Salas.' });
+        return res.status(403).json({ error: 'Acesso negado. Requer o módulo Atualização de Grade.' });
     }
 
     const form = formidable({ keepExtensions: true });
@@ -43,4 +45,4 @@ async function handler(req, res) {
     });
 }
 
-export default withAuth(handler, 'grade');
+export default withAuth(handler, 'edicao_grade');

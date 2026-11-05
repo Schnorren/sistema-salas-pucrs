@@ -9,6 +9,17 @@ async function parseResponse(res) {
     return json;
 }
 
+// Busca dos avisos ativos — compartilhada com o badge do Dashboard, que usa a
+// MESMA queryKey ['avisos', predioId, userId]. Os dois observers precisam ter
+// queryFn: um observer sem queryFn sobrescrevia as opções da query e fazia os
+// refetch do Realtime falharem ("No queryFn was passed").
+export async function buscarAvisos(token, predioId) {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, {
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'x-predio-id': predioId }
+    });
+    return parseResponse(res);
+}
+
 export const useAvisos = (session, acesso) => {
     const queryClient = useQueryClient();
     const { predioAtivo } = usePredio();
@@ -24,10 +35,7 @@ export const useAvisos = (session, acesso) => {
 
     const { data: avisos = { chaves: [], gerais: [] }, isLoading: loading, error } = useQuery({
         queryKey: ['avisos', predioId, userId],
-        queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/avisos`, { headers: getHeaders() });
-            return parseResponse(res);
-        },
+        queryFn: () => buscarAvisos(token, predioId),
         enabled: !!predioId && !!userId
     });
 

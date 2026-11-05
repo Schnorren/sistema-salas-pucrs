@@ -39,6 +39,26 @@ class EmprestimosRepository {
         return data || [];
     }
 
+    // Item do prédio em QUALQUER categoria: patrimônio exato (maiúsc./minúsc.
+    // indiferentes) e, se não achar, parte do nome. Curingas do usuário são
+    // escapados para o ILIKE não virar busca ampla.
+    async buscarItemNoPredio(termo, predioId) {
+        const seguro = termo.replace(/[\\%_]/g, (c) => `\\${c}`);
+        const base = () => supabase
+            .from('emprestimo_itens')
+            .select('*, categoria:emprestimo_categorias!inner (predio_id, nome)')
+            .eq('categoria.predio_id', predioId);
+
+        const porCodigo = await base().ilike('patrimonio', seguro).limit(1);
+        if (porCodigo.error) throw porCodigo.error;
+        if (porCodigo.data?.length) return porCodigo.data[0];
+
+        const porNome = await base().ilike('nome_item', `%${seguro}%`).order('status').order('nome_item').limit(5);
+        if (porNome.error) throw porNome.error;
+        const lista = porNome.data || [];
+        return lista.find(i => i.status === 'DISPONIVEL') || lista[0] || null;
+    }
+
     async criarRetiradaRpc(payload) {
         const { data, error } = await supabase.rpc('realizar_emprestimo', {
             p_item_id: payload.item_id,
