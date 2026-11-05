@@ -60,12 +60,12 @@ async function handler(req, res) {
                 perfilId,
                 senha,
                 permissoes
-            });
+            }, req.user);
 
-            registrarAuditoria({
+            await registrarAuditoria({
                 user: req.user, acao: 'admin.usuario.atualizar', entidade: 'usuarios_acessos',
                 entidadeId: usuarioId, predioId: predioId || null,
-                detalhes: { perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: Boolean(senha && senha.trim()) }
+                detalhes: { perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: typeof senha === 'string' && senha !== '' }
             });
 
             return res.status(200).json(resultado);

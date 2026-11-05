@@ -1,6 +1,7 @@
 import supabase from '../config/supabase.js';
 import { ErroPublico } from '../utils/http.js';
 import { sanitizarPermissoes } from '../utils/modulos.js';
+import { validarSenha } from '../utils/senha.js';
 
 // Loga o detalhe real do banco no servidor e devolve um Error com mensagem limpa
 // (evita vazar nomes de colunas/constraints para o cliente).
@@ -146,10 +147,21 @@ class AdminService {
     }
 
 
-    async atualizarUsuarioCompleto(id, { nome, predioId, perfilId, senha, permissoes }) {
+    async atualizarUsuarioCompleto(id, { nome, predioId, perfilId, senha, permissoes }, editor = null) {
+        const permissoesFinais = sanitizarPermissoes(permissoes, { permitirAdmin: true });
+
+        // Espelha a tela (o Painel não deixa editar o próprio acesso): o admin
+        // não tira de si mesmo a permissão 'admin' — com um admin só, o sistema
+        // ficaria sem ninguém para devolver.
+        if (editor?.id && editor.id === id && !permissoesFinais.includes('admin')) {
+            throw new ErroPublico('Você não pode remover a sua própria permissão de administrador.');
+        }
+
         const authPayload = { user_metadata: { nome } };
 
-        if (senha && senha.trim() !== '') {
+        if (typeof senha === 'string' && senha !== '') {
+            const problema = validarSenha(senha);
+            if (problema) throw new ErroPublico(problema);
             authPayload.password = senha;
         }
 
@@ -164,7 +176,7 @@ class AdminService {
                 perfil_id: perfilId || null,
                 // Admin pode conceder qualquer módulo, inclusive 'admin' — mas valores
                 // desconhecidos são descartados (não grava uuid/garbage).
-                permissoes: sanitizarPermissoes(permissoes, { permitirAdmin: true })
+                permissoes: permissoesFinais
             }, { onConflict: 'user_id' });
 
         if (accessError) throw falha('Erro ao atualizar acessos', accessError);

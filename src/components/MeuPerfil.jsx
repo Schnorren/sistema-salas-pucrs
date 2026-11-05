@@ -1,7 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../supabase';
+import { SENHA_MIN, validarSenha, traduzirErroSenha } from '../../backend_core/utils/senha';
 export default function MeuPerfil({ session, onClose }) {
-    const [nome, setNome] = useState('');
+    // Valor inicial lido da sessão uma vez: sincronizar num efeito sobrescrevia
+    // o que o usuário digitou sempre que a sessão mudava (ex.: ao conferir a
+    // senha atual, que renova a sessão).
+    const [nome, setNome] = useState(() => {
+        const meta = session?.user?.user_metadata;
+        return meta?.nome || meta?.name || meta?.full_name || '';
+    });
+    // Senha atual: os PCs da recepção ficam logados com conta compartilhada —
+    // sem ela, qualquer pessoa no balcão trocava a senha e trancava a equipe.
+    const [senhaAtual, setSenhaAtual] = useState('');
     const [senha, setSenha] = useState('');
     const [confirmarSenha, setConfirmarSenha] = useState('');
     const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -9,20 +19,16 @@ export default function MeuPerfil({ session, onClose }) {
     const [loading, setLoading] = useState(false);
     const [mensagem, setMensagem] = useState(null);
 
-    useEffect(() => {
-        if (session?.user) {
-            const meta = session.user.user_metadata;
-            setNome(meta?.nome || meta?.name || meta?.full_name || '');
-        }
-    }, [session]);
 
     const handleSalvar = async (e) => {
         e.preventDefault();
         setMensagem(null);
         if (mostrarSenha) {
+            if (!senhaAtual) return setMensagem({ tipo: 'erro', texto: 'Digite a sua senha atual para trocar a senha.' });
             if (!senha) return setMensagem({ tipo: 'erro', texto: 'Digite a nova senha ou feche a alteração de senha.' });
+            const problema = validarSenha(senha);
+            if (problema) return setMensagem({ tipo: 'erro', texto: problema });
             if (senha !== confirmarSenha) return setMensagem({ tipo: 'erro', texto: 'As senhas não coincidem.' });
-            if (senha.length < 6) return setMensagem({ tipo: 'erro', texto: 'A nova senha deve ter pelo menos 6 caracteres.' });
         }
 
         setLoading(true);
@@ -33,11 +39,26 @@ export default function MeuPerfil({ session, onClose }) {
             };
 
             if (mostrarSenha && senha) {
+                // Confere a senha atual antes de trocar (o updateUser sozinho
+                // aceita a troca de qualquer sessão aberta).
+                const { error: errAtual } = await supabase.auth.signInWithPassword({
+                    email: session?.user?.email || '', password: senhaAtual
+                });
+                if (errAtual) {
+                    const limite = errAtual.status === 429 || /rate limit|security purposes/i.test(errAtual.message || '');
+                    setMensagem({ tipo: 'erro', texto: limite ? traduzirErroSenha(errAtual) : 'Senha atual incorreta.' });
+                    setLoading(false);
+                    return;
+                }
                 updates.password = senha;
             }
 
             const { error } = await supabase.auth.updateUser(updates);
-            if (error) throw error;
+            if (error) {
+                setMensagem({ tipo: 'erro', texto: updates.password ? traduzirErroSenha(error) : 'Erro ao atualizar os dados.' });
+                setLoading(false);
+                return;
+            }
             setMensagem({ tipo: 'sucesso', texto: 'Perfil atualizado com sucesso!' });
 
             setTimeout(() => {
@@ -127,7 +148,7 @@ export default function MeuPerfil({ session, onClose }) {
                                 <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#fbbf24', margin: 0 }}>🔒 NOVA SENHA</label>
                                 <button
                                     type="button"
-                                    onClick={() => { setMostrarSenha(false); setSenha(''); setConfirmarSenha(''); setMensagem(null); }}
+                                    onClick={() => { setMostrarSenha(false); setSenhaAtual(''); setSenha(''); setConfirmarSenha(''); setMensagem(null); }}
                                     style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                                 >
                                     Cancelar
@@ -136,10 +157,24 @@ export default function MeuPerfil({ session, onClose }) {
 
                             <input
                                 type="password"
+                                value={senhaAtual}
+                                onChange={e => setSenhaAtual(e.target.value)}
+                                placeholder="Senha atual"
+                                autoComplete="current-password"
+                                autoFocus
+                                style={{
+                                    width: '100%', padding: '12px', borderRadius: '6px',
+                                    background: 'rgba(255,255,255,0.05)', color: '#fff',
+                                    border: '1px solid var(--border)', outline: 'none', marginBottom: '12px'
+                                }}
+                            />
+
+                            <input
+                                type="password"
                                 value={senha}
                                 onChange={e => setSenha(e.target.value)}
-                                placeholder="Digite a nova senha"
-                                autoFocus
+                                placeholder={`Nova senha (mínimo ${SENHA_MIN} caracteres)`}
+                                autoComplete="new-password"
                                 style={{
                                     width: '100%', padding: '12px', borderRadius: '6px',
                                     background: 'rgba(255,255,255,0.05)', color: '#fff',
@@ -152,6 +187,7 @@ export default function MeuPerfil({ session, onClose }) {
                                 value={confirmarSenha}
                                 onChange={e => setConfirmarSenha(e.target.value)}
                                 placeholder="Confirme a nova senha"
+                                autoComplete="new-password"
                                 style={{
                                     width: '100%', padding: '12px', borderRadius: '6px',
                                     background: 'rgba(255,255,255,0.05)', color: '#fff',

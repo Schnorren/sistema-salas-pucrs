@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../supabase'
+import { SENHA_MIN, validarSenha, traduzirErroSenha } from '../../backend_core/utils/senha'
 
 // Tela obrigatória para quem chega pelo link de convite (ou de recuperação):
 // o usuário entra com sessão válida mas SEM senha definida — sem isto ele
@@ -16,13 +17,14 @@ export default function DefinirSenha({ session, onConcluir }) {
     e.preventDefault()
     setErro('')
 
-    if (senha.length < 6) return setErro('A senha deve ter pelo menos 6 caracteres.')
+    const problema = validarSenha(senha)
+    if (problema) return setErro(problema)
     if (senha !== confirmarSenha) return setErro('As senhas não coincidem.')
 
     setSalvando(true)
     const { error } = await supabase.auth.updateUser({ password: senha })
     if (error) {
-      setErro(error.message || 'Não foi possível definir a senha.')
+      setErro(traduzirErroSenha(error))
       setSalvando(false)
       return
     }
@@ -39,7 +41,7 @@ export default function DefinirSenha({ session, onConcluir }) {
         <form onSubmit={handleSalvar} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <input
             type="password"
-            placeholder="Nova senha (mínimo 6 caracteres)"
+            placeholder={`Nova senha (mínimo ${SENHA_MIN} caracteres)`}
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             autoComplete="new-password"

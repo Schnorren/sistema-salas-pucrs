@@ -4,6 +4,7 @@ import { responderErro, ErroPublico } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 import { sanitizarPermissoes } from '../../backend_core/utils/modulos.js';
 import gestaoEmprestimos from '../../backend_core/services/emprestimosGestao.service.js';
+import { barrarEdicaoDeMembro, barrarRevogacao, barrarReconvite } from '../../backend_core/utils/equipeRegras.js';
 
 // O Auth grava e-mail sempre em minúsculas — normalizar evita 404 na busca
 // (view) e erro de validação no convite por espaço/maiúscula digitados.
@@ -141,7 +142,9 @@ async function handler(req, res) {
                 .order('nome', { ascending: true });
 
             if (error) throw error;
-            return res.status(200).json(data);
+            // Gestor comum não concede 'admin' (o sanitizar descartaria em
+            // silêncio) — então nem mostra o card.
+            return res.status(200).json(isAdminReq ? data : (data || []).filter(m => m.id !== 'admin'));
         } catch (error) {
             return responderErro(res, error);
         }
@@ -157,7 +160,7 @@ async function handler(req, res) {
 
             const { data: usuario, error: errBusca } = await supabase
                 .from('vw_equipe_predio')
-                .select('user_id')
+                .select('user_id, permissoes')
                 .eq('email', email)
                 .eq('predio_id', predioId)
                 .single();
@@ -165,6 +168,9 @@ async function handler(req, res) {
             if (errBusca || !usuario) return res.status(404).json({ error: "Usuário não encontrado." });
 
             const permissoesFinais = sanitizar(permissoes);
+            // Admin só é editado por admin; ninguém tira de si a própria gestão
+            const barrado = barrarEdicaoDeMembro({ alvo: usuario, editorId: req.user.id, editorAdmin: isAdminReq, permissoesNovas: permissoesFinais });
+            if (barrado) return res.status(barrado.status).json({ error: barrado.error });
             const payload = { permissoes: permissoesFinais };
             if (perfil_id) payload.perfil_id = perfil_id;
 
@@ -237,11 +243,13 @@ async function handler(req, res) {
                 userId = existente.id;
 
                 // Trava anti-hijack: não reatribuir usuário que pertence a OUTRO prédio (só admin pode).
-                const { data: acessoAtual } = await supabase
-                    .from('usuarios_acessos').select('predio_id').eq('user_id', userId).maybeSingle();
-                if (acessoAtual?.predio_id && acessoAtual.predio_id !== predioId && !isAdminReq) {
-                    return res.status(409).json({ error: "Usuário já pertence a outro prédio. Peça a um administrador." });
-                }
+                const { data: acessoAtual, error: errAcesso } = await supabase
+                    .from('usuarios_acessos').select('predio_id, permissoes').eq('user_id', userId).maybeSingle();
+                if (errAcesso) throw errAcesso;
+                // Admin global tem prédio nulo: sem a trava de admin, o upsert
+                // abaixo o rebaixaria a membro comum deste prédio.
+                const barradoReconvite = barrarReconvite({ acessoAtual, predioId, editorAdmin: isAdminReq });
+                if (barradoReconvite) return res.status(barradoReconvite.status).json({ error: barradoReconvite.error });
 
                 const { error: upErr } = await supabase.from('usuarios_acessos').upsert({
                     user_id: userId,
@@ -303,12 +311,15 @@ async function handler(req, res) {
 
             const { data: usuario, error: errBusca } = await supabase
                 .from('vw_equipe_predio')
-                .select('user_id')
+                .select('user_id, permissoes')
                 .eq('email', email)
                 .eq('predio_id', predioId)
                 .single();
 
             if (errBusca || !usuario) return res.status(404).json({ error: 'Usuário não encontrado neste prédio.' });
+            // Admin sai pelo Painel Admin; ninguém revoga o próprio acesso
+            const barradoRevogacao = barrarRevogacao({ alvo: usuario, editorId: req.user.id, editorAdmin: isAdminReq });
+            if (barradoRevogacao) return res.status(barradoRevogacao.status).json({ error: barradoRevogacao.error });
 
             const { error: errDelete } = await supabase
                 .from('usuarios_acessos')
