@@ -85,6 +85,18 @@ class AdminService {
         if (error) throw falha('Erro ao deletar perfil', error);
     }
 
+    // Registro de auditoria (tabela auditoria_log, gravada por registrarAuditoria).
+    // Só leitura, para o Painel Admin; os mais recentes primeiro.
+    async listarAuditoria(limite = 500) {
+        const { data, error } = await supabase
+            .from('auditoria_log')
+            .select('id, user_email, acao, entidade, entidade_id, predio_id, detalhes, criado_em')
+            .order('criado_em', { ascending: false })
+            .limit(Math.min(Math.max(Number(limite) || 500, 1), 1000));
+        if (error) throw falha('Não foi possível carregar a auditoria', error);
+        return data || [];
+    }
+
     async listarModulos() {
         const { data, error } = await supabase
             .from('sistema_modulos')

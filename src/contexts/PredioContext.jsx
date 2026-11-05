@@ -5,6 +5,9 @@ export const PredioContext = createContext();
 
 export const PredioProvider = ({ children }) => {
     const [predioAtivo, setPredioAtivo] = useState(localStorage.getItem('predioAtivo') || null);
+    // Nome legível do prédio ativo (preenchido pelo SeletorPredio). Usado em
+    // textos impressos, como o cabeçalho do cartaz de troca de sala.
+    const [predioNome, setPredioNome] = useState('');
 
     useEffect(() => {
         if (predioAtivo) {
@@ -15,7 +18,7 @@ export const PredioProvider = ({ children }) => {
     }, [predioAtivo]);
 
     return (
-        <PredioContext.Provider value={{ predioAtivo, setPredioAtivo }}>
+        <PredioContext.Provider value={{ predioAtivo, setPredioAtivo, predioNome, setPredioNome }}>
             {children}
         </PredioContext.Provider>
     );

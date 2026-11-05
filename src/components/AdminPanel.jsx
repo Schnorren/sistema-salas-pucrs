@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useUI } from '../contexts/UIContext';
+import AuditoriaAdmin from './AuditoriaAdmin';
 
 export default function AdminPanel({ session, acesso }) {
     const { toast } = useUI();
@@ -138,7 +139,7 @@ export default function AdminPanel({ session, acesso }) {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--border)' }}>
-                {['usuarios', 'perfis', 'predios'].map(t => (
+                {['usuarios', 'perfis', 'predios', 'auditoria'].map(t => (
                     <button
                         key={t}
                         onClick={() => setAba(t)}
@@ -149,7 +150,7 @@ export default function AdminPanel({ session, acesso }) {
                             cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', textTransform: 'capitalize'
                         }}
                     >
-                        {t === 'usuarios' ? 'Usuários & Permissões' : t === 'perfis' ? 'Cargos (Rótulos)' : 'Prédios'}
+                        {t === 'usuarios' ? 'Usuários & Permissões' : t === 'perfis' ? 'Cargos (Rótulos)' : t === 'predios' ? 'Prédios' : 'Auditoria'}
                     </button>
                 ))}
             </div>
@@ -267,6 +268,10 @@ export default function AdminPanel({ session, acesso }) {
                                     </tbody>
                                 </table>
                             </div>
+                        )}
+
+                        {aba === 'auditoria' && (
+                            <AuditoriaAdmin token={token} predios={predios} modulos={modulosSistema} />
                         )}
 
                         {aba === 'predios' && (
