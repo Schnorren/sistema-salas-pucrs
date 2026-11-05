@@ -74,6 +74,7 @@ function resumir(item, nomeModulo) {
         case 'contatos.curso_remover': return [d.curso, d.contato].filter(Boolean).join(' · ');
         case 'grade.importar': return [
             Number.isFinite(d.aulas) && `${d.aulas} períodos de aula`,
+            Number.isFinite(d.novos) && `+${d.novos} / −${d.removidos} / ~${d.alterados} vs. anterior`,
             d.salasNovas?.length && `salas novas: ${d.salasNovas.join(', ')}`,
         ].filter(Boolean).join(' · ');
         case 'grade.salas.visibilidade': return [

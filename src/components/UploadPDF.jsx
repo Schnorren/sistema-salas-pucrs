@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
-import { avisarGradeRepublicada } from '../hooks/useGrade';
+import { avisarGradeRepublicada, useGrade } from '../hooks/useGrade';
 import { useSalasPredio } from '../hooks/useSalasPredio';
 import { ROTAS } from '../rotas';
 import DecisaoSalasNovas from './DecisaoSalasNovas';
@@ -32,6 +32,37 @@ function formatarTamanho(bytes) {
     return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+// "05/11/2026 às 08:12" (Brasília) a partir do atualizado_em do JSON publicado
+function dataDePublicacao(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || !Number.isFinite(d.getTime())) return null;
+    const fmt = (o) => d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', ...o });
+    return `${fmt({ day: '2-digit', month: '2-digit', year: 'numeric' })} às ${fmt({ hour: '2-digit', minute: '2-digit' })}`;
+}
+
+// Resumo do que mudou em relação à grade anterior (backend: compararGrades)
+function ResumoComparacao({ comparacao, primeiraImportacao }) {
+    if (!comparacao || primeiraImportacao) return null;
+    if (comparacao.iguais) {
+        return <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '6px 0 0' }}>Nenhuma mudança em relação à grade anterior (mesma agenda).</p>;
+    }
+    const partes = [
+        comparacao.novos && `${comparacao.novos} período(s) novo(s)`,
+        comparacao.removidos && `${comparacao.removidos} removido(s)`,
+        comparacao.alterados && `${comparacao.alterados} com outra atividade`,
+    ].filter(Boolean);
+    const extra = comparacao.totalSalasAfetadas - comparacao.salasAfetadas.length;
+    // Mais da metade da grade mudou: provável PDF de outra semana/prédio
+    const muitaMudanca = comparacao.antes > 0 && (comparacao.novos + comparacao.removidos + comparacao.alterados) > comparacao.antes / 2;
+    return (
+        <p style={{ fontSize: '12px', color: muitaMudanca ? 'var(--amber)' : 'var(--text2)', margin: '6px 0 0' }}>
+            Em relação à grade anterior: {partes.join(', ')}.<br />
+            Salas afetadas: {comparacao.salasAfetadas.join(', ')}{extra > 0 ? ` e mais ${extra}` : ''}.
+            {muitaMudanca && <><br /><b>Mais da metade da grade mudou — confira se o PDF é da semana e do prédio certos.</b></>}
+        </p>
+    );
+}
+
 function formatarTempo(totalSegundos) {
     const min = Math.floor(totalSegundos / 60);
     const seg = String(totalSegundos % 60).padStart(2, '0');
@@ -52,6 +83,9 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     // Salas novas da importação aguardando "exibir / manter oculta"
     const [decisao, setDecisao] = useState(null);
     const { pendentes, recarregar: recarregarSalas, salvarVisibilidade, salvando } = useSalasPredio(session, acesso);
+    // JSON publicado (o Dashboard já o carregou): data da última publicação
+    const { dados: gradePublicada } = useGrade(predioAtivo || acesso?.predioId || '');
+    const ultimaPublicacao = dataDePublicacao(gradePublicada?.atualizado_em);
 
     const timersRef = useRef([]);
     const etapaRef = useRef(0);
@@ -262,9 +296,11 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
                 <p style={{ color: 'var(--text2)', marginTop: '8px' }}>
                     <b>{resultado?.registrosInseridos}</b> aulas importadas em {formatarTempo(segundos)}.
                 </p>
-                <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '6px 0 20px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '6px 0 0' }}>
                     A nova grade já está publicada e visível para todos os usuários do prédio.
                 </p>
+                <ResumoComparacao comparacao={resultado?.comparacao} primeiraImportacao={resultado?.primeiraImportacao} />
+                <div style={{ height: '20px' }} />
                 <button className="btn-primary" onClick={resetar}>
                     Importar outro arquivo
                 </button>
@@ -293,9 +329,14 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     return (
         <div className="bar-card" style={{ textAlign: 'center', padding: '40px 20px' }}>
             <h2>Atualização de Grade</h2>
-            <p style={{ color: 'var(--text2)', marginBottom: '20px' }}>
+            <p style={{ color: 'var(--text2)', marginBottom: ultimaPublicacao ? '6px' : '20px' }}>
                 Selecione o arquivo da agenda gerado pelo sistema central em formato <b>.pdf</b>
             </p>
+            {ultimaPublicacao && (
+                <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '20px' }}>
+                    Grade atual publicada em {ultimaPublicacao}.
+                </p>
+            )}
 
             <input
                 type="file"

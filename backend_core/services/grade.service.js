@@ -7,6 +7,7 @@ import {
 } from '../utils/salas.js';
 import { ErroPublico } from '../utils/http.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
+import { compararGrades } from '../utils/gradeComparacao.js';
 
 // Grade usada pela busca do topo, por prédio. Serverless é efêmero e cada
 // instância tem o seu cache: o TTL garante que uma importação feita em outra
@@ -237,6 +238,15 @@ class GradeService {
             throw new ErroPublico('Nenhuma aula do PDF pôde ser ligada a uma sala do prédio — a grade atual foi mantida.', 422);
         }
 
+        // O que muda em relação à grade atual (lida antes da troca): mostrado na
+        // tela de sucesso — PDF da semana errada salta aos olhos.
+        const numeroPorId = Object.fromEntries(salasDb.map(s => [s.id, s.numero]));
+        const gradeAnterior = primeiraImportacao ? [] : await gradeRepository.buscarGradeCompleta(predio_id);
+        const comparacao = compararGrades(
+            gradeAnterior.map(g => ({ sala: g.salas?.numero, dia: g.dia_semana, periodo: g.periodo, nome: g.nome_aula })),
+            gradeInsert.map(g => ({ sala: numeroPorId[g.sala_id], dia: g.dia_semana, periodo: g.periodo, nome: g.nome_aula })),
+        );
+
         // DELETE + INSERT numa transação (grade_substituir): ou entra a grade
         // nova inteira, ou fica a antiga
         await gradeRepository.substituirGrade(predio_id, gradeInsert);
@@ -244,7 +254,10 @@ class GradeService {
 
         await registrarAuditoria({
             user, acao: 'grade.importar', entidade: 'grade', predioId: predio_id,
-            detalhes: { aulas: gradeInsert.length, salasNovas: numerosNovos.sort(ordenarNumeros) },
+            detalhes: {
+                aulas: gradeInsert.length, salasNovas: numerosNovos.sort(ordenarNumeros),
+                novos: comparacao.novos, removidos: comparacao.removidos, alterados: comparacao.alterados,
+            },
         });
 
         const publicado = await this.gerarEPublicarIndexEstatico(predio_id);
@@ -255,7 +268,6 @@ class GradeService {
 
         // Salas à espera de decisão (as novas desta importação + pendentes de
         // importações anteriores), com o resumo da semana para a pergunta na tela
-        const numeroPorId = Object.fromEntries(salasDb.map(s => [s.id, s.numero]));
         const resumo = resumirAgendaPorSala(gradeInsert.map(g => ({ sala: numeroPorId[g.sala_id], nome: g.nome_aula, tipo: g.tipo })));
         const novas = new Set(numerosNovos);
         const salasParaDecidir = salasDb
@@ -263,7 +275,7 @@ class GradeService {
             .map(s => ({ numero: s.numero, situacao: 'pendente', nova: novas.has(s.numero), ...(resumo.get(s.numero) || RESUMO_VAZIO) }))
             .sort((a, b) => ordenarNumeros(a.numero, b.numero));
 
-        return { sucesso: true, registrosInseridos: gradeInsert.length, primeiraImportacao, salasParaDecidir };
+        return { sucesso: true, registrosInseridos: gradeInsert.length, primeiraImportacao, salasParaDecidir, comparacao };
     }
 
     // GET /api/grade/salas — todas as salas do prédio (inclusive ocultas e
