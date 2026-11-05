@@ -2,18 +2,21 @@ import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from 
 import { Routes, Route, Navigate, NavLink, Link, matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ROTAS } from '../rotas';
 import Topbar from './Topbar';
-import UploadCSV from './UploadPDF';
-import SalasPredio from './SalasPredio';
 import NextClasses from './NextClasses';
-import FreeRooms from './FreeRooms';
 import Timeline from './Timeline';
 import LiveMap from './LiveMap';
 import MuralAvisos from './MuralAvisos';
 import MuralEmprestimos from './MuralEmprestimos';
 import MuralContatos from './MuralContatos';
-import AdminPanel from './AdminPanel';
-import GestaoEquipe from './GestaoEquipe';
-import MeuPerfil from './MeuPerfil';
+// Telas do balcão (acima) vêm no bundle inicial. As de gestão, de uso raro,
+// carregam sob demanda — chunk que sumiu após deploy é tratado pela
+// ErrorBoundary (recarrega a página).
+const UploadCSV = lazy(() => import('./UploadPDF'));
+const SalasPredio = lazy(() => import('./SalasPredio'));
+const FreeRooms = lazy(() => import('./FreeRooms'));
+const AdminPanel = lazy(() => import('./AdminPanel'));
+const GestaoEquipe = lazy(() => import('./GestaoEquipe'));
+const MeuPerfil = lazy(() => import('./MeuPerfil'));
 // Telas de relatório carregam sob demanda: trazem gráficos (recharts) e
 // geração de PDF (jspdf/html2canvas), que as outras telas não usam.
 const WeeklyHeatmap = lazy(() => import('./WeeklyHeatmap'));
