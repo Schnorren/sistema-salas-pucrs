@@ -3,6 +3,96 @@ import { useUI } from '../contexts/UIContext';
 import AuditoriaAdmin from './AuditoriaAdmin';
 import { SENHA_MIN, validarSenha } from '../../backend_core/utils/senha';
 import { lerResposta } from '../utils/api';
+import { agruparPontosPorPredio } from '../utils/relatorioEmprestimos';
+
+const MODULO_REDE = 'relatorio_emprestimos_rede';
+const NOVO_USUARIO = { email: '', nome: '', predioId: '', perfilId: '', permissoes: [], pontosRede: [], pontosBalcao: [], modo: 'convite', senha: '' };
+const estiloCampo = { width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' };
+const estiloRotulo = { display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' };
+const chaveNome = (nome) => String(nome || '').trim().toLocaleLowerCase('pt-BR');
+
+// Pontos que um login do relatório da rede vê (ex.: a coordenação da
+// recepção). Atalho: marcar todos os pontos de mesmo nome ("Recepção").
+function PontosDaRede({ pontos, selecionados, onMudar }) {
+    const marcados = new Set(selecionados);
+    const alternar = (ids, ligar) => {
+        const novo = new Set(marcados);
+        ids.forEach(id => (ligar ? novo.add(id) : novo.delete(id)));
+        onMudar([...novo]);
+    };
+    const porNome = new Map();
+    for (const p of pontos) {
+        const k = chaveNome(p.nome);
+        porNome.set(k, { nome: p.nome, ids: [...(porNome.get(k)?.ids || []), p.id] });
+    }
+    const atalhos = [...porNome.values()].filter(g => g.ids.length > 1);
+
+    return (
+        <div style={{ background: 'var(--panel2)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: 'var(--text)', marginBottom: '4px', fontWeight: 'bold' }}>
+                Pontos no Relatório da Rede ({marcados.size} de {pontos.length})
+            </label>
+            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: '0 0 10px' }}>
+                O relatório é anônimo e mostra só estes pontos. Ponto novo (de um prédio novo) não entra sozinho: marque aqui.
+            </p>
+            {atalhos.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                    {atalhos.map(g => {
+                        const todos = g.ids.every(id => marcados.has(id));
+                        return (
+                            <button key={g.nome} type="button" className="exp-btn" onClick={() => alternar(g.ids, !todos)}
+                                title={todos ? `Desmarcar todos os pontos "${g.nome}"` : `Marcar os pontos "${g.nome}" de todos os prédios`}>
+                                {todos ? '✓ ' : '+ '}Todos "{g.nome}" ({g.ids.length})
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+            {pontos.length === 0 ? (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Nenhum ponto de empréstimo cadastrado.</div>
+            ) : (
+                <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {agruparPontosPorPredio(pontos).map(g => (
+                        <div key={g.predioId}>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>{g.predioNome}</div>
+                            {g.pontos.map(p => (
+                                <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', padding: '2px 0' }}>
+                                    <input type="checkbox" checked={marcados.has(p.id)} onChange={e => alternar([p.id], e.target.checked)} style={{ cursor: 'pointer' }} />
+                                    {p.nome}{!p.ativo && <span style={{ color: 'var(--muted)', fontSize: '11px' }}> (inativo)</span>}
+                                </label>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// Pontos do balcão que a conta nova opera (só os do prédio escolhido)
+function PontosDoBalcao({ predioId, pontos, selecionados, onMudar }) {
+    const marcados = new Set(selecionados);
+    const alternar = (id, ligar) => {
+        const novo = new Set(marcados);
+        if (ligar) novo.add(id); else novo.delete(id);
+        onMudar([...novo]);
+    };
+    return (
+        <div style={{ background: 'var(--panel2)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: 'var(--text)', marginBottom: '8px', fontWeight: 'bold' }}>Pontos do Balcão de Empréstimos</label>
+            {!predioId ? (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Escolha o prédio para ver os pontos de empréstimo dele.</div>
+            ) : pontos.length === 0 ? (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Este prédio ainda não tem ponto de empréstimo ativo.</div>
+            ) : pontos.map(p => (
+                <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', padding: '2px 0' }}>
+                    <input type="checkbox" checked={marcados.has(p.id)} onChange={e => alternar(p.id, e.target.checked)} style={{ cursor: 'pointer' }} />
+                    {p.nome}
+                </label>
+            ))}
+        </div>
+    );
+}
 
 export default function AdminPanel({ session, acesso }) {
     const { toast } = useUI();
@@ -11,6 +101,7 @@ export default function AdminPanel({ session, acesso }) {
     const [predios, setPredios] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
     const [modulosSistema, setModulosSistema] = useState([]);
+    const [pontosEmprestimo, setPontosEmprestimo] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const [busca, setBusca] = useState('');
@@ -29,14 +120,16 @@ export default function AdminPanel({ session, acesso }) {
             const headers = { 'Authorization': `Bearer ${token}` };
             const base = import.meta.env.VITE_API_URL;
 
-            const [resModulos, resPerfis, resPredios, resUsuarios] = await Promise.all([
+            const [resModulos, resPerfis, resPredios, resUsuarios, resPontos] = await Promise.all([
                 fetch(`${base}/api/admin/modulos`,  { headers }),
                 fetch(`${base}/api/admin/perfis`,   { headers }),
                 fetch(`${base}/api/admin/predios`,  { headers }),
                 fetch(`${base}/api/admin/usuarios`, { headers }),
+                fetch(`${base}/api/admin/pontos-emprestimo`, { headers }),
             ]);
 
             if (resModulos.ok)  setModulosSistema(await resModulos.json());
+            if (resPontos.ok)   setPontosEmprestimo(await resPontos.json());
             if (resPerfis.ok)   setPerfis(await resPerfis.json());
             if (resPredios.ok)  setPredios(await resPredios.json());
             if (resUsuarios.ok) setUsuarios(await resUsuarios.json());
@@ -80,6 +173,22 @@ export default function AdminPanel({ session, acesso }) {
                 await parseRes(res);
             }
 
+            let mensagem = 'Salvo com sucesso!';
+            if (modal.tipo === 'novo_usuario') {
+                const d = modal.dados;
+                const problemaSenha = d.modo === 'senha' ? validarSenha(d.senha || '') : null;
+                if (problemaSenha) throw new Error(problemaSenha);
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/usuarios`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify({
+                        email: d.email, nome: d.nome, predioId: d.predioId || null, perfilId: d.perfilId || null,
+                        permissoes: d.permissoes || [], pontosRede: d.pontosRede || [], pontosBalcao: d.pontosBalcao || [],
+                        modo: d.modo, senha: d.modo === 'senha' ? d.senha : undefined,
+                    })
+                });
+                mensagem = (await parseRes(res))?.message || 'Conta criada.';
+            }
+
             if (modal.tipo === 'editar_usuario') {
                 const problemaSenha = modal.dados.senha ? validarSenha(modal.dados.senha) : null;
                 if (problemaSenha) throw new Error(problemaSenha);
@@ -91,13 +200,14 @@ export default function AdminPanel({ session, acesso }) {
                         predioId: modal.dados.predioId,
                         perfilId: modal.dados.perfilId,
                         senha: modal.dados.senha,
-                        permissoes: modal.dados.permissoes || []
+                        permissoes: modal.dados.permissoes || [],
+                        pontosRede: modal.dados.pontosRede || []
                     })
                 });
                 await parseRes(res);
             }
 
-            toast.success('Salvo com sucesso!');
+            toast.success(mensagem);
             setModal({ aberto: false, tipo: null, dados: null });
             carregarDados();
 
@@ -164,6 +274,11 @@ export default function AdminPanel({ session, acesso }) {
                             <div className="bar-card">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                                     <h3>Controle de Usuários</h3>
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <button className="btn-primary" style={{ background: '#22c55e', height: 'fit-content' }}
+                                        onClick={() => setModal({ aberto: true, tipo: 'novo_usuario', dados: { ...NOVO_USUARIO } })}>
+                                        Novo Usuário
+                                    </button>
                                     <input
                                         type="text"
                                         placeholder="Buscar por nome ou e-mail..."
@@ -171,6 +286,7 @@ export default function AdminPanel({ session, acesso }) {
                                         onChange={(e) => setBusca(e.target.value)}
                                         style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', width: '300px', outline: 'none' }}
                                     />
+                                    </div>
                                 </div>
 
                                 {usuariosFiltrados.length === 0 ? (
@@ -216,6 +332,7 @@ export default function AdminPanel({ session, acesso }) {
                                                                             fontWeight: isGlobal ? 'bold' : 'normal'
                                                                         }}>
                                                                             {mod ? mod.nome : perm}
+                                                                            {perm === MODULO_REDE && ` · ${(u.pontosRede || []).length} ponto${(u.pontosRede || []).length === 1 ? '' : 's'}`}
                                                                         </span>
                                                                     );
                                                                 })}
@@ -230,7 +347,7 @@ export default function AdminPanel({ session, acesso }) {
                                                         ) : (
                                                             <button
                                                                 className="exp-btn"
-                                                                onClick={() => setModal({ aberto: true, tipo: 'editar_usuario', dados: { ...u, permissoes: u.permissoes || [] } })}
+                                                                onClick={() => setModal({ aberto: true, tipo: 'editar_usuario', dados: { ...u, permissoes: u.permissoes || [], pontosRede: u.pontosRede || [] } })}
                                                             >
                                                                 Editar Acesso
                                                             </button>
@@ -295,11 +412,12 @@ export default function AdminPanel({ session, acesso }) {
 
             {modal.aberto && (
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
-                    <div style={{ background: 'var(--surface)', padding: '30px', borderRadius: '12px', width: '450px', border: '1px solid var(--border)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+                    <div style={{ background: 'var(--surface)', padding: '30px', borderRadius: '12px', width: '450px', maxHeight: '92vh', overflowY: 'auto', border: '1px solid var(--border)', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
                         <h3 style={{ marginTop: 0, marginBottom: '20px' }}>
                             {modal.tipo === 'novo_predio' && 'Cadastrar Novo Prédio'}
                             {modal.tipo === 'novo_perfil' && 'Criar Novo Cargo'}
                             {modal.tipo === 'editar_usuario' && 'Editar Acessos do Usuário'}
+                            {modal.tipo === 'novo_usuario' && 'Criar Novo Usuário'}
                         </h3>
 
                         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -318,23 +436,53 @@ export default function AdminPanel({ session, acesso }) {
                                 </div>
                             )}
 
-                            {modal.tipo === 'editar_usuario' && (
+                            {(modal.tipo === 'editar_usuario' || modal.tipo === 'novo_usuario') && (
                                 <>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>Nome Completo</label>
-                                        <input type="text" value={modal.dados?.nome || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, nome: e.target.value } })} style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }} />
-                                    </div>
+                                    {modal.tipo === 'novo_usuario' && (
+                                        <div>
+                                            <label style={estiloRotulo}>E-mail</label>
+                                            <input type="email" required autoComplete="off" value={modal.dados?.email || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, email: e.target.value } })} style={estiloCampo} placeholder="nome@pucrs.br" />
+                                        </div>
+                                    )}
 
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>Nova Senha (deixe vazio para manter atual · mínimo {SENHA_MIN} caracteres)</label>
-                                        {/* new-password: sem isso o navegador pode autopreencher a senha salva do PRÓPRIO admin e trocar a do usuário editado por ela */}
-                                        <input type="password" autoComplete="new-password" value={modal.dados?.senha || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, senha: e.target.value } })} style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }} placeholder="••••••••" />
+                                        <label style={estiloRotulo}>Nome Completo</label>
+                                        <input type="text" value={modal.dados?.nome || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, nome: e.target.value } })} style={estiloCampo} />
                                     </div>
+
+                                    {modal.tipo === 'novo_usuario' && (
+                                        <div>
+                                            <label style={estiloRotulo}>Como a pessoa entra</label>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+                                                <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' }}>
+                                                    <input type="radio" name="modo" checked={modal.dados?.modo !== 'senha'} onChange={() => setModal({ ...modal, dados: { ...modal.dados, modo: 'convite' } })} />
+                                                    <span>Convite por e-mail <small style={{ color: 'var(--muted)' }}>— a pessoa define a senha pelo link</small></span>
+                                                </label>
+                                                <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', cursor: 'pointer' }}>
+                                                    <input type="radio" name="modo" checked={modal.dados?.modo === 'senha'} onChange={() => setModal({ ...modal, dados: { ...modal.dados, modo: 'senha' } })} />
+                                                    <span>Definir a senha agora <small style={{ color: 'var(--muted)' }}>— nenhum e-mail sai; você passa a senha para a pessoa</small></span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {(modal.tipo === 'editar_usuario' || modal.dados?.modo === 'senha') && (
+                                        <div>
+                                            <label style={estiloRotulo}>
+                                                {modal.tipo === 'novo_usuario'
+                                                    ? `Senha (mínimo ${SENHA_MIN} caracteres)`
+                                                    : `Nova Senha (deixe vazio para manter atual · mínimo ${SENHA_MIN} caracteres)`}
+                                            </label>
+                                            {/* new-password: sem isso o navegador pode autopreencher a senha salva do PRÓPRIO admin e trocar a do usuário editado por ela */}
+                                            <input type="password" autoComplete="new-password" required={modal.tipo === 'novo_usuario'} minLength={modal.tipo === 'novo_usuario' ? SENHA_MIN : undefined}
+                                                value={modal.dados?.senha || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, senha: e.target.value } })} style={estiloCampo} placeholder="••••••••" />
+                                        </div>
+                                    )}
 
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                         <div>
                                             <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>Prédio Vinculado</label>
-                                            <select value={modal.dados?.predioId || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, predioId: e.target.value } })} style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }}>
+                                            <select value={modal.dados?.predioId || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, predioId: e.target.value, pontosBalcao: [] } })} style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }}>
                                                 <option value="">-- Nenhum --</option>
                                                 {prediosOrdenados.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
                                             </select>
@@ -373,13 +521,49 @@ export default function AdminPanel({ session, acesso }) {
                                             })}
                                         </div>
                                     </div>
+
+                                    {modal.dados?.permissoes?.includes(MODULO_REDE) && !modal.dados?.permissoes?.includes('admin') && (
+                                        <>
+                                            <PontosDaRede
+                                                pontos={pontosEmprestimo}
+                                                selecionados={modal.dados?.pontosRede || []}
+                                                onMudar={(ids) => setModal(m => ({ ...m, dados: { ...m.dados, pontosRede: ids } }))}
+                                            />
+                                            {modal.dados?.predioId && (
+                                                <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>
+                                                    Com prédio vinculado, este login também usa o sistema desse prédio (conforme os módulos marcados).
+                                                    Para quem só acompanha o relatório da rede, deixe o prédio em "Nenhum".
+                                                </p>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {/* Conta nova com Empréstimos: em quais pontos do prédio ela atende
+                                        (depois, edita-se na Gestão de Equipe do prédio) */}
+                                    {modal.tipo === 'novo_usuario' && modal.dados?.permissoes?.includes('emprestimos') && (
+                                        <PontosDoBalcao
+                                            predioId={modal.dados?.predioId}
+                                            pontos={pontosEmprestimo.filter(p => p.predioId === modal.dados?.predioId && p.ativo)}
+                                            selecionados={modal.dados?.pontosBalcao || []}
+                                            onMudar={(ids) => setModal(m => ({ ...m, dados: { ...m.dados, pontosBalcao: ids } }))}
+                                        />
+                                    )}
+
+                                    {modal.tipo === 'novo_usuario' && !modal.dados?.predioId
+                                        && !modal.dados?.permissoes?.some(p => p === 'admin' || p === MODULO_REDE) && (
+                                        <p style={{ fontSize: '11px', color: 'var(--amber, #f59e0b)', margin: 0 }}>
+                                            Sem prédio, a conta só acessa algo com Administração ou o Relatório da Rede. Escolha o prédio da pessoa.
+                                        </p>
+                                    )}
                                 </>
                             )}
 
                             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                                 <button type="button" onClick={() => setModal({ aberto: false, tipo: null, dados: null })} style={{ flex: 1, padding: '10px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
                                 <button type="submit" disabled={formLoading} style={{ flex: 1, padding: '10px', background: '#3b82f6', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                    {formLoading ? 'Salvando...' : 'Salvar Dados'}
+                                    {formLoading ? 'Salvando...'
+                                        : modal.tipo === 'novo_usuario' ? (modal.dados?.modo === 'senha' ? 'Criar Conta' : 'Enviar Convite')
+                                        : 'Salvar Dados'}
                                 </button>
                             </div>
                         </form>

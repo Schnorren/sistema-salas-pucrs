@@ -1,6 +1,8 @@
 // Relatório de empréstimos: TODAS as contas da tela, do PDF e da planilha,
 // a partir dos dados brutos de GET /api/emprestimos/relatorio (função
-// emprestimo_relatorio, supabase/migrations/emprestimos_relatorio.sql).
+// emprestimo_relatorio, supabase/migrations/emprestimos_relatorio.sql) ou de
+// GET /api/emprestimos/rede/relatorio (vários prédios: cada ponto traz o
+// `predio`; emprestimos_relatorio_rede.sql).
 // Puro (sem React/DOM), testado em tests/relatorioEmprestimos.test.js.
 //
 // Datas sempre no horário de Brasília. O período chega como no
@@ -217,14 +219,28 @@ const situacaoDe = (r) => {
 
 const porQuantidadeDepoisNome = (a, b) => b.quantidade - a.quantidade || a.nome.localeCompare(b.nome, 'pt-BR');
 
+// "Uno", "UNO " e "Úno" são o mesmo jogo no ranking da rede
+const chaveDoNome = (nome) => String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
+
 // dados: { pontos, itens, registros, retiradasPorAluno } da API · periodo: { inicio, fim }
+// Relatório da rede: pontos = [{ id, nome, predio }]. Com mais de um prédio,
+// o ponto aparece como "Prédio 15 · Recepção", entra a contagem por prédio e
+// o ranking de itens soma os de mesmo nome (o jogo, não o exemplar).
 export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {}) => {
   const pontos = dados?.pontos || [];
   const itens = dados?.itens || [];
   const brutos = dados?.registros || [];
   const porAluno = (dados?.retiradasPorAluno || []).filter(n => Number.isFinite(n) && n > 0);
 
-  const nomePonto = new Map(pontos.map(p => [p.id, p.nome]));
+  const temPredio = pontos.some(p => p.predio);
+  const nomesPredios = [...new Set(pontos.map(p => p.predio).filter(Boolean))];
+  const variosPredios = nomesPredios.length > 1;
+  const pontoPorId = new Map(pontos.map(p => [p.id, p]));
+  const rotuloPonto = (id) => {
+    const p = pontoPorId.get(id);
+    if (!p) return '--';
+    return variosPredios && p.predio ? `${p.predio} · ${p.nome}` : p.nome;
+  };
   const itemPorId = new Map(itens.map(i => [i.id, i]));
   // Itens de mesmo nome ("Bola de Pebolim" ×2) levam o patrimônio no rótulo
   const vezesDoNome = new Map();
@@ -242,6 +258,7 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
       const item = itemPorId.get(r.item);
       const situacao = situacaoDe(r);
       const duracaoMin = situacao === 'devolvido' || situacao === 'problema' ? minutosEntre(r.retirada, r.devolucao) : null;
+      const ponto = pontoPorId.get(r.ponto);
       return {
         retirada: r.retirada,
         devolucao: r.devolucao || null,
@@ -250,10 +267,13 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
         situacao,
         itemId: r.item,
         item: rotuloItem(item),
+        nomeItem: item?.nome || 'Item removido',
         patrimonio: item?.patrimonio || '',
         categoria: item?.categoria || 'Sem categoria',
         pontoId: r.ponto,
-        ponto: nomePonto.get(r.ponto) || '--',
+        ponto: rotuloPonto(r.ponto),
+        pontoNome: ponto?.nome || '--',
+        predio: ponto?.predio || '',
       };
     })
     .filter(Boolean)
@@ -262,14 +282,27 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
   const duracoes = registros.filter(r => r.duracaoMin != null).map(r => r.duracaoMin);
   const minutosTotais = duracoes.reduce((s, m) => s + m, 0);
 
-  // ---- itens
+  // ---- itens (na rede, o ranking é por nome: o jogo, somando os prédios)
+  const itensAgrupadosPorNome = variosPredios;
   const usoPorItem = new Map();
+  const grafias = new Map(); // chave → Map(grafia → retiradas): o rótulo é a mais usada
   for (const r of registros) {
-    const u = usoPorItem.get(r.itemId) || { id: r.itemId, nome: r.item, categoria: r.categoria, quantidade: 0, minutos: 0 };
+    const chave = itensAgrupadosPorNome ? `nome:${chaveDoNome(r.nomeItem)}` : r.itemId;
+    const u = usoPorItem.get(chave) || { id: chave, nome: r.item, categoria: r.categoria, quantidade: 0, minutos: 0 };
     u.quantidade += 1;
     u.minutos += r.duracaoMin || 0;
-    usoPorItem.set(r.itemId, u);
+    usoPorItem.set(chave, u);
+    if (itensAgrupadosPorNome) {
+      const g = grafias.get(chave) || new Map();
+      const grafia = String(r.nomeItem).trim().replace(/\s+/g, ' ');
+      g.set(grafia, (g.get(grafia) || 0) + 1);
+      grafias.set(chave, g);
+    }
   }
+  for (const [chave, g] of grafias) {
+    usoPorItem.get(chave).nome = [...g].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))[0][0];
+  }
+  const idsUsados = new Set(registros.map(r => r.itemId));
   const usos = [...usoPorItem.values()];
   const itensMaisRetirados = [...usos].sort(porQuantidadeDepoisNome).slice(0, 10);
   const itensMaisTempo = usos
@@ -283,8 +316,8 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
   const acervo = itens.filter(i => pontosDoRelatorio.has(i.ponto) && i.ativo !== false
     && (!i.criadoEm || (momentoSP(i.criadoEm)?.input || '') <= fim));
   const itensSemUso = acervo
-    .filter(i => !usoPorItem.has(i.id))
-    .map(i => ({ id: i.id, nome: rotuloItem(i), categoria: i.categoria || 'Sem categoria', ponto: nomePonto.get(i.ponto) || '--' }))
+    .filter(i => !idsUsados.has(i.id))
+    .map(i => ({ id: i.id, nome: rotuloItem(i), categoria: i.categoria || 'Sem categoria', ponto: rotuloPonto(i.ponto) }))
     .sort((a, b) => a.categoria.localeCompare(b.categoria, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'));
 
   // ---- agrupamentos
@@ -294,7 +327,9 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
     return m;
   };
   const porPontoMap = contar(r => r.pontoId);
-  const porPonto = pontos.map(p => ({ id: p.id, nome: p.nome, quantidade: porPontoMap.get(p.id) || 0 })).sort(porQuantidadeDepoisNome);
+  const porPonto = pontos.map(p => ({ id: p.id, nome: rotuloPonto(p.id), quantidade: porPontoMap.get(p.id) || 0 })).sort(porQuantidadeDepoisNome);
+  const porPredioMap = contar(r => r.predio);
+  const porPredio = nomesPredios.map(nome => ({ nome, quantidade: porPredioMap.get(nome) || 0 })).sort(porQuantidadeDepoisNome);
   const porCategoria = [...contar(r => r.categoria)].map(([nome, quantidade]) => ({ nome, quantidade })).sort(porQuantidadeDepoisNome);
 
   const faixasDuracao = FAIXAS_DURACAO.map(([, rotulo]) => ({ rotulo, quantidade: 0 }));
@@ -333,6 +368,13 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
   return {
     periodo: { inicio, fim, texto: descreverPeriodo(inicio, fim) },
     variosPontos: pontos.length > 1,
+    // Relatório da rede (pontos com prédio)
+    temPredio,
+    variosPredios,
+    totalPredios: nomesPredios.length,
+    // "Por ponto" só quando diz algo além de "por prédio" (algum prédio com 2+ pontos)
+    mostrarPorPonto: pontos.length > Math.max(nomesPredios.length, 1),
+    itensAgrupadosPorNome,
     resumo: {
       retiradas,
       alunos: totalAlunos,
@@ -342,12 +384,13 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
       duracaoMediana: mediana(duracoes),
       minutosTotais,
       comProblema: registros.filter(r => r.situacao === 'problema').length,
-      itensUsados: usoPorItem.size,
+      itensUsados: idsUsados.size,
       itensNoAcervo: acervo.length,
       pico: picoTexto,
     },
     serie: montarSerie(registros.map(r => r.momento), inicio, fim, agora),
     porPonto,
+    porPredio,
     porCategoria,
     itensMaisRetirados,
     itensMaisTempo,
@@ -356,6 +399,49 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
     frequenciaAlunos,
     itensSemUso,
     registros,
+  };
+};
+
+// ------------------------------------------------- filtro da rede
+// Pontos liberados para o relatório da rede ([{ id, nome, predioId, predioNome }],
+// já ordenados) agrupados por prédio, para o <select> com <optgroup>.
+export const agruparPontosPorPredio = (pontos) => {
+  const grupos = new Map();
+  for (const p of pontos || []) {
+    const g = grupos.get(p.predioId) || { predioId: p.predioId, predioNome: p.predioNome, pontos: [] };
+    g.pontos.push(p);
+    grupos.set(p.predioId, g);
+  }
+  return [...grupos.values()];
+};
+
+const plural = (n, palavra) => `${n} ${palavra}${n === 1 ? '' : 's'}`;
+
+// Filtro escolhido: '' (todos os liberados) · 'predio:<id>' · 'ponto:<id>'.
+// pontoIds vazio = a API usa todos os liberados. `arquivo` vai no nome do PDF/planilha.
+export const selecaoDaRede = (pontos, selecao) => {
+  const lista = pontos || [];
+  const [tipo, id] = String(selecao || '').split(':');
+  if (tipo === 'predio') {
+    const doPredio = lista.filter(p => p.predioId === id);
+    if (doPredio.length) {
+      const predio = doPredio[0].predioNome;
+      return {
+        pontoIds: doPredio.map(p => p.id),
+        descricao: doPredio.length > 1 ? `${predio} · todos os pontos` : `${predio} · ${doPredio[0].nome}`,
+        arquivo: predio,
+      };
+    }
+  }
+  if (tipo === 'ponto') {
+    const ponto = lista.find(p => p.id === id);
+    if (ponto) return { pontoIds: [ponto.id], descricao: `${ponto.predioNome} · ${ponto.nome}`, arquivo: `${ponto.predioNome} ${ponto.nome}` };
+  }
+  const predios = new Set(lista.map(p => p.predioId)).size;
+  return {
+    pontoIds: [],
+    descricao: `Todos os pontos liberados (${plural(predios, 'prédio')}, ${plural(lista.length, 'ponto')})`,
+    arquivo: '',
   };
 };
 
@@ -376,17 +462,22 @@ export const nomeArquivoRelatorio = ({ predioNome, pontoNome, inicio, fim, exten
   return `${partes.filter(Boolean).join('_')}.${extensao}`;
 };
 
-// Planilha com uma linha por retirada (o registro completo, sem corte; sem aluno)
-export const linhasCsvRelatorio = (relatorio) => [
-  linhaCsv(['Retirada', 'Devolução', 'Duração (min)', 'Situação', 'Ponto', 'Categoria', 'Item', 'Patrimônio']),
-  ...relatorio.registros.map(r => linhaCsv([
-    formatarDataHora(r.retirada),
-    r.devolucao ? formatarDataHora(r.devolucao) : '',
-    r.duracaoMin ?? '',
-    SITUACOES[r.situacao],
-    r.ponto,
-    r.categoria,
-    r.item,
-    r.patrimonio,
-  ])),
-];
+// Planilha com uma linha por retirada (o registro completo, sem corte; sem aluno).
+// No relatório da rede o prédio vem numa coluna própria (tabela dinâmica no Excel).
+export const linhasCsvRelatorio = (relatorio) => {
+  const comPredio = Boolean(relatorio.temPredio);
+  return [
+    linhaCsv(['Retirada', 'Devolução', 'Duração (min)', 'Situação', ...(comPredio ? ['Prédio'] : []), 'Ponto', 'Categoria', 'Item', 'Patrimônio']),
+    ...relatorio.registros.map(r => linhaCsv([
+      formatarDataHora(r.retirada),
+      r.devolucao ? formatarDataHora(r.devolucao) : '',
+      r.duracaoMin ?? '',
+      SITUACOES[r.situacao],
+      ...(comPredio ? [r.predio] : []),
+      r.pontoNome,
+      r.categoria,
+      r.item,
+      r.patrimonio,
+    ])),
+  ];
+};

@@ -52,11 +52,11 @@ const misturar = (cor, t) => cor.map(c => Math.round(255 + (c - 255) * t));
 
 export const gerarPdfRelatorio = (rel, meta = {}, { compress = true } = {}) => {
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress });
-  const { predioNome = '', pontoNome = 'Todos os pontos', geradoEm = new Date(), geradoPor = '' } = meta;
+  const { titulo = 'Relatório de Empréstimos', predioNome = '', pontoNome = 'Todos os pontos', geradoEm = new Date(), geradoPor = '' } = meta;
   let y = MARGEM;
 
   pdf.setProperties({
-    title: textoPdf(`Relatório de Empréstimos - ${predioNome} - ${rel.periodo.texto}`),
+    title: textoPdf(`${titulo} - ${predioNome} - ${rel.periodo.texto}`),
     subject: 'Relatório de Empréstimos', creator: 'Sistema de Salas PUCRS',
   });
 
@@ -203,7 +203,7 @@ export const gerarPdfRelatorio = (rel, meta = {}, { compress = true } = {}) => {
   // ----------------------------------------------------------- cabeçalho
   const r = rel.resumo;
   fonte(18, 'bold', COR.navy);
-  escrever('Relatório de Empréstimos', MARGEM, y + 6);
+  escrever(titulo, MARGEM, y + 6);
   fonte(7.5, 'normal', COR.muted);
   escrever(`Gerado em ${formatarDataHora(geradoEm)}`, MARGEM + LARGURA, y + 2.5, { align: 'right' });
   if (geradoPor) escrever(caber(`por ${geradoPor}`, 70), MARGEM + LARGURA, y + 6, { align: 'right' });
@@ -249,15 +249,19 @@ export const gerarPdfRelatorio = (rel, meta = {}, { compress = true } = {}) => {
 
     const total = r.retiradas || 1;
     const pct = (q) => `${formatarNumero(q)} (${formatarNumero((q / total) * 100)}%)`;
-    const porCategoria = blocoBarrasH('Retiradas por categoria', null, rel.porCategoria.map(c => ({ rotulo: c.nome, valor: c.quantidade, texto: pct(c.quantidade) })), COR.purple);
-    if (rel.variosPontos) {
-      lado(blocoBarrasH('Retiradas por ponto de empréstimo', null, rel.porPonto.map(p => ({ rotulo: p.nome, valor: p.quantidade, texto: pct(p.quantidade) })), COR.purple), porCategoria);
-    } else {
-      inteiro(porCategoria);
+    // Prédio (rede), ponto e categoria, dois por linha
+    const contagens = [
+      rel.variosPredios && blocoBarrasH('Retiradas por prédio', null, rel.porPredio.map(p => ({ rotulo: p.nome, valor: p.quantidade, texto: pct(p.quantidade) })), COR.navy),
+      rel.mostrarPorPonto && blocoBarrasH('Retiradas por ponto de empréstimo', null, rel.porPonto.map(p => ({ rotulo: p.nome, valor: p.quantidade, texto: pct(p.quantidade) })), COR.purple),
+      blocoBarrasH('Retiradas por categoria', null, rel.porCategoria.map(c => ({ rotulo: c.nome, valor: c.quantidade, texto: pct(c.quantidade) })), COR.purple),
+    ].filter(Boolean);
+    for (let i = 0; i < contagens.length; i += 2) {
+      if (contagens[i + 1]) lado(contagens[i], contagens[i + 1]);
+      else inteiro(contagens[i]);
     }
     lado(
-      blocoBarrasH('Itens mais retirados', 'top 10, vezes', rel.itensMaisRetirados.map(i => ({ rotulo: i.nome, valor: i.quantidade })), COR.blue),
-      blocoBarrasH('Itens com maior tempo de uso', 'top 10, horas somadas', rel.itensMaisTempo.map(i => ({ rotulo: i.nome, valor: i.minutos, texto: formatarHoras(i.minutos) })), COR.amber),
+      blocoBarrasH('Itens mais retirados', rel.itensAgrupadosPorNome ? 'top 10, vezes, somando os prédios' : 'top 10, vezes', rel.itensMaisRetirados.map(i => ({ rotulo: i.nome, valor: i.quantidade })), COR.blue),
+      blocoBarrasH('Itens com maior tempo de uso', rel.itensAgrupadosPorNome ? 'top 10, horas, somando os prédios' : 'top 10, horas somadas', rel.itensMaisTempo.map(i => ({ rotulo: i.nome, valor: i.minutos, texto: formatarHoras(i.minutos) })), COR.amber),
     );
     inteiro({
       altura: alturaMapa(rel.mapaCalor),
@@ -298,7 +302,7 @@ export const gerarPdfRelatorio = (rel, meta = {}, { compress = true } = {}) => {
 
   // --------------------------------------------------------------- rodapé
   const paginas = pdf.getNumberOfPages();
-  const rodape = textoPdf(`Relatório de Empréstimos  ·  ${[predioNome, pontoNome].filter(Boolean).join('  ·  ')}  ·  ${rel.periodo.texto}`);
+  const rodape = textoPdf(`${titulo}  ·  ${[predioNome, pontoNome].filter(Boolean).join('  ·  ')}  ·  ${rel.periodo.texto}`);
   for (let p = 1; p <= paginas; p++) {
     pdf.setPage(p);
     pdf.setDrawColor(...COR.border);

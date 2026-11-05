@@ -1,4 +1,4 @@
-import service, { podeOperar, podeGerir, podeVerRelatorio } from '../../backend_core/services/emprestimos.service.js';
+import service, { podeOperar, podeGerir, podeVerRelatorio, podeVerRelatorioRede } from '../../backend_core/services/emprestimos.service.js';
 import gestao from '../../backend_core/services/emprestimosGestao.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro } from '../../backend_core/utils/http.js';
@@ -13,6 +13,8 @@ import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 //                                      PUT  /itens/:id/manutencao {status, observacoes}
 //                                      GET  /historico?ponto=&busca=&antes=
 //   Relatório (emprestimos|relatorios) GET  /relatorio?inicio=&fim=&ponto=
+//   Relatório da rede (relatorio_emprestimos_rede; não usa o prédio do login)
+//                                      GET  /rede/pontos   GET /rede/relatorio?inicio=&fim=&pontos=a,b
 //   Gestão (gestao_emprestimos)        GET  /gestao   GET /gestao/ocorrencias
 //                                      POST /gestao/{pontos,categorias,itens}  PUT /gestao/{...}/:id
 //                                      GET|POST /gestao/bloqueios  DELETE /gestao/bloqueios/:id
@@ -60,6 +62,17 @@ async function handler(req, res) {
         if (req.method === 'GET' && c1 === 'relatorio') {
             if (!podeVerRelatorio(user)) return negar(res, 'Acesso negado. Requer o módulo de Empréstimos ou Relatórios.');
             return res.status(200).json(await service.relatorio(user, { inicio: q.inicio, fim: q.fim, pontoId: q.ponto }));
+        }
+
+        // Vários prédios: os pontos vêm da lista do Painel Admin, nunca do
+        // prédio do login (que é nulo no login da rede)
+        if (req.method === 'GET' && c1 === 'rede') {
+            if (!podeVerRelatorioRede(user)) return negar(res, 'Acesso negado. Requer o módulo Relatório de Empréstimos da Rede.');
+            if (c2 === 'pontos') return res.status(200).json(await service.pontosDaRede(user));
+            if (c2 === 'relatorio') {
+                return res.status(200).json(await service.relatorioRede(user, { inicio: q.inicio, fim: q.fim, pontos: q.pontos }));
+            }
+            return res.status(404).json({ error: 'Endpoint não encontrado no relatório da rede.' });
         }
 
         if (req.method === 'GET' && c1 === 'pontos') {

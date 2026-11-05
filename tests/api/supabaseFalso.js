@@ -16,7 +16,9 @@ export function fakeFrom(resolver) {
   return (tabela) => {
     const q = { tabela, acao: 'select', filtros: {} };
     const b = {
-      select() { return b; }, order() { return b; }, in() { return b; }, is() { return b; }, or() { return b; }, not() { return b; },
+      select() { return b; }, order() { return b; }, is() { return b; }, or() { return b; }, not() { return b; },
+      // .in(coluna, lista) fica em q.em (separado de q.filtros, que é o .eq)
+      in(coluna, valores) { (q.em ??= {})[coluna] = valores; return b; },
       limit() { return b; },
       eq(coluna, valor) { q.filtros[coluna] = valor; return b; },
       range(inicio, fim) { q.range = [inicio, fim]; return b; },

@@ -1,13 +1,40 @@
 import supabase from '../config/supabase.js';
 import { ErroPublico } from '../utils/http.js';
-import { sanitizarPermissoes } from '../utils/modulos.js';
+import { sanitizarPermissoes, MODULOS } from '../utils/modulos.js';
 import { validarSenha } from '../utils/senha.js';
+import emprestimosRepository from '../repositories/emprestimos.repository.js';
+import gestaoEmprestimos from './emprestimosGestao.service.js';
+import {
+    normalizarEmail, RE_EMAIL, emailPermitido, urlDoApp, traduzirErroDeConvite, ehContaExistente,
+} from '../utils/convite.js';
 
 // Loga o detalhe real do banco no servidor e devolve um Error com mensagem limpa
 // (evita vazar nomes de colunas/constraints para o cliente).
 function falha(contexto, error) {
     console.error(`[admin] ${contexto}:`, error?.message || error);
     return new Error(contexto);
+}
+
+// Erro do Auth ao criar a conta → mensagem segura. E-mail que já tem conta
+// não é sobrescrito: o admin acha a pessoa na lista e usa "Editar Acesso".
+function erroAoCriarConta(error, { convite }) {
+    if (error?.code === 'weak_password') {
+        return new ErroPublico('O Supabase recusou a senha por ser fraca. Use uma senha mais longa, com letras e números.');
+    }
+    if (ehContaExistente(error)) {
+        return new ErroPublico('Já existe uma conta com este e-mail. Procure a pessoa na lista e use "Editar Acesso".', 409);
+    }
+    const traduzido = convite ? traduzirErroDeConvite(error) : null;
+    if (traduzido?.status === 429) {
+        return new ErroPublico('Limite de e-mails do provedor atingido. Tente de novo mais tarde, ou crie a conta com "Definir a senha agora" (sem e-mail).', 429);
+    }
+    return traduzido || falha('Erro ao criar a conta (Auth)', error);
+}
+
+// Só os pontos que existem (o resto seria erro de FK → 500), sem repetidos
+async function pontosDaRedeValidos(pontosRede) {
+    const existentes = new Set((await emprestimosRepository.getTodosOsPontos()).map(p => p.id));
+    return [...new Set((Array.isArray(pontosRede) ? pontosRede : []).map(String))].filter(p => existentes.has(p));
 }
 
 class AdminService {
@@ -118,6 +145,15 @@ class AdminService {
         return data || [];
     }
 
+    // Pontos de empréstimo de todos os prédios, para escolher os do relatório
+    // da rede (formulário do usuário no Painel Admin)
+    async listarPontosEmprestimo() {
+        const pontos = await emprestimosRepository.getTodosOsPontos();
+        return pontos
+            .map(p => ({ id: p.id, nome: p.nome, ativo: p.ativo, predioId: p.predio_id, predioNome: p.predio?.nome || '' }))
+            .sort((a, b) => a.predioNome.localeCompare(b.predioNome, 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome, 'pt-BR'));
+    }
+
     async listarModulos() {
         const { data, error } = await supabase
             .from('sistema_modulos')
@@ -151,23 +187,37 @@ class AdminService {
 
         if (accessError) throw falha('Erro ao listar acessos', accessError);
 
+        // Pontos do relatório da rede de cada login
+        const pontosRede = new Map();
+        for (const v of await emprestimosRepository.getVinculosDaRede()) {
+            pontosRede.set(v.user_id, [...(pontosRede.get(v.user_id) || []), v.ponto_id]);
+        }
+
         return allUsers.map(authUser => {
             const acesso = accessData.find(a => a.user_id === authUser.id) || {};
+            const permissoes = acesso.permissoes || [];
+            const semPredio = permissoes.includes(MODULOS.RELATORIO_EMPRESTIMOS_REDE) && !permissoes.includes(MODULOS.ADMIN)
+                ? 'Sem prédio (relatório da rede)'
+                : 'Acesso Global / Sem Prédio';
             return {
                 id: authUser.id,
                 email: authUser.email,
                 nome: authUser.user_metadata?.nome || '',
                 predioId: acesso.predio_id || null,
-                predioNome: acesso.predios?.nome || 'Acesso Global / Sem Prédio',
+                predioNome: acesso.predios?.nome || semPredio,
                 perfilId: acesso.perfil_id || null,
                 perfilNome: acesso.perfis?.nome || 'Sem Cargo',
-                permissoes: acesso.permissoes || []
+                permissoes,
+                pontosRede: pontosRede.get(authUser.id) || [],
             };
         });
     }
 
 
-    async atualizarUsuarioCompleto(id, { nome, predioId, perfilId, senha, permissoes }, editor = null) {
+    // `pontosRede`: pontos do relatório da rede (só vale com o módulo; sem ele,
+    // a lista é apagada). Ausente = não mexe na lista. Devolve a lista gravada
+    // (ou null se não mexeu) para a auditoria.
+    async atualizarUsuarioCompleto(id, { nome, predioId, perfilId, senha, permissoes, pontosRede }, editor = null) {
         const permissoesFinais = sanitizarPermissoes(permissoes, { permitirAdmin: true });
 
         // Espelha a tela (o Painel não deixa editar o próprio acesso): o admin
@@ -201,7 +251,107 @@ class AdminService {
 
         if (accessError) throw falha('Erro ao atualizar acessos', accessError);
 
-        return { success: true };
+        let pontosRedeFinais = null;
+        try {
+            if (!permissoesFinais.includes(MODULOS.RELATORIO_EMPRESTIMOS_REDE)) {
+                pontosRedeFinais = [];
+            } else if (Array.isArray(pontosRede)) {
+                pontosRedeFinais = await pontosDaRedeValidos(pontosRede);
+            }
+            if (pontosRedeFinais) await emprestimosRepository.definirPontosDaRede(id, pontosRedeFinais);
+        } catch (error) {
+            console.error('[admin] pontos do relatório da rede:', error?.message || error);
+            throw new ErroPublico('As permissões foram salvas, mas os pontos do relatório da rede não. Tente salvar de novo.', 500);
+        }
+
+        return { success: true, pontosRede: pontosRedeFinais };
+    }
+
+    // Conta nova pelo Painel Admin, já com prédio, cargo, módulos e pontos.
+    //   modo 'convite' (padrão): e-mail com link; a pessoa define a senha
+    //     (mesmo fluxo da Gestão de Equipe, sujeito ao limite de e-mails).
+    //   modo 'senha': o admin define a senha e passa para a pessoa; nenhum
+    //     e-mail sai (e-mail já confirmado).
+    // Conta sem prédio só com Administração ou Relatório da Rede — senão
+    // nasceria órfã (sem acesso a nada).
+    async criarUsuario({ email, nome, predioId, perfilId, permissoes, pontosRede, pontosBalcao, modo, senha }) {
+        const emailFinal = normalizarEmail(email);
+        if (!RE_EMAIL.test(emailFinal)) throw new ErroPublico('E-mail inválido.');
+        if (!emailPermitido(emailFinal)) throw new ErroPublico('Domínio de e-mail não permitido para convite.');
+
+        const permissoesFinais = sanitizarPermissoes(permissoes, { permitirAdmin: true });
+        const valeSemPredio = permissoesFinais.includes(MODULOS.ADMIN) || permissoesFinais.includes(MODULOS.RELATORIO_EMPRESTIMOS_REDE);
+        if (!predioId && !valeSemPredio) {
+            throw new ErroPublico('Escolha o prédio da pessoa (ou marque Administração ou o Relatório da Rede): sem prédio a conta não acessa nada.');
+        }
+        if (!permissoesFinais.length) throw new ErroPublico('Marque pelo menos um módulo.');
+
+        const comSenha = modo === 'senha';
+        if (comSenha) {
+            const problema = validarSenha(senha);
+            if (problema) throw new ErroPublico(problema);
+        }
+        const nomeFinal = String(nome || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+        const metadados = nomeFinal ? { nome: nomeFinal } : {};
+
+        let usuario;
+        if (comSenha) {
+            const { data, error } = await supabase.auth.admin.createUser({
+                email: emailFinal, password: senha, email_confirm: true, user_metadata: metadados,
+            });
+            if (error) throw erroAoCriarConta(error, { convite: false });
+            usuario = data?.user;
+        } else {
+            const destino = urlDoApp();
+            const { data, error } = await supabase.auth.admin.inviteUserByEmail(emailFinal, {
+                data: metadados, ...(destino ? { redirectTo: destino } : {}),
+            });
+            if (error) throw erroAoCriarConta(error, { convite: true });
+            usuario = data?.user;
+        }
+        if (!usuario?.id) throw falha('Erro ao criar a conta (Auth)', 'resposta sem usuário');
+
+        const { error: accessError } = await supabase.from('usuarios_acessos').insert({
+            user_id: usuario.id,
+            predio_id: predioId || null,
+            perfil_id: perfilId || null,
+            permissoes: permissoesFinais,
+        });
+        if (accessError) {
+            // Conta sem acesso gravado é inútil e travaria um novo cadastro do mesmo e-mail
+            await supabase.auth.admin.deleteUser(usuario.id).catch(() => {});
+            throw falha('Erro ao gravar os acessos da conta nova', accessError);
+        }
+
+        let pontosRedeFinais = [];
+        let pontosBalcaoFinais = [];
+        try {
+            if (permissoesFinais.includes(MODULOS.RELATORIO_EMPRESTIMOS_REDE) && Array.isArray(pontosRede) && pontosRede.length) {
+                pontosRedeFinais = await pontosDaRedeValidos(pontosRede);
+                await emprestimosRepository.definirPontosDaRede(usuario.id, pontosRedeFinais);
+            }
+            // Balcão: só pontos do prédio da pessoa, e só com o módulo Empréstimos
+            if (predioId && Array.isArray(pontosBalcao) && pontosBalcao.length) {
+                pontosBalcaoFinais = await gestaoEmprestimos.definirPontosDoUsuario({
+                    userId: usuario.id, predioId, pontoIds: pontosBalcao, permissoes: permissoesFinais,
+                });
+            }
+        } catch (error) {
+            console.error('[admin] conta criada, pontos não:', error?.message || error);
+            throw new ErroPublico('A conta foi criada, mas os pontos de empréstimo não foram salvos. Abra "Editar Acesso" e marque de novo.', 500);
+        }
+
+        return {
+            id: usuario.id,
+            email: emailFinal,
+            permissoes: permissoesFinais,
+            pontosRede: pontosRedeFinais,
+            pontosBalcao: pontosBalcaoFinais,
+            modo: comSenha ? 'senha' : 'convite',
+            message: comSenha
+                ? `Conta criada para ${emailFinal}. Passe o e-mail e a senha para a pessoa entrar.`
+                : `Convite enviado para ${emailFinal}. A pessoa define a senha pelo link do e-mail (vale olhar o spam).`,
+        };
     }
 }
 

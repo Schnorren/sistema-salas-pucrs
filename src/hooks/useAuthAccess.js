@@ -45,15 +45,18 @@ export const useAuthAccess = (session) => {
                 if (data) {
                     const permissoesArray = data.permissoes || [];
                     
-                    // Global (troca de prédio) exige 'admin'. Prédio nulo sem admin = órfão.
+                    // Global (troca de prédio) exige 'admin'. Prédio nulo sem admin = órfão,
+                    // exceto o login do relatório da rede (vários prédios, só esse relatório).
                     const isAdmin = permissoesArray.includes('admin');
                     const isUserGlobal = isAdmin;
+                    const semPredio = isAdmin ? 'Todos os Prédios'
+                        : permissoesArray.includes('relatorio_emprestimos_rede') ? 'Empréstimos da rede' : '';
 
                     setAcesso({
                         loading: false,
                         perfilNome: data.perfis?.nome || 'Sem Perfil',
                         predioId: data.predio_id,
-                        predioNome: data.predios?.nome || 'Todos os Prédios',
+                        predioNome: data.predios?.nome || semPredio,
                         isGlobal: isUserGlobal,
                         permissoes: permissoesArray
                     });

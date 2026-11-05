@@ -4,7 +4,7 @@ import { useEquipe } from '../hooks/useEquipe';
 import { useUI } from '../contexts/UIContext';
 
 export default function GestaoEquipe({ session, acesso }) {
-    const { predioAtivo } = usePredio();
+    const { predioAtivo, predioNome } = usePredio();
     const { toast, showConfirm } = useUI();
     
     const { 
@@ -321,7 +321,15 @@ export default function GestaoEquipe({ session, acesso }) {
             </div>
             
             <div style={{ flex: 1, background: 'var(--surface, #1e293b)', padding: '24px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Equipe Registrada</h3>
+                {/* A equipe é a do prédio ativo — para o admin, o escolhido no topo */}
+                <h3 style={{ marginTop: 0, marginBottom: souAdmin ? '4px' : '20px' }}>
+                    Equipe Registrada{(predioNome || acesso?.predioNome) ? ` · ${predioNome || acesso?.predioNome}` : ''}
+                </h3>
+                {souAdmin && (
+                    <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '0 0 16px' }}>
+                        Membros do prédio selecionado no topo. Contas sem prédio (administração, relatório da rede) ficam no Painel Admin.
+                    </p>
+                )}
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
                     <input 
                         type="text" 
