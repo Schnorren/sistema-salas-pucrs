@@ -1,7 +1,7 @@
 import { PERIODS, PERIOD_END_TIMES } from '../../../backend_core/utils/timeHelpers';
 import { itensDaAgenda } from '../../utils/miniGrade';
 import { periodosAfetadosPelaTroca } from '../../utils/aulasDoDia';
-import { Faixa, ReguaPeriodos } from './MiniGrade';
+import { Faixa } from './MiniGrade';
 import Icone from './Icone';
 
 const inicio = (i) => PERIODS[i].lb;
@@ -11,7 +11,7 @@ const faixaDePeriodos = (ini, f) => (ini === f ? PERIODS[ini].code : `${PERIODS[
 // O dia de uma sala em lista, como a agenda do celular (aberta tocando a sala
 // na mini-grade). Tocar numa aula abre os detalhes, com "Trocar de sala".
 //   linha = a linha da sala em dataProcessed.timeline da Timeline
-export default function AgendaSala({ linha, periodos, rotuloDia, trocas, onVoltar, onAbrirAula }) {
+export default function AgendaSala({ linha, rotuloDia, trocas, onVoltar, onAbrirAula }) {
     const itens = itensDaAgenda(linha.slots);
     const ocupados = linha.slots.filter(s => s.ocupado).length;
 
@@ -23,8 +23,6 @@ export default function AgendaSala({ linha, periodos, rotuloDia, trocas, onVolta
             </div>
             <div className="cel-ag-sub">{rotuloDia} · {ocupados} de {PERIODS.length} períodos com aula</div>
             <div className="cel-ag-faixa">
-                <ReguaPeriodos periodos={periodos} />
-                <div style={{ height: '4px' }} />
                 <Faixa slots={linha.slots} trocas={trocas} />
             </div>
 

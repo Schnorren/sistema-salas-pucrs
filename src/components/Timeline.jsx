@@ -508,7 +508,7 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
         {salaAberta ? (
           linhaAberta ? (
             <AgendaSala
-              linha={linhaAberta} periodos={dataProcessed.periodosCabecalho} rotuloDia={rotuloDia}
+              linha={linhaAberta} rotuloDia={rotuloDia}
               trocas={trocasAtivas} onVoltar={fecharSala} onAbrirAula={abrirAula}
             />
           ) : (
