@@ -153,17 +153,17 @@ class EmprestimosService {
             throw new ErroPublico("Status inválido. Use DISPONIVEL ou MANUTENCAO.");
         }
 
-        await this._assertItemNoPredio(itemId, predioId);
+        if (!predioId) throw new ErroPublico("Prédio não informado.");
 
-        // Item com empréstimo em aberto não muda de status por aqui — a devolução
-        // (RPC concluir_devolucao) é quem o libera. Checa o registro ativo, e não o
-        // status do item, para permitir corrigir itens órfãos (EMPRESTADO sem registro).
-        const emprestimoAberto = await repository.getEmprestimoAtivoPorItem(itemId);
-        if (emprestimoAberto) {
-            throw new ErroPublico("Item está emprestado. Registre a devolução antes de alterar o status.");
-        }
-
-        await repository.atualizarStatusItem(itemId, novoStatus, limparTexto(observacoes, 500) || null);
+        // Uma transação só no banco: trava o item, confere o prédio e recusa item
+        // com empréstimo em aberto (quem o libera é a devolução). Antes eram duas
+        // chamadas, e uma retirada no outro PC podia entrar no meio.
+        await repository.alterarStatusItemRpc({
+            predioId,
+            itemId,
+            status: novoStatus,
+            observacoes: limparTexto(observacoes, 500) || null
+        });
         return true;
     }
 }

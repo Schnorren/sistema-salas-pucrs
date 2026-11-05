@@ -25,8 +25,10 @@ const dirMigrations = join(raiz, 'supabase', 'migrations');
 // Ordem importa: RPCs e tabelas antes das constraints/RLS que dependem delas.
 // Mantida em sincronia com a seção "Banco / Supabase" do CLAUDE.md.
 const ORDEM = [
+  'emprestimos_schema.sql',
   'concluir_devolucao_rpc.sql',
   'realizar_emprestimo_rpc.sql',
+  'emprestimo_status_item_rpc.sql',
   'estatisticas_emprestimos_rpc.sql',
   'trocas_sala_data_aula.sql',
   'trocas_sala_semana.sql',

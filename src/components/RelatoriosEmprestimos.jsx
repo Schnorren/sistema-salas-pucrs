@@ -5,23 +5,32 @@ import { useQuery } from '@tanstack/react-query';
 import { useUI } from '../contexts/UIContext';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { formatarDuracao, minutosEntre, inputDataHoraSP, inputInicioDoDiaSP } from '../../backend_core/utils/emprestimoRegras';
 
-const getInicioHojeLocal = () => {
-    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 10) + 'T00:00';
-};
+// Período padrão = hoje no horário de Brasília (antes: fuso do navegador)
+const getInicioHojeLocal = () => inputInicioDoDiaSP();
+const getAgoraLocal = () => inputDataHoraSP();
 
-const getAgoraLocal = () => {
-    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
-};
+const calcularDuracaoTotal = (inicioIso, fimIso) => formatarDuracao(minutosEntre(inicioIso, fimIso));
 
-const calcularDuracaoTotal = (inicioIso, fimIso) => {
-    if (!inicioIso || !fimIso) return '--';
-    const diffMs = new Date(fimIso) - new Date(inicioIso);
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 60) return `${diffMin} min`;
-    return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+// Fatia a captura da tela em páginas A4. Antes a imagem inteira ia para UMA
+// página e tudo que passasse da altura do A4 era cortado do PDF.
+const montarPdfPaginado = (canvas) => {
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const larguraPdf = pdf.internal.pageSize.getWidth();
+    const alturaPdf = pdf.internal.pageSize.getHeight();
+    const alturaPaginaPx = Math.floor(canvas.width * (alturaPdf / larguraPdf));
+
+    for (let y = 0, pagina = 0; y < canvas.height; y += alturaPaginaPx, pagina += 1) {
+        const alturaFatia = Math.min(alturaPaginaPx, canvas.height - y);
+        const fatia = document.createElement('canvas');
+        fatia.width = canvas.width;
+        fatia.height = alturaFatia;
+        fatia.getContext('2d').drawImage(canvas, 0, y, canvas.width, alturaFatia, 0, 0, canvas.width, alturaFatia);
+        if (pagina > 0) pdf.addPage();
+        pdf.addImage(fatia.toDataURL('image/png'), 'PNG', 0, 0, larguraPdf, (alturaFatia * larguraPdf) / canvas.width);
+    }
+    return pdf;
 };
 
 export default function RelatoriosEmprestimos({ session, acesso }) {
@@ -81,12 +90,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 logging: false
             });
 
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            const pdf = montarPdfPaginado(canvas);
             pdf.save(`Relatorio_Emprestimos_${new Date().getTime()}.pdf`);
 
             toast.success('PDF exportado com sucesso!');
@@ -273,7 +277,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                                                         </td>
                                                         <td className="th-item">{h.nomeItem}</td>
                                                         <td style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>
-                                                            {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                            {new Date(h.dataRetirada).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}
                                                         </td>
                                                         <td>
                                                             {h.dataDevolucao ? (

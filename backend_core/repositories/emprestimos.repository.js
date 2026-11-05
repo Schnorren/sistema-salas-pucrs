@@ -39,7 +39,7 @@ class EmprestimosRepository {
         return data || [];
     }
 
-    // Item do prédio em QUALQUER categoria: patrimônio exato (maiúsc./minúsc.
+    // Item do prédio em QUALQUER categoria: código exato (maiúsc./minúsc.
     // indiferentes) e, se não achar, parte do nome. Curingas do usuário são
     // escapados para o ILIKE não virar busca ampla.
     async buscarItemNoPredio(termo, predioId) {
@@ -53,10 +53,12 @@ class EmprestimosRepository {
         if (porCodigo.error) throw porCodigo.error;
         if (porCodigo.data?.length) return porCodigo.data[0];
 
-        const porNome = await base().ilike('nome_item', `%${seguro}%`).order('status').order('nome_item').limit(5);
+        // Por nome só quando UM item casa: com dois parecidos ("Bola 1", "Bola 2")
+        // a escolha fica com o atendente (clicando), nunca com a ordem da consulta.
+        const porNome = await base().ilike('nome_item', `%${seguro}%`).limit(2);
         if (porNome.error) throw porNome.error;
         const lista = porNome.data || [];
-        return lista.find(i => i.status === 'DISPONIVEL') || lista[0] || null;
+        return lista.length === 1 ? lista[0] : null;
     }
 
     async criarRetiradaRpc(payload) {
@@ -105,18 +107,6 @@ class EmprestimosRepository {
             .limit(1);
 
         if (error) throw error;
-        return data?.[0] || null;
-    }
-
-    async getEmprestimoAtivoPorItem(itemId) {
-        const { data, error } = await supabase
-            .from('emprestimos_registro')
-            .select('id')
-            .eq('status', 'ATIVO')
-            .eq('item_id', itemId)
-            .limit(1);
-
-        if (error) return ignorarIdInvalido(error);
         return data?.[0] || null;
     }
 
@@ -171,14 +161,21 @@ class EmprestimosRepository {
         return data;
     }
 
-    async atualizarStatusItem(itemId, status, observacoes) {
-        const { error } = await supabase
-            .from('emprestimo_itens')
-            .update({ status, observacoes })
-            .eq('id', itemId);
+    // Atômico no banco: trava o item, valida o prédio e recusa item com
+    // empréstimo ATIVO (ver supabase/migrations/emprestimo_status_item_rpc.sql).
+    async alterarStatusItemRpc({ predioId, itemId, status, observacoes }) {
+        const { data, error } = await supabase.rpc('emprestimo_status_item', {
+            p_predio_id: predioId,
+            p_item_id: itemId,
+            p_status: status,
+            p_obs: observacoes
+        });
 
-        if (error) throw error;
-        return true;
+        if (error) {
+            if (error.code === '22P02') throw new ErroPublico('Item não encontrado.');
+            throw traduzirErroRpc(error, 'Erro ao alterar o status do item.');
+        }
+        return data;
     }
 
     async concluirDevolucao(emprestimoId, emailResponsavel) {

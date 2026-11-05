@@ -91,8 +91,12 @@ create function app_item_predio(p_item text)
    where i.id::text = p_item;
 $$;
 
+-- Só authenticated: toda policy é `to authenticated`. O REVOKE de PUBLIC/anon é
+-- necessário porque o Supabase concede EXECUTE a anon em função nova do public.
+revoke all on function app_is_admin(), app_predio_id(), app_has_modulo(text),
+  app_categoria_predio(text), app_item_predio(text) from public, anon;
 grant execute on function app_is_admin(), app_predio_id(), app_has_modulo(text),
-  app_categoria_predio(text), app_item_predio(text) to authenticated, anon;
+  app_categoria_predio(text), app_item_predio(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 2. usuarios_acessos — cada um lê só o próprio acesso (admin lê todos).

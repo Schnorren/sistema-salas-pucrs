@@ -26,6 +26,7 @@ CREATE FUNCTION realizar_emprestimo(
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     v_item      emprestimo_itens%ROWTYPE;
@@ -96,3 +97,11 @@ CREATE INDEX IF NOT EXISTS idx_emprestimos_registro_item
     ON emprestimos_registro (item_id);
 CREATE INDEX IF NOT EXISTS idx_emprestimo_itens_categoria
     ON emprestimo_itens (categoria_id);
+
+-- Segurança: SECURITY DEFINER ignora a RLS, e o Supabase concede EXECUTE a
+-- anon/authenticated em toda função nova do schema public. Sem este REVOKE,
+-- qualquer um com a anon key (pública no bundle do site) chamaria a função
+-- direto em /rest/v1/rpc/. Fica NESTE arquivo porque o `npm run migrate`
+-- reaplica tudo e um DROP+CREATE devolveria os grants padrão.
+REVOKE ALL ON FUNCTION realizar_emprestimo(UUID, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION realizar_emprestimo(UUID, TEXT, TEXT, TEXT, TEXT) TO service_role;

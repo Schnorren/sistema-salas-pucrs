@@ -40,7 +40,15 @@ CREATE OR REPLACE FUNCTION limpar_trocas_antigas()
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public
 AS $$
     DELETE FROM trocas_sala
      WHERE semana < date_trunc('week', (now() AT TIME ZONE 'America/Sao_Paulo'))::date;
 $$;
+
+-- Segurança: só usuário logado (a Timeline chama via anon key + sessão).
+-- Sem o REVOKE, o grant padrão do Supabase deixaria qualquer visitante (anon)
+-- disparar a limpeza. Aqui (e não em trocas_sala_data_aula.sql) porque este
+-- arquivo roda depois e o CREATE OR REPLACE preserva os grants.
+REVOKE ALL ON FUNCTION limpar_trocas_antigas() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION limpar_trocas_antigas() TO authenticated, service_role;

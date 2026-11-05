@@ -14,6 +14,7 @@ CREATE OR REPLACE FUNCTION estatisticas_emprestimos(
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     v_total_emprestimos  INT;
@@ -157,3 +158,11 @@ BEGIN
     );
 END;
 $$;
+
+-- Segurança: SECURITY DEFINER ignora a RLS, e o Supabase concede EXECUTE a
+-- anon/authenticated em toda função nova do schema public. Sem este REVOKE,
+-- qualquer um com a anon key (pública no bundle do site) chamaria a função
+-- direto em /rest/v1/rpc/. Fica NESTE arquivo porque o `npm run migrate`
+-- reaplica tudo e um DROP+CREATE devolveria os grants padrão.
+REVOKE ALL ON FUNCTION estatisticas_emprestimos(UUID, TIMESTAMPTZ, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION estatisticas_emprestimos(UUID, TIMESTAMPTZ, TIMESTAMPTZ) TO service_role;

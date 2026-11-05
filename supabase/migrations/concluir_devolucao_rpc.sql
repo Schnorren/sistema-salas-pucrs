@@ -11,6 +11,7 @@ CREATE OR REPLACE FUNCTION concluir_devolucao(
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     v_emprestimo emprestimos_registro%ROWTYPE;
@@ -47,3 +48,11 @@ BEGIN
     RETURN v_resultado;
 END;
 $$;
+
+-- Segurança: SECURITY DEFINER ignora a RLS, e o Supabase concede EXECUTE a
+-- anon/authenticated em toda função nova do schema public. Sem este REVOKE,
+-- qualquer um com a anon key (pública no bundle do site) chamaria a função
+-- direto em /rest/v1/rpc/. Fica NESTE arquivo porque o `npm run migrate`
+-- reaplica tudo e um DROP+CREATE devolveria os grants padrão.
+REVOKE ALL ON FUNCTION concluir_devolucao(UUID, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION concluir_devolucao(UUID, TEXT) TO service_role;

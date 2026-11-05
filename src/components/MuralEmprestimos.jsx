@@ -4,6 +4,7 @@ import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
 import { STATUS_ITEM } from '../utils/constants';
 import { lerBalcao, salvarBalcao, rotuloResponsavel } from '../utils/balcao';
+import { formatarDuracao, minutosEntre, rotuloDataHora, resolverItemPorTermo } from '../../backend_core/utils/emprestimoRegras';
 
 // Nome deste computador (os PCs da recepção usam o mesmo login) — gravado
 // junto do responsável em cada retirada/devolução. Ver utils/balcao.js.
@@ -28,24 +29,14 @@ const NomeDoBalcao = () => {
 };
 
 
-const calcularDuracaoTotal = (inicioIso, fimIso) => {
-    if (!inicioIso || !fimIso) return '--';
-    const diffMs = new Date(fimIso) - new Date(inicioIso);
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 60) return `${diffMin} min`;
-    return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
-};
+const calcularDuracaoTotal = (inicioIso, fimIso) => formatarDuracao(minutosEntre(inicioIso, fimIso));
 
 const TempoDecorrido = ({ dataIso }) => {
     const [tempo, setTempo] = useState('--');
 
     useEffect(() => {
         if (!dataIso) return;
-        const calcular = () => {
-            const diffMin = Math.floor(Math.max(0, new Date() - new Date(dataIso)) / 60000);
-            if (diffMin < 60) return `${diffMin} min`;
-            return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
-        };
+        const calcular = () => formatarDuracao(minutosEntre(dataIso));
 
         setTempo(calcular()); // eslint-disable-line react-hooks/set-state-in-effect
         const timer = setInterval(() => setTempo(calcular()), 30000);
@@ -157,13 +148,16 @@ const EmprestimoWizard = ({
 
     const handleBiparItem = async (e) => {
         e.preventDefault();
-        const termo = inputItem.trim().toLowerCase();
-        // Termo vazio casaria com qualquer nome via includes('') — Enter acidental emprestaria o 1º item
+        const termo = inputItem.trim();
+        // Termo vazio casaria com qualquer nome — Enter acidental emprestaria o 1º item
         if (!termo) return;
-        const itemEncontrado = itensDisponiveis.find(i =>
-            (i.patrimonio || '').toLowerCase() === termo || (i.nome_item || '').toLowerCase().includes(termo)
-        );
+        // Código exato primeiro; por nome só se UM item casar (ver emprestimoRegras)
+        const { item: itemEncontrado, ambiguos } = resolverItemPorTermo(itensDisponiveis, termo);
         if (itemEncontrado) { processarEscolhaItem(itemEncontrado); return; }
+        if (ambiguos.length > 1) {
+            toast.error(`Mais de um item com "${termo}" no nome — clique no item certo na lista.`);
+            return;
+        }
 
         // Não está na categoria aberta: procura em todas as categorias do prédio
         let item = null;
@@ -174,7 +168,7 @@ const EmprestimoWizard = ({
             return;
         }
         if (!item) {
-            toast.error('Item não encontrado neste prédio.');
+            toast.error('Item não encontrado neste prédio (ou mais de um com esse nome) — clique no item na lista.');
             setInputItem('');
             return;
         }
@@ -412,7 +406,7 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
                                         <div className="emp-cod">Cód: {emp.patrimonio}</div>
                                     </div>
                                     <div className="emp-footer">
-                                        <span>🕒 {new Date(emp.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{emp.responsavel && <span style={{ opacity: 0.7 }}> · {rotuloResponsavel(emp.responsavel)}</span>}</span>
+                                        <span>🕒 {rotuloDataHora(emp.dataRetirada)}{emp.responsavel && <span style={{ opacity: 0.7 }}> · {rotuloResponsavel(emp.responsavel)}</span>}</span>
                                         <span className="tag-tempo"><TempoDecorrido dataIso={emp.dataRetirada} /></span>
                                     </div>
                                     <button onClick={() => handleDevolucaoDireta(emp.id, emp.nomeItem)} disabled={devolvendo} className="btn-devolver">⬇️ Receber Devolução</button>
@@ -443,11 +437,11 @@ const PainelRegistros = ({ abaAtiva, setAbaAtiva, emprestimosAtivos, historico, 
                                         <td className="th-item">📦 {h.nomeItem}</td>
                                         <td>
                                             <div className="th-data">
-                                                <span className="th-data-up">↑</span> {new Date(h.dataRetirada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                <span className="th-data-up">↑</span> {rotuloDataHora(h.dataRetirada)}
                                             </div>
                                             <div className="th-data" style={{ marginTop: '6px' }}>
                                                 {h.dataDevolucao ? (
-                                                    <><span className="th-data-down">↓</span> {new Date(h.dataDevolucao).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+                                                    <><span className="th-data-down">↓</span> {rotuloDataHora(h.dataDevolucao)}</>
                                                 ) : (
                                                     <span className="tag-status pendente">⏳ Pendente</span>
                                                 )}
