@@ -209,6 +209,37 @@ class GradeService {
         };
     }
 
+    // Busca da barra do topo (GET /api/grade/busca): aulas da semana cujo nome,
+    // sala ou código contém o termo, agrupadas em blocos de períodos seguidos.
+    // Restaurada do backend antigo — o handler chamava este método, mas ele se
+    // perdeu na migração para serverless e a rota respondia 500.
+    async realizarBuscaGlobal(q, predio_id) {
+        if (!q || q.length < 2) return [];
+        const gradeBruta = await this._obterGradeOtimizada(predio_id);
+
+        const normalizarTexto = (texto) => texto ? String(texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+        const termoPesquisado = normalizarTexto(q);
+
+        const filtrados = gradeBruta.filter(d => {
+            const nomeNormalizado = normalizarTexto(d.nome_aula || d.disciplinas?.nome);
+            const salaNormalizada = normalizarTexto(d.salas?.numero || d.sala);
+            const codigoNormalizado = normalizarTexto(d.disciplinas?.codigo);
+            return nomeNormalizado.includes(termoPesquisado) || salaNormalizada.includes(termoPesquisado) || codigoNormalizado.includes(termoPesquisado);
+        });
+
+        const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+        const resultados = [];
+        dias.forEach(dia => {
+            const aulasDoDia = filtrados.filter(f => f.dia_semana === dia);
+            groupConsecutiveClasses(aulasDoDia).forEach(aula => resultados.push({ ...aula, dia_semana: dia }));
+        });
+
+        return resultados.sort((a, b) => {
+            if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
+            return String(a.sala).localeCompare(String(b.sala), undefined, { numeric: true });
+        }).slice(0, 15);
+    }
+
     _processarOcupacaoSemanl(gradeBruta, salasLista) {
         const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
         const ocupacaoBase = gradeBruta.map(g => ({

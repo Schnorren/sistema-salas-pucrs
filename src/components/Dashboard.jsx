@@ -109,10 +109,13 @@ export default function Dashboard({ session }) {
           `${import.meta.env.VITE_API_URL}/api/grade/busca?q=${encodeURIComponent(searchQuery)}`,
           { headers: getAuthHeaders() }
         );
-        const data = await response.json();
-        setSearchResults(data);
+        const data = await response.json().catch(() => null);
+        // Erro da API volta como { error } — nunca pode chegar ao .map() do
+        // dropdown (derrubava a tela inteira ao digitar na busca).
+        setSearchResults(response.ok && Array.isArray(data) ? data : []);
       } catch {
         // busca silencia erros — não interrompe o fluxo do usuário
+        setSearchResults([]);
       } finally {
         setIsSearching(false);
       }

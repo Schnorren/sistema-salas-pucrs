@@ -1,5 +1,6 @@
 import service from '../../backend_core/services/grade.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { responderErro } from '../../backend_core/utils/http.js';
 
 async function handler(req, res) {
     const temPermissao = req.user?.permissoes?.includes('grade')
@@ -19,7 +20,7 @@ async function handler(req, res) {
             const resultados = await service.realizarBuscaGlobal(q, predioId);
             return res.status(200).json(resultados);
         } catch (e) {
-            return res.status(500).json({ error: e.message });
+            return responderErro(res, e);
         }
     }
 
