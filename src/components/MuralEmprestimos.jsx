@@ -8,7 +8,7 @@ import { somLigado, definirSom, tocarSom } from '../utils/somBalcao';
 import {
     formatarDuracao, minutosEntre, rotuloDataHora, resolverItemPorTermo, normalizarNome, normalizarMatricula,
     preverDevolucao, previsaoDaCategoria, restanteParaDesfazerMs, podeDesfazer,
-    RESULTADOS_DEVOLUCAO, ROTULO_OCORRENCIA,
+    RESULTADOS_DEVOLUCAO, ROTULO_OCORRENCIA, JANELA_DESFAZER_MIN,
 } from '../../backend_core/utils/emprestimoRegras';
 
 // Balcão de empréstimos (passos como sempre): 1 crachá → 2 item → 3 nome (aluno
@@ -115,7 +115,7 @@ const FaixaDesfazer = ({ acao, onDesfazer, onFechar, ocupado }) => {
             <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 {acao.id && (
                     <button type="button" className="btn-desfazer" onClick={() => onDesfazer(acao)} disabled={ocupado}>
-                        ↩ Desfazer ({Math.ceil(restante / 60000)} min)
+                        ↩ Desfazer ({Math.min(JANELA_DESFAZER_MIN, Math.ceil(restante / 60000))} min)
                     </button>
                 )}
                 <button type="button" className="link-balcao" onClick={onFechar} title="Fechar">✕</button>
@@ -431,7 +431,7 @@ const EmprestimoWizard = ({
                                         <React.Fragment key={grupo.id}>
                                             {grupos.length > 1 && (
                                                 <div className="grupo-categoria-titulo">
-                                                    {grupo.nome}{previsao && <span> · todos fora, {previsao.texto}</span>}
+                                                    {grupo.nome}{previsao && <span> · nenhum livre, {previsao.texto}</span>}
                                                 </div>
                                             )}
                                             {grupo.itens.map(item => {
@@ -504,7 +504,7 @@ const EmprestimoWizard = ({
                                     <React.Fragment key={grupo.id}>
                                         {grupos.length > 1 && (
                                             <div className="grupo-categoria-titulo">
-                                                {grupo.nome}{previsao && <span> · todos fora, {previsao.texto}</span>}
+                                                {grupo.nome}{previsao && <span> · nenhum livre, {previsao.texto}</span>}
                                             </div>
                                         )}
                                         <div className="grade-escolha">
@@ -661,7 +661,7 @@ const PainelRegistros = ({ ativos, historico, carregandoHistorico, historicoTemM
                                 const previsao = preverDevolucao({ desde: emp.dataRetirada, medianaMin: emp.mediana_min }, agora);
                                 return (
                                     <div key={emp.id} className={`emprestimo-card ${previsao?.estado === 'passou' ? 'passou' : ''}`}>
-                                        <div className="emp-aluno">👤 {emp.nomeAluno}</div>
+                                        <div className="emp-aluno">👤 {normalizarNome(emp.nomeAluno) || emp.nomeAluno}</div>
                                         <div className="emp-mat">Matrícula: {emp.matricula}</div>
                                         <div style={{ flex: 1 }}>
                                             <div className="emp-item">📦 {emp.nomeItem}</div>
@@ -711,7 +711,7 @@ const PainelRegistros = ({ ativos, historico, carregandoHistorico, historicoTemM
                                             return (
                                                 <tr key={h.id} style={h.status === STATUS_EMPRESTIMO.CANCELADO ? { opacity: 0.55 } : undefined}>
                                                     <td>
-                                                        <div className="th-aluno-nome">{h.nomeAluno}</div>
+                                                        <div className="th-aluno-nome">{normalizarNome(h.nomeAluno) || h.nomeAluno}</div>
                                                         <div className="th-aluno-mat">Matrícula: {h.matricula}</div>
                                                     </td>
                                                     <td className="th-item">📦 {h.nomeItem}</td>
@@ -870,7 +870,8 @@ export default function MuralEmprestimos({ session, acesso }) {
         <div className="mural-container">
             <div className="wizard-panel">
                 <FaixaBalcao pontos={pontos} pontoId={pontoId} onTrocarPonto={trocarPonto} />
-                <FaixaDesfazer acao={ultimaAcao} onDesfazer={acoes.desfazer} onFechar={() => setUltimaAcao(null)}
+                {/* key: o relógio da faixa nasce junto com a ação (senão o "Desfazer (N min)" começa atrasado) */}
+                <FaixaDesfazer key={ultimaAcao?.quando || 'nenhuma'} acao={ultimaAcao} onDesfazer={acoes.desfazer} onFechar={() => setUltimaAcao(null)}
                     ocupado={dados.cancelando || dados.reabrindo} />
                 {/* key: trocar de ponto zera o atendimento em andamento */}
                 <EmprestimoWizard key={pontoId}

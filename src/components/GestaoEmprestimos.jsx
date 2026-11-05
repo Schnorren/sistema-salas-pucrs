@@ -131,9 +131,12 @@ const AbaAcervo = ({ pontos, carregando, salvando, abrir, alternarAtivo }) => {
                             {c.itens.length === 0 ? (
                                 <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Nenhum item.</div>
                             ) : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '6px' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '6px', tableLayout: 'fixed' }}>
                                     <thead>
-                                        <tr><th style={estilos.th}>Item</th><th style={estilos.th}>Código</th><th style={estilos.th}>Situação</th><th style={estilos.th}>Uso</th><th style={estilos.th}></th></tr>
+                                        <tr>
+                                            <th style={{ ...estilos.th, width: '32%' }}>Item</th><th style={{ ...estilos.th, width: '14%' }}>Código</th>
+                                            <th style={{ ...estilos.th, width: '24%' }}>Situação</th><th style={{ ...estilos.th, width: '14%' }}>Uso</th><th style={{ ...estilos.th, width: '16%' }}></th>
+                                        </tr>
                                     </thead>
                                     <tbody>
                                         {c.itens.map(i => {
@@ -288,7 +291,7 @@ export default function GestaoEmprestimos({ session, acesso }) {
     };
 
     const abaBtn = (id, rotulo) => (
-        <button onClick={() => setAba(id)} style={{ ...estilos.botaoSec, ...(aba === id ? { background: 'var(--blue)', color: '#fff', borderColor: 'var(--blue)' } : {}) }}>{rotulo}</button>
+        <button onClick={() => setAba(id)} style={{ ...estilos.botaoSec, ...(aba === id ? { background: 'var(--blue)', color: '#fff', border: '1px solid var(--blue)' } : {}) }}>{rotulo}</button>
     );
 
     if (g.erro) return <div className="empty-st" style={{ color: 'var(--red)' }}>Erro ao carregar: {g.erro}</div>;
