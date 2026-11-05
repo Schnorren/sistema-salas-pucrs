@@ -74,7 +74,14 @@ Não coloque query no handler nem regra de negócio no repository.
 2. Handler ([importar-pdf.js](api/grade/importar-pdf.js)) desliga o bodyParser (`export const config = { api: { bodyParser: false } }`) e usa `formidable`.
 3. `grade.service.processarUploadPdf()` repassa o buffer para a **API Python externa** (`PYTHON_API_URL`, hospedada no Render — cold start de 10–40 s; erro vira HTTP 502).
 4. A resposta (`records`) é normalizada — `simplificarSala()` converte códigos `C.xx.xx.andar.sala` no número curto da sala.
-5. `upsert` de salas + `limparGrade`/`inserirGradeLote` no banco, depois `gerarEPublicarIndexEstatico()` republica o JSON no Storage.
+5. Salas que o prédio ainda não conhecia são **criadas como `Pendente`** (as existentes não são tocadas), `limparGrade`/`inserirGradeLote` no banco, depois `gerarEPublicarIndexEstatico()` republica o JSON no Storage. A resposta traz `salasParaDecidir` (+ `primeiraImportacao`) e o [UploadPDF](src/components/UploadPDF.jsx) abre a pergunta "exibir / manter oculta" ([DecisaoSalasNovas.jsx](src/components/DecisaoSalasNovas.jsx)).
+
+## Salas visíveis por prédio
+
+O PDF traz tudo o que tem agendamento no prédio, inclusive espaços que não são sala de aula (auditório, evento, manutenção). `salas.status` decide o que aparece: `Ativa` (visível), `Oculta` (escolhida para não aparecer) e `Pendente` (sala nova vinda de uma importação, oculta até alguém decidir). Regras e textos em [backend_core/utils/salas.js](backend_core/utils/salas.js) (backend) e [src/utils/salas.js](src/utils/salas.js) (front), cobertas por `tests/salas.test.js`.
+- **O filtro é na publicação, não nas telas:** `gerarEPublicarIndexEstatico()` só põe no JSON as salas visíveis e os agendamentos delas (`filtrarPublicacao`), e `_obterGradeOtimizada()` (busca do topo) faz o mesmo. Nenhuma tela do front sabe que salas ocultas existem — não filtre de novo em componente. Os agendamentos das ocultas continuam no banco: reexibir a sala os traz de volta sem reimportar.
+- **Re-import preserva a escolha:** `inserirSalasNovas` usa `ignoreDuplicates` — nunca faça `upsert` de sala com payload parcial (o supabase-js preenche coluna ausente com `null` e apagaria o `status`).
+- **Tela Gestão → Salas do Prédio** ([SalasPredio.jsx](src/components/SalasPredio.jsx)) via `GET/PUT /api/grade/salas` (`edicao_grade`, mesmo gate de importar o PDF). O `PUT` republica o JSON, registra `grade.salas.visibilidade` na auditoria e dispara `avisarGradeRepublicada()` ([useGrade.js](src/hooks/useGrade.js)), que faz todas as instâncias montadas de `useGrade` recarregarem.
 
 ## Modelo de permissões
 

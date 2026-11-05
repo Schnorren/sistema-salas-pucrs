@@ -22,6 +22,7 @@ const ACOES = {
     'contatos.curso_adicionar': 'Curso adicionado',
     'contatos.curso_remover': 'Curso removido',
     'excluir_aviso': 'Aviso apagado',
+    'grade.salas.visibilidade': 'Salas exibidas/ocultadas',
 };
 
 const CATEGORIAS = [
@@ -30,6 +31,7 @@ const CATEGORIAS = [
     ['emprestimos', 'Empréstimos', a => a.startsWith('emprestimo')],
     ['contatos', 'Contatos', a => a.startsWith('contatos.')],
     ['avisos', 'Avisos', a => a.includes('aviso')],
+    ['grade', 'Grade e salas', a => a.startsWith('grade.')],
     ['admin', 'Prédios e cargos', a => a.startsWith('admin.predio') || a.startsWith('admin.perfil')],
 ];
 
@@ -49,6 +51,10 @@ function resumir(item, nomeModulo) {
         case 'admin.usuario.atualizar': return [modulos && `módulos: ${modulos}`, d.senhaAlterada && 'senha alterada'].filter(Boolean).join(' · ');
         case 'contatos.curso_adicionar':
         case 'contatos.curso_remover': return [d.curso, d.contato].filter(Boolean).join(' · ');
+        case 'grade.salas.visibilidade': return [
+            d.exibidas?.length && `exibidas: ${d.exibidas.join(', ')}`,
+            d.ocultadas?.length && `ocultadas: ${d.ocultadas.join(', ')}`,
+        ].filter(Boolean).join(' · ');
         case 'excluir_aviso': return [d.tipo === 'CHAVE' ? 'Autorização de chave' : d.tipo, d.referencia].filter(Boolean).join(' · ');
         default:
             if (d.nome) return d.nome;

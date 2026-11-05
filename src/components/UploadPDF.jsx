@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
+import { avisarGradeRepublicada } from '../hooks/useGrade';
+import { useSalasPredio } from '../hooks/useSalasPredio';
+import { ROTAS } from '../rotas';
+import DecisaoSalasNovas from './DecisaoSalasNovas';
 
 // Etapas exibidas durante a importação. O backend processa tudo numa única
 // requisição (sem eventos de progresso), então só o envio tem progresso real;
@@ -43,6 +48,9 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
     const [arquivo, setArquivo] = useState(null);
     const [resultado, setResultado] = useState(null);
     const [erroMsg, setErroMsg] = useState('');
+    // Salas novas da importação aguardando "exibir / manter oculta"
+    const [decisao, setDecisao] = useState(null);
+    const { pendentes, recarregar: recarregarSalas, salvarVisibilidade, salvando } = useSalasPredio(session, acesso);
 
     const timersRef = useRef([]);
     const etapaRef = useRef(0);
@@ -145,15 +153,17 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             limparTimers();
             avancarEtapa(3);
             setProgresso(100);
-            if (window.__GRADE_CACHE) {
-                window.__GRADE_CACHE[idParaUpload] = null;
-            }
+            avisarGradeRepublicada(idParaUpload);
+            recarregarSalas();
             setResultado(data);
 
             // Pausa breve para o usuário ver todas as etapas concluídas
             timersRef.current.push(setTimeout(() => {
                 setFase('sucesso');
                 toast.success(`Sucesso! ${data.registrosInseridos} aulas inseridas na base.`);
+                if (data.salasParaDecidir?.length) {
+                    setDecisao({ salas: data.salasParaDecidir, primeiraImportacao: !!data.primeiraImportacao });
+                }
                 if (onUploadSuccess) onUploadSuccess();
             }, 600));
 
@@ -166,6 +176,39 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             e.target.value = null;
         }
     };
+
+    const salvarDecisao = async ({ exibir, ocultar }) => {
+        try {
+            await salvarVisibilidade({ exibir, ocultar });
+            setDecisao(null);
+            if (exibir.length + ocultar.length === 1) {
+                toast.success(exibir.length ? `Sala ${exibir[0]} adicionada ao sistema.` : `Sala ${ocultar[0]} mantida oculta.`);
+            } else {
+                toast.success(`Escolha salva: ${exibir.length} ${exibir.length === 1 ? 'sala exibida' : 'salas exibidas'}, ${ocultar.length} ${ocultar.length === 1 ? 'oculta' : 'ocultas'}.`);
+            }
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível salvar a escolha das salas.');
+        }
+    };
+
+    const modalDecisao = decisao && (
+        <DecisaoSalasNovas
+            salas={decisao.salas}
+            primeiraImportacao={decisao.primeiraImportacao}
+            salvando={salvando}
+            onSalvar={salvarDecisao}
+            onFechar={() => setDecisao(null)}
+        />
+    );
+
+    const avisoPendentes = !decisao && pendentes.length > 0 && (
+        <div style={{ margin: '18px auto 0', maxWidth: '460px', padding: '10px 14px', borderRadius: '8px', background: 'var(--blue-b)', color: 'var(--blue)', fontSize: '12px', lineHeight: 1.5 }}>
+            {pendentes.length === 1
+                ? <>A sala <b>{pendentes[0].numero}</b> ainda aguarda decisão e não aparece no sistema. </>
+                : <><b>{pendentes.length} salas</b> ainda aguardam decisão e não aparecem no sistema. </>}
+            <Link to={ROTAS.salasPredio} style={{ color: 'inherit', fontWeight: 'bold' }}>Revisar em Salas do Prédio</Link>
+        </div>
+    );
 
     if (fase === 'executando') {
         const concluido = progresso >= 100;
@@ -215,6 +258,8 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
                 <button className="btn-primary" onClick={resetar}>
                     Importar outro arquivo
                 </button>
+                {avisoPendentes}
+                {modalDecisao}
             </div>
         );
     }
@@ -256,6 +301,7 @@ export default function UploadCSV({ session, acesso, onUploadSuccess }) {
             >
                 Selecionar Arquivo PDF
             </button>
+            {avisoPendentes}
         </div>
     );
 }

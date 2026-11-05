@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, NavLink, Link, matchPath, useLocation, useNavi
 import { ROTAS } from '../rotas';
 import Topbar from './Topbar';
 import UploadCSV from './UploadPDF';
+import SalasPredio from './SalasPredio';
 import NextClasses from './NextClasses';
 import FreeRooms from './FreeRooms';
 import Timeline from './Timeline';
@@ -301,6 +302,7 @@ export default function Dashboard({ session }) {
     canViewOperacional && { to: ROTAS.ocupacao, rotulo: 'Ocupação Semanal' },
     canViewRelatorios && { to: ROTAS.historicoAulas, rotulo: 'Histórico de Aulas (BI)' },
     canEditGrade && { to: ROTAS.atualizarGrade, rotulo: 'Atualizar Grade CSV/PDF' },
+    canEditGrade && { to: ROTAS.salasPredio, rotulo: 'Salas do Prédio' },
     canViewEquipe && { to: ROTAS.equipe, rotulo: 'Gestão de Equipe' },
     (canViewEmprestimos || canViewRelatorios) && { to: ROTAS.relatorioEmprestimos, rotulo: 'Relatório de Empréstimos' },
     // Painel Admin saiu das abas (só admin vê)
@@ -575,6 +577,7 @@ export default function Dashboard({ session }) {
               </div>
             )}
           />
+          <Route path={ROTAS.salasPredio} element={restrita(canEditGrade, <SalasPredio session={session} acesso={acesso} />)} />
           <Route path={ROTAS.equipe} element={restrita(canViewEquipe, <GestaoEquipe session={session} acesso={acesso} />)} />
           <Route path={ROTAS.relatorioEmprestimos} element={restrita(canViewEmprestimos || canViewRelatorios, <RelatoriosEmprestimos session={session} acesso={acesso} />)} />
 

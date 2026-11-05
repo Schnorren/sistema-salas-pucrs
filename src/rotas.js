@@ -23,6 +23,7 @@ export const ROTAS = {
   ocupacao: '/gestao/ocupacao',
   historicoAulas: '/gestao/historico-aulas',
   atualizarGrade: '/gestao/atualizar-grade',
+  salasPredio: '/gestao/salas-do-predio',
   equipe: '/gestao/equipe',
   relatorioEmprestimos: '/gestao/relatorio-emprestimos',
 };
