@@ -70,8 +70,17 @@ class EmprestimosService {
             nomeAluno: e.nome_aluno,
             dataRetirada: e.data_retirada,
             dataDevolucao: e.data_devolucao,
-            responsavel: e.resp_devolucao
+            responsavel: e.resp_devolucao,
+            responsavelRetirada: e.resp_retirada
         }));
+    }
+
+    // Bipagem: acha o item em qualquer categoria do prédio (antes só na aberta)
+    async buscarItem(termo, predioId) {
+        const t = limparTexto(termo, 60);
+        if (!t) throw new ErroPublico("Informe o código ou o nome do item.");
+        if (!predioId) throw new ErroPublico("Prédio não informado.");
+        return await repository.buscarItemNoPredio(t, predioId);
     }
 
     async consultarMatricula(matricula, predioId) {

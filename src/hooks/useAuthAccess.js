@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabase';
 
 export const useAuthAccess = (session) => {
@@ -8,8 +8,16 @@ export const useAuthAccess = (session) => {
         predioId: null,
         predioNome: '',
         isGlobal: false,
-        permissoes: []
+        permissoes: [],
+        // Falha ao consultar (rede, sessão): NÃO é o mesmo que "sem acesso" — o
+        // Dashboard mostra "tentar de novo" em vez da tela de conta órfã.
+        erro: false
     });
+    const [tentativa, setTentativa] = useState(0);
+    const recarregar = useCallback(() => {
+        setAcesso(prev => ({ ...prev, loading: true, erro: false }));
+        setTentativa(t => t + 1);
+    }, []);
 
     useEffect(() => {
         const fetchAcesso = async () => {
@@ -54,12 +62,13 @@ export const useAuthAccess = (session) => {
                 }
 
             } catch {
-                setAcesso(prev => ({ ...prev, loading: false }));
+                setAcesso(prev => ({ ...prev, loading: false, erro: true }));
             }
         };
 
         fetchAcesso();
-    }, [session]);
+    }, [session, tentativa]);
 
-    return acesso;
+    // Identidade estável: SeletorPredio e outros efeitos dependem de `acesso`
+    return useMemo(() => ({ ...acesso, recarregar }), [acesso, recarregar]);
 };

@@ -30,7 +30,7 @@ class LocalErrorBoundary extends Component {
     }
 }
 
-function HistoricalReportsCore({ acesso }) {
+function HistoricalReportsCore({ session, acesso }) {
     const predioContext = usePredio() || {};
     const predioAtivo = predioContext.predioAtivo;
 
@@ -85,15 +85,16 @@ function HistoricalReportsCore({ acesso }) {
 
         try {
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append('arquivo', file);
 
-            const baseUrl = import.meta.env.VITE_PYTHON_API_URL || '';
-            const analyzeUrl = baseUrl ? baseUrl.replace('/extract-pdf', '/analyze-bi') : '';
-
-            if (!analyzeUrl) throw new Error("URL da API Python não configurada.");
-
-            const res = await fetch(analyzeUrl, {
+            // Passa pela API do sistema (login + módulo Relatórios), que repassa
+            // ao extrator — o navegador não fala mais direto com ele.
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/grade/analisar-pdf`, {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'x-predio-id': currentPredioId
+                },
                 body: formData
             });
 

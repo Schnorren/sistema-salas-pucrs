@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
+import { useTrocasSala } from '../hooks/useTrocasSala';
+import { periodosAfetadosPelaTroca } from '../utils/aulasDoDia';
 import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getDiaAtual, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -16,6 +18,13 @@ export default function NextClasses({ acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
+  // Trocas de sala da semana — a chave do bloco é "<dia>-<sala>-<período inicial>"
+  const trocas = useTrocasSala(predioAtual);
+  const trocaDaAula = (aula) => {
+    const registro = trocas[`${day}-${aula.sala}-${aula.periodos[0]}`];
+    if (!registro) return null;
+    return { ...registro, afetados: periodosAfetadosPelaTroca(registro, aula.periodos).join('') };
+  };
 
   const [day, setDay] = useState(getDiaAtual());
   const [per, setPer] = useState('auto');
@@ -112,13 +121,20 @@ export default function NextClasses({ acesso }) {
       todasAsAulas: applyFilterAndSort(dataProcessed.todasAsAulas)
     };
   }, [dataProcessed, filtro, ordem]);
-  const renderCard = (aula, isCurrent) => (
-    <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`}>
+  const renderCard = (aula, isCurrent) => {
+    const troca = trocaDaAula(aula);
+    return (
+    <div key={aula.id} className={`nx-card ${isCurrent ? 'cur' : 'nxt'}`} style={troca ? { borderColor: 'var(--red)', background: 'rgba(239, 68, 68, 0.10)' } : undefined}>
       <div className="nct">
         <div className="ncr">{aula.sala}</div>
         <div className="ncp">{aula.periodosFormatados}</div>
       </div>
       <div className="ncc">{aula.nome}</div>
+      {troca && (
+        <div style={{ color: 'var(--red)', fontWeight: 'bold', fontSize: '11px', margin: '4px 0' }}>
+          🔁 Transferida para Prédio {troca.predio_destino} · Sala {troca.sala_destino} ({troca.afetados})
+        </div>
+      )}
       <div className="nct2">
         {isCurrent
           ? `Término às ${aula.horarioFim}`
@@ -129,7 +145,8 @@ export default function NextClasses({ acesso }) {
         {aula.tipo}
       </div>
     </div>
-  );
+    );
+  };
 
   const renderCompactRow = (aula) => (
     <div key={aula.id} style={{
@@ -140,7 +157,7 @@ export default function NextClasses({ acesso }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div style={{ fontWeight: 'bold', color: '#60a5fa', width: '45px' }}>{aula.horarioInicio}</div>
         <div style={{ fontWeight: 'bold', background: 'rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>{aula.sala}</div>
-        <div style={{ color: 'var(--text, #f8fafc)', fontSize: '14px', fontWeight: '500' }}>{aula.nome} <span style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '12px', fontWeight: 'normal' }}>({aula.periodosFormatados})</span></div>
+        <div style={{ color: 'var(--text, #f8fafc)', fontSize: '14px', fontWeight: '500' }}>{aula.nome} <span style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '12px', fontWeight: 'normal' }}>({aula.periodosFormatados})</span>{trocaDaAula(aula) && <span style={{ color: 'var(--red)', fontSize: '12px', fontWeight: 'bold', marginLeft: '8px' }}>🔁 P.{trocaDaAula(aula).predio_destino} - SL.{trocaDaAula(aula).sala_destino}</span>}</div>
       </div>
       <div style={{ fontSize: '11px', textTransform: 'uppercase', color: aula.tipo === 'Interno' ? '#f59e0b' : '#9ca3af', border: `1px solid ${aula.tipo === 'Interno' ? '#f59e0b' : '#475569'}`, padding: '2px 6px', borderRadius: '4px' }}>
         {aula.tipo}

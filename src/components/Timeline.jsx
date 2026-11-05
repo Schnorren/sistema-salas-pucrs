@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
 import { useTrocasSala } from '../hooks/useTrocasSala';
+import { parsearNomeAula, periodosAfetadosPelaTroca } from '../utils/aulasDoDia';
 import logoPucrs from '../assets/logos/pucrs.jpeg';
 import logoLiving360 from '../assets/logos/living360.jpeg';
 
@@ -16,14 +17,7 @@ const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', '
 const DAYS_EN = { Segunda: 'Monday', 'Terça': 'Tuesday', Quarta: 'Wednesday', Quinta: 'Thursday', Sexta: 'Friday', 'Sábado': 'Saturday', Domingo: 'Sunday' };
 
 // Fora do componente — funções puras sem dependência de estado.
-// Extrai código/crédito e nome limpo do padrão "97316-04/1 - BRANDED CONTENT"
-const parsearNomeAula = (nomeBruto) => {
-  if (!nomeBruto) return { codCred: '', nomeAula: nomeBruto || '' };
-  // Padrão: sequência alfanumérica com hífens/barras, seguida de " - ", seguida do nome
-  const match = nomeBruto.match(/^([A-Z0-9]{3,}[-/][A-Z0-9/]+)\s+-\s+(.+)$/i);
-  if (match) return { codCred: match[1].trim(), nomeAula: match[2].trim() };
-  return { codCred: '', nomeAula: nomeBruto };
-};
+// parsearNomeAula e periodosAfetadosPelaTroca vêm de utils/aulasDoDia (compartilhados com Planta/Próximas aulas)
 
 const normalizeText = (text) => text ? text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
 
@@ -44,19 +38,6 @@ const descreverErroTroca = (err, fallback) => {
   return fallback;
 };
 
-// Um bloco de aula pode ter v\u00e1rios per\u00edodos consecutivos (ex: LMNP) e a troca
-// \u00e0s vezes vale s\u00f3 para uma parte deles (ex: s\u00f3 LM mudam de sala). O registro
-// salvo carrega essa sele\u00e7\u00e3o em periodos_str como lista separada por v\u00edrgula
-// ("L,M"). Registros de antes dessa feature (ou sem o campo) gravaram o
-// bloco inteiro concatenado sem v\u00edrgula (ex: "LMNP") \u2014 nesse formato nenhuma
-// parte bate exatamente com um c\u00f3digo de per\u00edodo do bloco, ent\u00e3o o filtro
-// abaixo fica vazio e ca\u00edmos no fallback "bloco inteiro" (mesmo
-// comportamento de antes da feature).
-const periodosAfetadosPelaTroca = (registro, periodosDoBloco) => {
-  if (!registro?.periodos_str) return periodosDoBloco;
-  const validos = registro.periodos_str.split(',').map(s => s.trim()).filter(p => periodosDoBloco.includes(p));
-  return validos.length ? validos : periodosDoBloco;
-};
 
 // Períodos efetivamente selecionados dentro do bloco (aula.periodos é a lista
 // completa e ordenada) + o intervalo de horário correspondente — usado tanto

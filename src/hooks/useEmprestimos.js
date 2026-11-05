@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '../supabase';
+import { lerBalcao } from '../utils/balcao';
 
 // Lê o corpo do erro da resposta HTTP e lança com a mensagem correta do servidor
 async function parseResponse(res) {
@@ -17,7 +18,9 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
     const getHeaders = () => ({
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
-        'x-predio-id': predioId || ''
+        'x-predio-id': predioId || '',
+        // Nome deste computador (login compartilhado na recepção) — ver utils/balcao.js
+        'x-balcao': encodeURIComponent(lerBalcao())
     });
 
     // userId na queryKey evita colisão de cache entre usuários de prédios diferentes
@@ -107,6 +110,12 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
 
     // Propaga o erro: quem chama precisa distinguir "aluno sem cadastro" de
     // "consulta falhou" (senão uma queda de rede vira 'aluno novo' silenciosamente)
+    // Item de qualquer categoria do prédio (null se não existir)
+    const buscarItem = async (termo) => {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/itens/buscar?q=${encodeURIComponent(termo)}`, { headers: getHeaders() });
+        return parseResponse(res);
+    };
+
     const consultarAluno = async (matricula) => {
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/aluno/${encodeURIComponent(matricula)}`, { headers: getHeaders() });
         return parseResponse(res);
@@ -147,6 +156,7 @@ export const useEmprestimos = (session, predioId, categoriaId) => {
         devolvendo: devolverMutation.isPending,
         alterandoStatus: manutencaoMutation.isPending,
         consultarAluno,
+        buscarItem,
         registrarRetirada: (dados) => retirarMutation.mutateAsync(dados),
         registrarDevolucao: (id) => devolverMutation.mutateAsync(id),
         alterarStatusManutencao: (itemId, status, obs) => manutencaoMutation.mutateAsync({ itemId, status, observacao: obs })
