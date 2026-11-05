@@ -9,5 +9,6 @@ export const STATUS_EMPRESTIMO = {
     ATIVO: 'ATIVO',
     CONCLUIDO: 'CONCLUIDO',
     CANCELADO: 'CANCELADO',      // retirada desfeita (fora das estatísticas)
-    EXTRAVIADO: 'EXTRAVIADO'     // não devolvido
+    EXTRAVIADO: 'EXTRAVIADO',    // não devolvido
+    TRANSFERIDO: 'TRANSFERIDO'   // troca de titular: o item passou para outro aluno
 };

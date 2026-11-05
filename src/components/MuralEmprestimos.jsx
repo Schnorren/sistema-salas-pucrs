@@ -148,9 +148,9 @@ const AlertasAluno = ({ aluno }) => {
     );
 };
 
-const CartaoAluno = ({ aluno, nome, onCorrigirNome, corrigindo, children }) => (
+const CartaoAluno = ({ aluno, nome, onCorrigirNome, corrigindo, rotulo = 'ALUNO IDENTIFICADO', children }) => (
     <div className="card-aluno-identificado">
-        <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '4px' }}>ALUNO IDENTIFICADO</div>
+        <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '4px' }}>{rotulo}</div>
         <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             👤 {nome || 'Novo cadastro'}
             {nome && onCorrigirNome && (
@@ -161,6 +161,122 @@ const CartaoAluno = ({ aluno, nome, onCorrigirNome, corrigindo, children }) => (
         {children}
     </div>
 );
+
+// ---------------------------------------------------------------------------
+// Troca de titular: o item passa para outro aluno sem voltar ao balcão (o
+// crachá retido passa a ser o dele). Bipa o crachá do novo aluno → o balcão
+// confere suspensão e limite do ponto → nome (se for a 1ª vez) → confirma.
+// Como na devolução do wizard: Enter com o campo vazio confirma; outro crachá
+// bipado troca o aluno conferido (o Enter do leitor não confirma por engano).
+// Quem garante a regra é a RPC emprestimo_transferir; aqui é só a prévia.
+// ---------------------------------------------------------------------------
+const ModalTrocaTitular = ({ emprestimo, consultarAluno, onConfirmar, onFechar, salvando }) => {
+    const [cracha, setCracha] = useState('');
+    const [novo, setNovo] = useState(null);
+    const [nome, setNome] = useState('');
+    const [consultando, setConsultando] = useState(false);
+    const [erro, setErro] = useState('');
+    const nomeAtual = normalizarNome(emprestimo.nomeAluno) || 'o aluno';
+    const deQuem = primeiroNome(nomeAtual);
+
+    // Esc fecha (o Esc do wizard não age com modal aberto)
+    useEffect(() => {
+        const aoTeclar = (e) => { if (e.key === 'Escape' && !salvando) onFechar(); };
+        window.addEventListener('keydown', aoTeclar);
+        return () => window.removeEventListener('keydown', aoTeclar);
+    }, [onFechar, salvando]);
+
+    const semVaga = novo && !novo.bloqueio && novo.restantes <= 0;
+    const nomeFinal = normalizarNome(nome);
+    const pronto = Boolean(novo) && !novo.bloqueio && !semVaga && nomeFinal.length >= 2 && !salvando;
+
+    const consultar = async (valor) => {
+        const matricula = normalizarMatricula(valor);
+        if (!matricula || consultando) return;
+        setCracha('');
+        setErro('');
+        if (matricula === emprestimo.matricula) {
+            tocarSom('erro');
+            setNovo(null);
+            setErro(`Este crachá é de ${deQuem}, que já está com o item. Bipe o crachá de quem vai ficar com ele.`);
+            return;
+        }
+        setConsultando(true);
+        try {
+            const dados = await consultarAluno(matricula);
+            setNovo(dados);
+            setNome(dados.nome || '');
+            tocarSom(dados.bloqueio || dados.restantes <= 0 ? 'erro' : 'bip');
+        } catch (err) {
+            // Falha na consulta não pode virar "aluno novo"
+            tocarSom('erro');
+            setNovo(null);
+            setErro(`Não foi possível consultar a matrícula: ${err.message || 'verifique a conexão.'}`);
+        } finally {
+            setConsultando(false);
+        }
+    };
+
+    const enviar = (e) => {
+        e.preventDefault();
+        if (cracha.trim()) { consultar(cracha); return; }
+        if (pronto) onConfirmar({ matricula: novo.matricula, nome: nomeFinal });
+    };
+
+    return (
+        <div data-ui-modal="" className="modal-troca-titular" role="dialog" aria-modal="true" aria-labelledby="titulo-troca-titular">
+            <form onSubmit={enviar} className="modal-troca-titular-caixa">
+                <h3 id="titulo-troca-titular">🔁 Trocar titular</h3>
+                <p className="modal-troca-titular-texto">
+                    <b>{emprestimo.nomeItem}</b> está com <b>{nomeAtual}</b>
+                    {emprestimo.matricula && <span className="mono"> ({emprestimo.matricula})</span>}.
+                    {' '}O item passa para outro aluno sem voltar ao balcão.
+                </p>
+
+                {/* readOnly (e não disabled) durante a consulta: disabled tira o foco e o leitor "digitaria" no nada */}
+                <input autoFocus type="text" value={cracha} readOnly={consultando}
+                    onChange={e => setCracha(e.target.value)}
+                    placeholder={consultando ? 'Consultando...' : pronto ? 'Enter confirma · ou bipe outro crachá' : 'Bipe o crachá do novo titular...'}
+                    className="input-bipar matricula" />
+
+                {erro && <div className="alerta-balcao erro">{erro}</div>}
+
+                {novo && (
+                    <>
+                        <CartaoAluno aluno={novo} nome={novo.nome} rotulo="NOVO TITULAR">
+                            {/* Aluno da 1ª vez: o foco vai para o nome (key: outro crachá novo remonta e refoca);
+                                com nome conhecido o foco fica no crachá, onde Enter confirma */}
+                            {!novo.nome && !novo.bloqueio && !semVaga && (
+                                <input key={novo.matricula} autoFocus type="text" value={nome} onChange={e => setNome(e.target.value)}
+                                    placeholder="Nome completo do aluno (primeira vez)" className="input-bipar nome" style={{ marginTop: '10px' }} />
+                            )}
+                        </CartaoAluno>
+                        <AlertasAluno aluno={novo} />
+                        {semVaga && (
+                            <div className="alerta-balcao erro">
+                                ⛔ <b>{primeiroNome(novo.nome) || 'Este aluno'} já está com {novo.ativos.length === 1 ? 'um item' : `${novo.ativos.length} itens`} deste ponto</b>
+                                {novo.limite > 1 ? ` (limite: ${novo.limite})` : ''}. Registre a devolução antes da troca.
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {pronto && (
+                    <div className="alerta-balcao info">↔ Devolva o crachá de {deQuem} e fique com o de {primeiroNome(nomeFinal)}.</div>
+                )}
+
+                <div className="modal-troca-titular-acoes">
+                    <button type="button" onClick={onFechar} disabled={salvando} className="btn-secundario-balcao">Cancelar</button>
+                    {/* Só aria-disabled: com o submit `disabled` o navegador ignora o Enter
+                        do campo (o leitor de crachá não conseguiria nem consultar). enviar() decide. */}
+                    <button type="submit" disabled={salvando} aria-disabled={!pronto} className="btn-trocar-confirmar">
+                        {salvando ? '⏳ Registrando...' : '🔁 Confirmar troca'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+};
 
 // ---------------------------------------------------------------------------
 // Wizard (coluna da esquerda)
@@ -283,19 +399,30 @@ const EmprestimoWizard = ({
         if (step === PASSOS.DEVOLUCAO && aluno?.ativos?.length === 1) devolverItem(aluno.ativos[0]);
     };
 
-    const devolverItem = async (emp, resultado = RESULTADOS_DEVOLUCAO.OK, obs = null) => {
-        if (devolvendo) return; // segurar Enter (key repeat) dispararia N devoluções
-        const ok = await acoes.registrarDevolucao({ ...emp, nomeAluno: aluno?.nome }, resultado, obs);
-        if (!ok) return;
-        const restantes = aluno.ativos.filter(a => a.id !== emp.id);
+    // O item saiu do atendimento deste aluno (devolvido ou passado a outro)
+    const tirarDoAtendimento = (empId, comOcorrencia = false) => {
+        const restantes = (aluno?.ativos || []).filter(a => a.id !== empId);
         if (!restantes.length) { resetFlow(); return; }
         setAluno(a => ({
             ...a,
             ativos: restantes,
             restantes: Math.min(a.limite, a.restantes + 1),
-            ocorrencias: resultado === RESULTADOS_DEVOLUCAO.OK ? a.ocorrencias : { ...a.ocorrencias, total: a.ocorrencias.total + 1 },
+            ocorrencias: comOcorrencia ? { ...a.ocorrencias, total: a.ocorrencias.total + 1 } : a.ocorrencias,
         }));
     };
+
+    const devolverItem = async (emp, resultado = RESULTADOS_DEVOLUCAO.OK, obs = null) => {
+        if (devolvendo) return; // segurar Enter (key repeat) dispararia N devoluções
+        const ok = await acoes.registrarDevolucao({ ...emp, nomeAluno: aluno?.nome }, resultado, obs);
+        if (!ok) return;
+        tirarDoAtendimento(emp.id, resultado !== RESULTADOS_DEVOLUCAO.OK);
+    };
+
+    // Troca de titular (modal no MuralEmprestimos); deu certo → sai do atendimento
+    const trocarTitular = (emp) => acoes.trocarTitular(
+        { ...emp, nomeAluno: aluno?.nome, matricula: aluno?.matricula },
+        () => tirarDoAtendimento(emp.id),
+    );
 
     const devolverComProblema = async (emp) => {
         const obs = await showPrompt(`O que aconteceu com "${emp.nomeItem}"? Ex.: voltou sem a bolinha. O item vai para manutenção.`, '⚠ Devolveu com problema');
@@ -563,7 +690,11 @@ const EmprestimoWizard = ({
                                 <h3 style={{ color: 'var(--amber)', margin: '0 0 10px 0' }}>Item a Devolver:</h3>
                                 <p style={{ fontSize: '24px', fontWeight: '900', color: 'var(--text)', margin: '0 0 6px 0' }}>{aluno.ativos[0].nomeItem}</p>
                                 <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '0 0 18px 0' }}>retirado {rotuloDataHora(aluno.ativos[0].dataRetirada)} · há {duracao(aluno.ativos[0].dataRetirada, agora)} · devolva o crachá ao aluno</p>
-                                <button onClick={() => devolverItem(aluno.ativos[0])} disabled={devolvendo} className="btn-action-primary large">{devolvendo ? '⏳ Registrando...' : '✓ APERTE ENTER OU CLIQUE'}</button>
+                                <div className="botoes-devolucao">
+                                    <button onClick={() => devolverItem(aluno.ativos[0])} disabled={devolvendo} className="btn-action-primary large">{devolvendo ? '⏳ Registrando...' : '✓ APERTE ENTER OU CLIQUE'}</button>
+                                    <button type="button" onClick={() => trocarTitular(aluno.ativos[0])} disabled={devolvendo} className="btn-trocar-titular grande"
+                                        title="O item passa para outro aluno sem voltar ao balcão">🔁 Trocar titular</button>
+                                </div>
                                 <div className="acoes-secundarias">
                                     <button type="button" onClick={() => devolverComProblema(aluno.ativos[0])} disabled={devolvendo}>⚠ devolveu com problema</button>
                                     <button type="button" onClick={() => naoDevolveu(aluno.ativos[0])} disabled={devolvendo}>✖ não devolveu</button>
@@ -587,7 +718,11 @@ const EmprestimoWizard = ({
                                                 <button type="button" onClick={() => naoDevolveu(emp)} disabled={devolvendo}>✖ não devolveu</button>
                                             </div>
                                         </div>
-                                        <button type="button" className="btn-liberar" onClick={() => devolverItem(emp)} disabled={devolvendo}>✓ Devolver</button>
+                                        <div className="botoes-linha-devolucao">
+                                            <button type="button" className="btn-liberar" onClick={() => devolverItem(emp)} disabled={devolvendo}>✓ Devolver</button>
+                                            <button type="button" className="btn-trocar-mini" onClick={() => trocarTitular(emp)} disabled={devolvendo}
+                                                title="O item passa para outro aluno sem voltar ao balcão">🔁 Trocar</button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -623,6 +758,14 @@ const TagHistorico = ({ h }) => {
     if (h.status === STATUS_EMPRESTIMO.CANCELADO) return <span className="tag-status desfeito">↩ Desfeito</span>;
     if (h.status === STATUS_EMPRESTIMO.EXTRAVIADO) return <span className="tag-status perdido">✖ Não devolvido</span>;
     if (h.status === STATUS_EMPRESTIMO.ATIVO) return <span className="tag-status em-uso">🟢 Em Uso</span>;
+    if (h.status === STATUS_EMPRESTIMO.TRANSFERIDO) {
+        return (
+            <>
+                <span className="tag-status concluido">⏳ {duracao(h.dataRetirada, h.dataDevolucao)}</span>
+                <span className="tag-status troca">🔁 Passou para {h.passouPara ? normalizarNome(h.passouPara) : 'outro aluno'}</span>
+            </>
+        );
+    }
     return (
         <>
             <span className="tag-status concluido">⏳ {duracao(h.dataRetirada, h.dataDevolucao)}</span>
@@ -662,7 +805,10 @@ const PainelRegistros = ({ ativos, historico, carregandoHistorico, historicoTemM
                                 return (
                                     <div key={emp.id} className={`emprestimo-card ${previsao?.estado === 'passou' ? 'passou' : ''}`}>
                                         <div className="emp-aluno">👤 {normalizarNome(emp.nomeAluno) || emp.nomeAluno}</div>
-                                        <div className="emp-mat">Matrícula: {emp.matricula}</div>
+                                        <div className="emp-mat">
+                                            Matrícula: {emp.matricula}
+                                            {emp.transferidoDe && <span> · 🔁 recebeu {emp.recebidoDe ? `de ${primeiroNome(normalizarNome(emp.recebidoDe))}` : 'numa troca'}</span>}
+                                        </div>
                                         <div style={{ flex: 1 }}>
                                             <div className="emp-item">📦 {emp.nomeItem}</div>
                                             <div className="emp-cod">Cód: {emp.patrimonio}</div>
@@ -672,13 +818,20 @@ const PainelRegistros = ({ ativos, historico, carregandoHistorico, historicoTemM
                                             <span>🕒 {rotuloDataHora(emp.dataRetirada)}{emp.balcao && <span style={{ opacity: 0.7 }}> · {emp.balcao}</span>}</span>
                                             <span className="tag-tempo">{formatarDuracao(previsao?.decorrido)}</span>
                                         </div>
-                                        <button onClick={() => acoes.confirmarDevolucao(emp)} disabled={devolvendo} className="btn-devolver">⬇️ Receber Devolução</button>
+                                        <div className="botoes-devolucao">
+                                            <button onClick={() => acoes.confirmarDevolucao(emp)} disabled={devolvendo} className="btn-devolver">⬇️ Receber Devolução</button>
+                                            <button type="button" onClick={() => acoes.trocarTitular(emp)} disabled={devolvendo} className="btn-trocar-titular"
+                                                title="O item passa para outro aluno sem voltar ao balcão">🔁 Trocar titular</button>
+                                        </div>
                                         <div className="acoes-secundarias" style={{ marginTop: '8px' }}>
                                             <button type="button" onClick={() => acoes.perguntarProblema(emp)} disabled={devolvendo}>⚠ com problema</button>
                                             <button type="button" onClick={() => acoes.perguntarNaoDevolvido(emp)} disabled={devolvendo}>✖ não devolveu</button>
-                                            {podeDesfazer(emp.dataRetirada, agora) && (
+                                            {podeDesfazer(emp.dataRetirada, agora) && (emp.transferidoDe ? (
+                                                <button type="button" onClick={() => acoes.desfazer({ tipo: 'troca', id: emp.id, de: emp.recebidoDe })} disabled={desfazendo}
+                                                    title="O item volta para quem estava com ele antes">↩ desfazer troca</button>
+                                            ) : (
                                                 <button type="button" onClick={() => acoes.desfazer({ tipo: 'retirada', id: emp.id })} disabled={desfazendo}>↩ desfazer</button>
-                                            )}
+                                            ))}
                                         </div>
                                     </div>
                                 );
@@ -713,6 +866,9 @@ const PainelRegistros = ({ ativos, historico, carregandoHistorico, historicoTemM
                                                     <td>
                                                         <div className="th-aluno-nome">{normalizarNome(h.nomeAluno) || h.nomeAluno}</div>
                                                         <div className="th-aluno-mat">Matrícula: {h.matricula}</div>
+                                                        {h.transferidoDe && (
+                                                            <div className="th-aluno-mat">🔁 recebeu de {h.recebidoDe ? normalizarNome(h.recebidoDe) : 'outro aluno'}</div>
+                                                        )}
                                                     </td>
                                                     <td className="th-item">📦 {h.nomeItem}</td>
                                                     <td>
@@ -776,12 +932,16 @@ export default function MuralEmprestimos({ session, acesso }) {
     const [buscaHistorico, setBuscaHistorico] = useState('');
     const [ultimaAcao, setUltimaAcao] = useState(null);
     const dados = useEmprestimos(session, predioId, pontoId, buscaHistorico);
-    const { devolver, retirar, cancelar, reabrir } = dados;
+    const { devolver, retirar, cancelar, reabrir, transferir } = dados;
+    // Troca de titular aberta: { emprestimo, aoConcluir } (aoConcluir: o wizard tira o item do atendimento)
+    const [troca, setTroca] = useState(null);
+    const fecharTroca = useCallback(() => setTroca(null), []);
 
     const trocarPonto = (id) => {
         setPontoEscolhido(id);
         salvarPontoSalvo(predioId, id);
         setUltimaAcao(null);
+        setTroca(null);
     };
 
     // Ações usadas pelos dois lados (wizard e painel). Retornam true se deu certo.
@@ -819,9 +979,33 @@ export default function MuralEmprestimos({ session, acesso }) {
         }
     };
 
+    const confirmarTroca = async ({ matricula, nome }) => {
+        if (!troca || dados.transferindo) return;
+        const { emprestimo, aoConcluir } = troca;
+        const de = primeiroNome(normalizarNome(emprestimo.nomeAluno)) || 'o aluno';
+        const para = primeiroNome(nome);
+        try {
+            const resp = await transferir({ id: emprestimo.id, matricula, nomeAluno: nome });
+            const texto = `"${emprestimo.nomeItem}" passou de ${de} para ${para}`;
+            tocarSom('ok');
+            setUltimaAcao({ tipo: 'troca', id: resp?.data?.id, de, texto, quando: new Date().toISOString() });
+            toast.success(`${texto}. Devolva o crachá de ${de}.`);
+            setTroca(null);
+            aoConcluir?.();
+        } catch (err) {
+            // O modal continua aberto: dá para bipar outro crachá ou cancelar
+            tocarSom('erro');
+            toast.error(`Erro ao trocar o titular: ${err.message || 'Tente novamente.'}`);
+        }
+    };
+
     const acoes = {
         registrarRetirada,
         registrarDevolucao,
+        trocarTitular: (emp, aoConcluir) => {
+            if (dados.devolvendo || dados.transferindo) return;
+            setTroca({ emprestimo: emp, aoConcluir });
+        },
         confirmarDevolucao: async (emp) => {
             if (dados.devolvendo) return;
             const quem = emp.nomeAluno ? ` de ${primeiroNome(emp.nomeAluno)}` : '';
@@ -840,10 +1024,15 @@ export default function MuralEmprestimos({ session, acesso }) {
         desfazer: async (acao) => {
             if (!acao?.id) return;
             try {
+                // Troca desfeita = cancelar o registro novo: a RPC devolve o item ao titular anterior
                 if (acao.tipo === 'retirada') await cancelar({ id: acao.id, motivo: 'Desfeito no balcão' });
+                else if (acao.tipo === 'troca') await cancelar({ id: acao.id, motivo: 'Troca de titular desfeita no balcão' });
                 else await reabrir(acao.id);
                 tocarSom('ok');
-                toast.success(acao.tipo === 'retirada' ? 'Empréstimo desfeito.' : 'Devolução desfeita — o item voltou para o aluno.');
+                toast.success(
+                    acao.tipo === 'retirada' ? 'Empréstimo desfeito.'
+                        : acao.tipo === 'troca' ? `Troca desfeita — o item voltou para ${acao.de ? primeiroNome(normalizarNome(acao.de)) : 'quem estava com ele antes'}.`
+                            : 'Devolução desfeita — o item voltou para o aluno.');
                 setUltimaAcao(u => (u?.id === acao.id ? null : u));
             } catch (err) {
                 tocarSom('erro');
@@ -894,6 +1083,11 @@ export default function MuralEmprestimos({ session, acesso }) {
                 devolvendo={dados.devolvendo}
                 desfazendo={dados.cancelando || dados.reabrindo}
             />
+            {troca && (
+                <ModalTrocaTitular key={troca.emprestimo.id} emprestimo={troca.emprestimo}
+                    consultarAluno={dados.consultarAluno} salvando={dados.transferindo}
+                    onConfirmar={confirmarTroca} onFechar={fecharTroca} />
+            )}
         </div>
     );
 }

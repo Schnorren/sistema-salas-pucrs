@@ -9,6 +9,7 @@ import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
 //                                      GET  /aluno/:mat?ponto=         PUT /aluno/:mat {nome}
 //                                      POST /retirar {itemId, matricula, nomeAluno}
 //                                      POST /devolver/:id {resultado, obs}
+//                                      POST /transferir/:id {matricula, nomeAluno}  (troca de titular)
 //                                      POST /cancelar/:id {motivo}     POST /reabrir/:id
 //                                      PUT  /itens/:id/manutencao {status, observacoes}
 //                                      GET  /historico?ponto=&busca=&antes=
@@ -159,10 +160,25 @@ async function handler(req, res) {
             return res.status(200).json({ success: true, data: registro });
         }
 
+        if (req.method === 'POST' && c1 === 'transferir' && c2) {
+            // Campos explícitos, como na retirada
+            const { registro, anterior } = await service.transferir(user, c2, {
+                matricula: body.matricula, nomeAluno: body.nomeAluno,
+            }, balcao);
+            await auditar('emprestimo.transferir', 'emprestimos_registro', registro?.id, {
+                item: anterior.item?.nome_item || null, de: anterior.matricula_aluno,
+                para: registro?.matricula_aluno || null, anterior: anterior.id, balcao: balcao || null,
+            });
+            return res.status(201).json({ success: true, data: registro });
+        }
+
         if (req.method === 'POST' && c1 === 'cancelar' && c2) {
             const { registro, anterior } = await service.cancelar(user, c2, { motivo: body.motivo }, balcao);
-            await auditar('emprestimo.cancelar', 'emprestimos_registro', c2,
-                { matricula: anterior.matricula_aluno, item: anterior.item?.nome_item || null, balcao: balcao || null });
+            await auditar('emprestimo.cancelar', 'emprestimos_registro', c2, {
+                matricula: anterior.matricula_aluno, item: anterior.item?.nome_item || null, balcao: balcao || null,
+                // Desfez uma troca de titular: o item voltou para o registro anterior
+                ...(anterior.transferido_de ? { trocaDesfeita: true } : {}),
+            });
             return res.status(200).json({ success: true, data: registro });
         }
 

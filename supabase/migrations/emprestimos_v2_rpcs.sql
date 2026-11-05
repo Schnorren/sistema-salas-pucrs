@@ -2,14 +2,59 @@
 -- =====================================================================
 -- Toda regra que precisa ser atômica entre os PCs do balcão vive aqui:
 --   emprestimo_retirar   trava o item; acervo ativo; bloqueio; limite do ponto
+--   emprestimo_transferir troca de titular: o item passa para outro aluno sem voltar ao balcão
 --   emprestimo_devolver  OK | COM_PROBLEMA (item → manutenção) | NAO_DEVOLVIDO (item → perdido)
---   emprestimo_cancelar  desfaz retirada em até 10 min (CANCELADO, fora das estatísticas)
+--   emprestimo_cancelar  desfaz retirada em até 10 min (CANCELADO, fora das estatísticas);
+--                        se a retirada veio de uma troca, o item volta para o titular anterior
 --   emprestimo_reabrir   desfaz devolução em até 10 min, se o item não saiu de novo
 --   emprestimo_estatisticas  relatório por prédio e pontos
 --   emprestimo_uso_itens     uso por item (tela de gestão)
 -- A janela de 10 min é espelhada em JANELA_DESFAZER_MIN (backend_core/utils/emprestimoRegras.js).
 -- O service valida o acesso do usuário ao ponto; aqui vale o prédio (defesa em profundidade).
 -- Rode DEPOIS de emprestimos_v2.sql.
+
+-- ---------------------------------------------------------------------
+-- Regra do aluno que vai ficar com um item do ponto (retirada e troca de
+-- titular): suspensão no prédio e limite de itens por aluno no ponto. Só é
+-- chamada de dentro das RPCs (roda como o dono delas); a trava por
+-- matrícula vale até o fim da transação de quem chamou.
+create or replace function emprestimo_validar_aluno(
+    p_predio_id uuid,
+    p_ponto_id  uuid,
+    p_limite    int,
+    p_matricula text
+)
+returns void language plpgsql set search_path = public as $$
+declare
+    v_bloq   emprestimo_bloqueios%rowtype;
+    v_ativos int;
+begin
+    select * into v_bloq
+      from emprestimo_bloqueios b
+     where b.predio_id = p_predio_id and b.matricula = p_matricula and b.removido_em is null
+       and (b.ate is null or b.ate >= (now() at time zone 'America/Sao_Paulo')::date)
+     order by b.criado_em desc
+     limit 1;
+    if found then
+        raise exception 'Aluno suspenso dos empréstimos%: %',
+            case when v_bloq.ate is null then '' else ' até ' || to_char(v_bloq.ate, 'DD/MM/YYYY') end,
+            v_bloq.motivo;
+    end if;
+
+    -- Serializa retiradas da mesma matrícula no mesmo ponto (fecha a janela
+    -- entre a contagem abaixo e o INSERT de quem chamou)
+    perform pg_advisory_xact_lock(hashtext('emprestimo:' || p_ponto_id::text || ':' || p_matricula));
+    select count(*) into v_ativos
+      from emprestimos_registro
+     where ponto_id = p_ponto_id and matricula_aluno = p_matricula and status = 'ATIVO';
+    if v_ativos >= p_limite then
+        if p_limite = 1 then
+            raise exception 'Este aluno já está com um item deste ponto. Registre a devolução antes de uma nova retirada.';
+        end if;
+        raise exception 'Este aluno já está com % itens deste ponto (limite: %).', v_ativos, p_limite;
+    end if;
+end;
+$$;
 
 -- ---------------------------------------------------------------------
 create or replace function emprestimo_retirar(
@@ -25,10 +70,8 @@ declare
     v_item   emprestimo_itens%rowtype;
     v_cat    emprestimo_categorias%rowtype;
     v_ponto  emprestimo_pontos%rowtype;
-    v_bloq   emprestimo_bloqueios%rowtype;
     v_mat    text := left(nullif(trim(coalesce(p_matricula, '')), ''), 50);
     v_nome   text := left(nullif(trim(coalesce(p_nome, '')), ''), 255);
-    v_ativos int;
     v_res    json;
 begin
     if v_mat is null then raise exception 'Matrícula não informada.'; end if;
@@ -54,30 +97,8 @@ begin
         raise exception 'Este item não está disponível para empréstimo.';
     end if;
 
-    select * into v_bloq
-      from emprestimo_bloqueios b
-     where b.predio_id = p_predio_id and b.matricula = v_mat and b.removido_em is null
-       and (b.ate is null or b.ate >= (now() at time zone 'America/Sao_Paulo')::date)
-     order by b.criado_em desc
-     limit 1;
-    if found then
-        raise exception 'Aluno suspenso dos empréstimos%: %',
-            case when v_bloq.ate is null then '' else ' até ' || to_char(v_bloq.ate, 'DD/MM/YYYY') end,
-            v_bloq.motivo;
-    end if;
-
-    -- Serializa retiradas da mesma matrícula no mesmo ponto (fecha a janela
-    -- entre a contagem abaixo e o INSERT)
-    perform pg_advisory_xact_lock(hashtext('emprestimo:' || v_ponto.id::text || ':' || v_mat));
-    select count(*) into v_ativos
-      from emprestimos_registro
-     where ponto_id = v_ponto.id and matricula_aluno = v_mat and status = 'ATIVO';
-    if v_ativos >= v_ponto.limite_por_aluno then
-        if v_ponto.limite_por_aluno = 1 then
-            raise exception 'Este aluno já está com um item deste ponto. Registre a devolução antes de uma nova retirada.';
-        end if;
-        raise exception 'Este aluno já está com % itens deste ponto (limite: %).', v_ativos, v_ponto.limite_por_aluno;
-    end if;
+    -- Suspensão e limite do ponto (mesma regra da troca de titular)
+    perform emprestimo_validar_aluno(p_predio_id, v_ponto.id, v_ponto.limite_por_aluno, v_mat);
 
     update emprestimo_itens set status = 'EMPRESTADO' where id = v_item.id;
 
@@ -90,6 +111,76 @@ begin
     returning row_to_json(emprestimos_registro.*) into v_res;
 
     -- Nome por matrícula (global), na mesma transação
+    insert into alunos_cache (matricula, nome, ultimo_acesso)
+    values (v_mat, v_nome, now())
+    on conflict (matricula) do update set nome = excluded.nome, ultimo_acesso = excluded.ultimo_acesso;
+
+    return v_res;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- Troca de titular: o item passa do aluno do empréstimo para outro sem
+-- voltar ao balcão (o crachá retido passa a ser o do novo aluno). Tudo numa
+-- transação: o registro de quem passou fica TRANSFERIDO, encerrado agora, e
+-- nasce um ATIVO para o novo aluno, ligado pelo transferido_de. O item fica
+-- EMPRESTADO o tempo todo (o outro PC nunca o vê livre). Novo aluno suspenso
+-- ou no limite do ponto → erro e nada muda. O item não passa pela conferência
+-- do balcão: problema que aparecer depois fica com o novo titular.
+create or replace function emprestimo_transferir(
+    p_predio_id     uuid,
+    p_emprestimo_id uuid,
+    p_matricula     text,
+    p_nome          text,
+    p_resp          text,
+    p_balcao        text
+)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+    v_reg    emprestimos_registro%rowtype;
+    v_ponto  emprestimo_pontos%rowtype;
+    v_mat    text := left(nullif(trim(coalesce(p_matricula, '')), ''), 50);
+    v_nome   text := left(nullif(trim(coalesce(p_nome, '')), ''), 255);
+    v_resp   text := left(coalesce(nullif(trim(p_resp), ''), 'Sistema'), 255);
+    v_balcao text := left(nullif(trim(coalesce(p_balcao, '')), ''), 60);
+    v_res    json;
+begin
+    if v_mat is null then raise exception 'Matrícula não informada.'; end if;
+    if v_nome is null then raise exception 'Nome do aluno não informado.'; end if;
+
+    -- Trava o empréstimo: devolução ou outra troca simultânea esperam e,
+    -- depois, encontram o registro já encerrado
+    select * into v_reg from emprestimos_registro where id = p_emprestimo_id for update;
+    if not found or v_reg.predio_id is distinct from p_predio_id then
+        raise exception 'Empréstimo não encontrado.';
+    end if;
+    if v_reg.status <> 'ATIVO' then
+        raise exception 'Este empréstimo já foi encerrado.';
+    end if;
+    if v_reg.matricula_aluno = v_mat then
+        raise exception 'Este aluno já está com o item.';
+    end if;
+
+    select * into v_ponto from emprestimo_pontos where id = v_reg.ponto_id;
+    if v_ponto.id is null then
+        raise exception 'Empréstimo não encontrado.';
+    end if;
+
+    -- Suspensão e limite do ponto (mesma regra da retirada)
+    perform emprestimo_validar_aluno(p_predio_id, v_ponto.id, v_ponto.limite_por_aluno, v_mat);
+
+    update emprestimos_registro
+       set status = 'TRANSFERIDO', data_devolucao = now(), resp_devolucao = v_resp, balcao_devolucao = v_balcao
+     where id = v_reg.id;
+
+    insert into emprestimos_registro
+        (item_id, matricula_aluno, nome_aluno, documento_retido, resp_retirada, balcao_retirada,
+         status, data_retirada, predio_id, ponto_id, transferido_de)
+    values
+        (v_reg.item_id, v_mat, v_nome, 'Crachá Retido', v_resp, v_balcao,
+         'ATIVO', now(), v_reg.predio_id, v_reg.ponto_id, v_reg.id)
+    returning row_to_json(emprestimos_registro.*) into v_res;
+
     insert into alunos_cache (matricula, nome, ultimo_acesso)
     values (v_mat, v_nome, now())
     on conflict (matricula) do update set nome = excluded.nome, ultimo_acesso = excluded.ultimo_acesso;
@@ -186,7 +277,18 @@ begin
         raise exception 'Passou o prazo para desfazer (10 min). Registre a devolução.';
     end if;
 
-    update emprestimo_itens set status = 'DISPONIVEL' where id = v_reg.item_id and status = 'EMPRESTADO';
+    if v_reg.transferido_de is not null then
+        -- Desfaz uma troca de titular: o item continua fora, de volta com
+        -- quem estava com ele antes (não fica livre no balcão)
+        update emprestimos_registro
+           set status = 'ATIVO', data_devolucao = null, resp_devolucao = null, balcao_devolucao = null
+         where id = v_reg.transferido_de and status = 'TRANSFERIDO';
+        if not found then
+            raise exception 'Não foi possível devolver o item a quem estava com ele antes.';
+        end if;
+    else
+        update emprestimo_itens set status = 'DISPONIVEL' where id = v_reg.item_id and status = 'EMPRESTADO';
+    end if;
     update emprestimos_registro
        set status = 'CANCELADO', encerrado_em = now(),
            encerrado_por = left(coalesce(nullif(trim(p_resp), ''), 'Sistema'), 255),
@@ -365,7 +467,12 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- Só a API (service role) — ver regra no CLAUDE.md
+-- Só a API (service role) — ver regra no CLAUDE.md. emprestimo_validar_aluno
+-- é interna: só as RPCs acima a chamam (como dono), nem a API — por isso sai
+-- também do service_role (o Supabase concede EXECUTE a ele em função nova).
+revoke all on function emprestimo_validar_aluno(uuid, uuid, int, text)          from public, anon, authenticated, service_role;
+revoke all on function emprestimo_transferir(uuid, uuid, text, text, text, text) from public, anon, authenticated;
+grant execute on function emprestimo_transferir(uuid, uuid, text, text, text, text) to service_role;
 revoke all on function emprestimo_retirar(uuid, uuid, text, text, text, text)  from public, anon, authenticated;
 revoke all on function emprestimo_devolver(uuid, uuid, text, text, text, text) from public, anon, authenticated;
 revoke all on function emprestimo_cancelar(uuid, uuid, text, text)             from public, anon, authenticated;

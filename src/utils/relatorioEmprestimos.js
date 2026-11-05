@@ -29,6 +29,10 @@ export const SITUACOES = Object.freeze({
   devolvido: 'Devolvido',
   problema: 'Devolvido com problema',
   nao_devolvido: 'Não devolvido',
+  // Troca de titular: o item passou para outro aluno sem voltar ao balcão.
+  // Conta como retirada (decisão do usuário, 05/11/2026), com o tempo de uso
+  // de quem passou; a parte do novo aluno é outra retirada.
+  transferido: 'Passou a outro aluno',
 });
 
 export const TITULO_SERIE = Object.freeze({
@@ -213,6 +217,7 @@ const montarSerie = (momentos, inicio, fim, agora) => {
 // ---------------------------------------------------------- relatório
 const situacaoDe = (r) => {
   if (r.status === 'EXTRAVIADO' || r.ocorrencia === 'NAO_DEVOLVIDO') return 'nao_devolvido';
+  if (r.status === 'TRANSFERIDO') return 'transferido';
   if (!r.devolucao) return 'aberto';
   return r.ocorrencia === 'DEVOLVIDO_COM_PROBLEMA' ? 'problema' : 'devolvido';
 };
@@ -257,7 +262,7 @@ export const montarRelatorio = (dados, { inicio, fim, agora = new Date() } = {})
       if (!momento) return null;
       const item = itemPorId.get(r.item);
       const situacao = situacaoDe(r);
-      const duracaoMin = situacao === 'devolvido' || situacao === 'problema' ? minutosEntre(r.retirada, r.devolucao) : null;
+      const duracaoMin = ['devolvido', 'problema', 'transferido'].includes(situacao) ? minutosEntre(r.retirada, r.devolucao) : null;
       const ponto = pontoPorId.get(r.ponto);
       return {
         retirada: r.retirada,
