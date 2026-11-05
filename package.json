@@ -10,7 +10,8 @@
     "test": "node --test \"tests/*.test.js\" \"tests/api/*.test.js\"",
     "preview": "vite preview",
     "migrate": "node scripts/migrate.mjs",
-    "auditar:banco": "node scripts/auditar-banco.mjs"
+    "auditar:banco": "node scripts/auditar-banco.mjs",
+    "backup": "node scripts/backup.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.0",

@@ -35,6 +35,8 @@ const ORDEM = [
   'contatos_seed.sql',
   'emprestimos_v2.sql',
   'emprestimos_v2_rpcs.sql',
+  // Previsão de volta do painel do balcão: durações já recortadas, uma linha por item
+  'emprestimo_duracoes_recentes.sql',
   // Relatório de empréstimos v2 (dados brutos; contas no front)
   'emprestimos_relatorio.sql',
   // Relatório da rede: login que vê pontos escolhidos de vários prédios

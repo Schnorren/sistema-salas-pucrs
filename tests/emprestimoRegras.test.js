@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   minutosEntre, formatarDuracao, rotuloDataHora, inputDataHoraSP, inputInicioDoDiaSP, resolverItemPorTermo,
   hojeSP, normalizarNome, normalizarMatricula, podeDesfazer, restanteParaDesfazerMs, JANELA_DESFAZER_MIN,
-  mediana, calcularMedianas, preverDevolucao, previsaoDaCategoria,
+  mediana, calcularMedianas, preverDevolucao, previsaoDaCategoria, PREVISAO_VOLTA,
 } from '../backend_core/utils/emprestimoRegras.js';
 
 // Instante em horário de Brasília (UTC-3, sem horário de verão)
@@ -141,6 +141,35 @@ test('duração típica: só as últimas 30 do item contam', () => {
   const recentes = Array(30).fill(10);
   const antigas = Array(40).fill(300);
   assert.equal(calcularMedianas(devolucoes('a', [...recentes, ...antigas]), itens).get('a').mediana, 10);
+});
+
+// O painel recebe da RPC emprestimo_duracoes_recentes uma linha por item com as
+// durações já calculadas — a regra tem que dar o mesmo que com registros brutos.
+test('duração típica: durações já recortadas pelo banco (RPC) dão o mesmo resultado', () => {
+  const itens = [{ id: 'bola1', categoria_id: 'pebolim' }, { id: 'bola2', categoria_id: 'pebolim' }, { id: 'taco', categoria_id: 'sinuca' }];
+  const bruto = [...devolucoes('bola1', [20, 20, 20]), ...devolucoes('bola2', [40, 40]), ...devolucoes('taco', [30, 40, 50, 60, 70, 80])];
+  const daRpc = [
+    { item_id: 'bola1', minutos: [20, 20, 20] },
+    { item_id: 'bola2', minutos: [40, 40] },
+    { item_id: 'taco', minutos: [30, 40, 50, 60, 70, 80] },
+  ];
+  assert.deepEqual(calcularMedianas(daRpc, itens), calcularMedianas(bruto, itens));
+  assert.deepEqual(calcularMedianas(daRpc, itens).get('taco'), { mediana: 55, amostras: 6, fonte: 'item' });
+});
+
+test('duração típica: formato da RPC também respeita o intervalo válido e o teto por item', () => {
+  const itens = [{ id: 'a', categoria_id: 'c' }];
+  // a RPC já filtra, mas a regra não confia nisso
+  const m = calcularMedianas([{ item_id: 'a', minutos: [1, 30, 30, 30, 30, 30, 900] }], itens);
+  assert.deepEqual(m.get('a'), { mediana: 30, amostras: 5, fonte: 'item' });
+  const longa = [{ item_id: 'a', minutos: [...Array(30).fill(10), ...Array(40).fill(300)] }];
+  assert.deepEqual(calcularMedianas(longa, itens).get('a'), { mediana: 10, amostras: 30, fonte: 'item' });
+  assert.equal(calcularMedianas([{ item_id: 'a', minutos: [] }, null], itens).has('a'), false);
+});
+
+test('duração típica: limites padrão vêm de PREVISAO_VOLTA (os mesmos passados à RPC)', () => {
+  assert.deepEqual({ ...PREVISAO_VOLTA }, { porItem: 30, minimo: 5, minMin: 2, maxMin: 720 });
+  assert.equal(Object.isFrozen(PREVISAO_VOLTA), true);
 });
 
 test('previsão de volta: no tempo, passou do habitual e sem histórico', () => {
