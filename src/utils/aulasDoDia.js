@@ -130,3 +130,59 @@ export const diaDaData = (iso) => {
 
 // Ordena códigos de período pela ordem da PUCRS (E1 depois de E).
 export const ordenarPeriodos = (codigos) => [...codigos].sort((a, b) => (IDX_PERIODO[a] ?? 99) - (IDX_PERIODO[b] ?? 99));
+
+// ------------------------------------------------------------ trocas de sala
+// Chave da troca "<dia>-<sala>-<período inicial>" desmontada. A sala pode ter
+// hífen ("LAB-2"); o dia e o período não têm.
+export const desmontarChave = (chave) => {
+  const partes = String(chave || '').split('-');
+  if (partes.length < 3) return null;
+  return { dia: partes[0], sala: partes.slice(1, -1).join('-'), periodo: partes[partes.length - 1] };
+};
+
+// Bloco de aula da grade que a chave de uma troca aponta (null se a grade mudou
+// depois da troca — re-import moveu/removeu a aula).
+export const blocoDaChave = (gradeBruta, chave) => {
+  const c = desmontarChave(chave);
+  if (!c) return null;
+  const blocos = blocosDaSala(slotsDoDia(gradeBruta, c.dia).get(c.sala), c.dia, c.sala);
+  return blocos.find((b) => b.chave === chave) || null;
+};
+
+// "19:15 às 20:45" de uma lista de períodos (do primeiro ao fim do último).
+export const horarioDosPeriodos = (codigos) => {
+  const ordenados = ordenarPeriodos(codigos || []).filter((p) => p in IDX_PERIODO);
+  if (!ordenados.length) return '';
+  return `${PERIODS[IDX_PERIODO[ordenados[0]]].lb} às ${PERIOD_END_TIMES[ordenados[ordenados.length - 1]]}`;
+};
+
+const DIA_EXTENSO = { Segunda: 'segunda-feira', 'Terça': 'terça-feira', Quarta: 'quarta-feira', Quinta: 'quinta-feira', Sexta: 'sexta-feira', 'Sábado': 'sábado', Domingo: 'domingo' };
+// Datas "AAAA-MM-DD" formatadas sem passar por fuso: "09/11" e "segunda-feira, 09/11/2026".
+export const dataCurta = (iso) => { const [, m, d] = String(iso || '').split('-'); return d && m ? `${d}/${m}` : ''; };
+export const dataPorExtenso = (dia, iso) => {
+  const [a, m, d] = String(iso || '').split('-');
+  return `${DIA_EXTENSO[dia] || dia}${d && m && a ? `, ${d}/${m}/${a}` : ''}`;
+};
+
+// Lista "Trocas de sala": uma linha por troca vigente (ver trocasVigentes), em
+// ordem de data, período e sala. `bloco` é null quando a aula não está mais na
+// grade (a troca ainda pode ser reimpressa ou desfeita).
+export const listarTrocas = (trocas, gradeBruta, proximosDias) => {
+  const ocorrencia = Object.fromEntries((proximosDias || []).map((d) => [d.dia, d]));
+  return Object.entries(trocas || {})
+    .map(([chave, registro]) => {
+      const c = desmontarChave(chave);
+      const dia = c && ocorrencia[c.dia];
+      if (!dia) return null;
+      const bloco = blocoDaChave(gradeBruta, chave);
+      const afetados = bloco
+        ? periodosAfetadosPelaTroca(registro, bloco.periodos)
+        : ordenarPeriodos(String(registro?.periodos_str || '').split(',').map((s) => s.trim()).filter((p) => p in IDX_PERIODO));
+      return { chave, registro, bloco, dia: c.dia, sala: c.sala, data: dia.data, semana: dia.semana, emDias: dia.emDias, afetados };
+    })
+    .filter(Boolean)
+    .sort((a, b) =>
+      a.emDias - b.emDias ||
+      (IDX_PERIODO[a.afetados[0]] ?? 99) - (IDX_PERIODO[b.afetados[0]] ?? 99) ||
+      a.sala.localeCompare(b.sala, undefined, { numeric: true }));
+};

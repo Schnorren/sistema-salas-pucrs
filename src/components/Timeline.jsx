@@ -7,64 +7,63 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
 import { useTrocasSala } from '../hooks/useTrocasSala';
-import { parsearNomeAula, periodosAfetadosPelaTroca } from '../utils/aulasDoDia';
+import { parsearNomeAula, periodosAfetadosPelaTroca, blocoDaChave, listarTrocas, horarioDosPeriodos, dataCurta, dataPorExtenso } from '../utils/aulasDoDia';
+import { imprimirCartazTroca } from '../utils/cartazTroca';
+import ModalAulaTroca from './ModalAulaTroca';
+import ModalTrocaSala from './ModalTrocaSala';
+import ModalListaTrocas from './ModalListaTrocas';
 import logoPucrs from '../assets/logos/pucrs.jpeg';
 import logoLiving360 from '../assets/logos/living360.jpeg';
 
-// Dia em inglês para a linha EN do cartaz de impressão
-const DAYS_EN = { Segunda: 'Monday', 'Terça': 'Tuesday', Quarta: 'Wednesday', Quinta: 'Thursday', Sexta: 'Friday', 'Sábado': 'Saturday', Domingo: 'Sunday' };
-const MESES_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const DIA_EXTENSO = { Segunda: 'segunda-feira', 'Terça': 'terça-feira', Quarta: 'quarta-feira', Quinta: 'quinta-feira', Sexta: 'sexta-feira', 'Sábado': 'sábado', Domingo: 'domingo' };
-
-// Datas "AAAA-MM-DD" (getProximosSeteDias) formatadas sem passar por fuso:
-// "09/11", "segunda-feira, 09/11/2026" e "Monday, November 9, 2026".
-const dataCurta = (iso) => { const [, m, d] = String(iso).split('-'); return `${d}/${m}`; };
-const dataPorExtenso = (dia, iso) => { const [a, m, d] = String(iso).split('-'); return `${DIA_EXTENSO[dia] || dia}, ${d}/${m}/${a}`; };
-const dataEmIngles = (dia, iso) => { const [a, m, d] = String(iso).split('-').map(Number); return `${DAYS_EN[dia] || dia}, ${MESES_EN[m - 1]} ${d}, ${a}`; };
+const LOGOS_CARTAZ = { pucrs: logoPucrs, living360: logoLiving360 };
 
 // Fora do componente — funções puras sem dependência de estado.
-// parsearNomeAula e periodosAfetadosPelaTroca vêm de utils/aulasDoDia (compartilhados com Planta/Próximas aulas)
+// parsearNomeAula/periodosAfetadosPelaTroca/blocoDaChave/listarTrocas vêm de
+// utils/aulasDoDia (compartilhados com Planta/Próximas aulas/busca do topo).
 
-const normalizeText = (text) => text ? text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+const normalizeText = (text) => text ? text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase() : '';
 
-// Escapa valores interpolados no HTML do cartaz de impress\u00e3o (inclui dados
-// gravados por outros usu\u00e1rios \u2014 sem escape vira vetor de XSS na janela de print).
-const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-));
-
-// Normaliza valores de formul\u00e1rio/banco para grava\u00e7\u00e3o e compara\u00e7\u00e3o
-// (null/undefined e '' equivalem; o banco pode devolver n\u00famero em predio/sala).
+// Normaliza valores de formulário/banco para gravação e comparação
+// (null/undefined e '' equivalem; o banco pode devolver número em predio/sala).
 const limpar = (v) => String(v ?? '').trim();
 
-// Mensagem p\u00fablica para falhas nas mutations de troca (RLS nega com 42501)
+// Mensagem pública para falhas nas mutations de troca (RLS nega com 42501)
 const descreverErroTroca = (err, fallback) => {
-  if (err?.code === '42501') return 'Voc\u00ea n\u00e3o tem permiss\u00e3o para editar trocas de sala (m\u00f3dulo "edicao_grade").';
+  if (err?.code === '42501') return 'Você não tem permissão para editar trocas de sala (módulo "edicao_grade").';
   if (err?.publico) return err.message;
   return fallback;
 };
 
-
-// Períodos efetivamente selecionados dentro do bloco (aula.periodos é a lista
-// completa e ordenada) + o intervalo de horário correspondente — usado tanto
-// para gravar (periodos_str/horario_str) quanto para exibir no modal/cartaz.
-// periodosStrDb vai separado por vírgula (formato inequívoco pro parser de
-// periodosAfetadosPelaTroca); periodosStr é a versão compacta pra exibição
-// ("LM", igual ao formato antigo do bloco inteiro).
-const calcularSelecaoPeriodos = (aula, periodosSelecionados) => {
-  const todos = aula?.periodos?.length ? aula.periodos : [aula?.periodo].filter(Boolean);
-  const selecionados = todos.filter(p => periodosSelecionados?.includes(p));
-  const usados = selecionados.length ? selecionados : todos; // nada selecionado -> bloco inteiro (não deveria ocorrer)
-  const primeiro = PERIODS.find(p => p.code === usados[0]);
-  const horarioStr = primeiro ? `${primeiro.lb} às ${PERIOD_END_TIMES[usados[usados.length - 1]] || primeiro.lb}` : aula?.horarioStr;
-  return { periodos: usados, periodosStrDb: usados.join(','), periodosStr: usados.join(''), horarioStr };
+// Campos de trocas_sala vindos do formulário. Também serve para comparar com o
+// registro salvo ("Salvar e imprimir" sem mudança só reimprime).
+const camposDaTroca = (aula, form) => {
+  const marcados = aula.periodos.filter(p => form.periodosSelecionados?.includes(p));
+  const periodos = marcados.length ? marcados : aula.periodos; // nada marcado → bloco inteiro (não deveria ocorrer)
+  return {
+    predio_destino: limpar(form.predio),
+    sala_destino: limpar(form.sala),
+    motivo: limpar(form.motivo),
+    nome_aula_editado: limpar(form.nomeAulaEditado) || aula.nomeAula || aula.nome || '',
+    professor: limpar(form.professor) || null,
+    cod_cred: limpar(form.codCred) || null,
+    // separado por vírgula: formato inequívoco para periodosAfetadosPelaTroca
+    periodos_str: periodos.join(','),
+    horario_str: horarioDosPeriodos(periodos),
+  };
 };
 
+// Fluxo da troca de sala (como numa agenda):
+//   clique na aula → ModalAulaTroca (detalhes; botão "Trocar de sala")
+//                  → ModalTrocaSala (data, períodos, destino; cartaz recolhido)
+//   botão "Trocas" / badge da aba → ModalListaTrocas (reimprimir, editar, desfazer)
+// Uma troca vale para UMA data: a próxima ocorrência do dia da aula (hoje
+// incluso) — ver getProximosSeteDias no timeHelpers.
+//
 // canEditGrade = mesma flag do Dashboard ('edicao_grade' ou admin, com prédio).
-// Sem ela a troca só pode ser consultada/reimpressa — a RLS de trocas_sala
-// continua sendo a barreira real; aqui é só para não abrir um fluxo que vai
-// falhar no fim.
-export default function Timeline({ acesso, canEditGrade = false, initialDay, initialFiltro }) {
+// Sem ela a aula abre só para consulta/reimpressão — a RLS de trocas_sala é a
+// barreira real; aqui é só para não oferecer um fluxo que vai falhar no fim.
+// abrirTrocas = valor de ?trocas= (badge da aba): muda a cada clique e abre a lista.
+export default function Timeline({ acesso, canEditGrade = false, initialDay, initialFiltro, abrirTrocas }) {
   const { predioAtivo, predioNome } = usePredio();
   const { toast, showConfirm } = useUI();
   const queryClient = useQueryClient();
@@ -79,41 +78,33 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
   const inputRef = useRef(null);
   const periodoAtualRef = useRef(null); // ref para o cabeçalho do período atual
   const ultimoPeriodoRef = useRef(getCurrentPeriod()); // último período visto pelo relógio
-  const formRef = useRef(null); // form do modal — validação também no fluxo de impressão
 
-  const [modalAvisoOpen, setModalAvisoOpen] = useState(false);
-  const [aulaSelecionadaParaTroca, setAulaSelecionadaParaTroca] = useState(null);
-  const [formTroca, setFormTroca] = useState({ predio: '', sala: '', motivo: '', nomeAulaEditado: '', professor: '', codCred: '', periodosSelecionados: [] });
+  const [aulaAberta, setAulaAberta] = useState(null);    // bloco da grade + { data, semana }
+  const [formAberto, setFormAberto] = useState(false);   // formulário por cima do painel da aula
+  const [listaAberta, setListaAberta] = useState(false);
+  const algumModalAberto = !!aulaAberta || listaAberta;
 
   useEffect(() => {
     if (initialDay) { setDay(initialDay); setAutoMode(false); } // eslint-disable-line react-hooks/set-state-in-effect
     if (initialFiltro) setFiltro(initialFiltro);
   }, [initialDay, initialFiltro]);
 
+  useEffect(() => {
+    if (abrirTrocas) setListaAberta(true); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [abrirTrocas]);
+
   // Busca + Realtime vivem no hook (compartilhado com o badge do Dashboard)
   const trocasAtivas = useTrocasSala(predioAtual);
 
-  // Toast/fechamento do modal ficam nos callbacks de cada chamada: salvar via
-  // formulário fecha o modal; salvar antes de imprimir não fecha.
   const salvarTrocaMutation = useMutation({
-    // Recebe aula + form no payload (em vez de ler formTroca da closure):
-    // evita gravar estado defasado quando a mutation é disparada fora do submit.
-    mutationFn: async ({ aula, form }) => {
-        const { periodosStrDb, horarioStr } = calcularSelecaoPeriodos(aula, form.periodosSelecionados);
+    mutationFn: async ({ aula, campos }) => {
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
-            aula_unique_key: aula.aulaUniqueKey,
-            // Semana da DATA da aula (fixada ao abrir o modal), não a de hoje:
+            aula_unique_key: aula.chave,
+            // Semana da DATA da aula (fixada ao abrir o painel), não a de hoje:
             // numa quinta, a troca de "Segunda" é da segunda que vem.
             semana: aula.semana,
-            predio_destino: limpar(form.predio),
-            sala_destino: limpar(form.sala),
-            motivo: limpar(form.motivo),
-            nome_aula_editado: limpar(form.nomeAulaEditado),
-            professor: limpar(form.professor) || null,
-            cod_cred: limpar(form.codCred) || null,
-            periodos_str: periodosStrDb,
-            horario_str: horarioStr
+            ...campos,
         }, { onConflict: 'predio_id,aula_unique_key,semana' });
         if (error) throw error;
     },
@@ -126,29 +117,28 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
   });
 
   const removerTrocaMutation = useMutation({
-    mutationFn: async ({ aulaUniqueKey, semana }) => {
+    mutationFn: async ({ chave, semana }) => {
         const { data, error } = await supabase
             .from('trocas_sala')
             .delete()
             .eq('predio_id', predioAtual)
-            .eq('aula_unique_key', aulaUniqueKey)
+            .eq('aula_unique_key', chave)
             .eq('semana', semana)
             .select();
         if (error) throw error;
         // RLS nega DELETE silenciosamente (0 linhas) — transforma em erro visível
         if (!data?.length) {
-            const e = new Error('Nenhuma troca foi removida — verifique se você tem a permissão "edicao_grade".');
+            const e = new Error('Nenhuma troca foi desfeita — verifique se você tem a permissão "edicao_grade".');
             e.publico = true;
             throw e;
         }
     },
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['trocas_sala', predioAtual] });
-        toast.info('Aviso de troca removido.');
-        setModalAvisoOpen(false);
+        toast.info('Troca de sala desfeita.');
     },
     onError: (err) => {
-        toast.error(descreverErroTroca(err, 'Não foi possível remover a troca de sala.'));
+        toast.error(descreverErroTroca(err, 'Não foi possível desfazer a troca de sala.'));
     }
   });
 
@@ -201,19 +191,25 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
     const handleGlobalKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key.length === 1 && !modalAvisoOpen) inputRef.current?.focus();
+      if (e.key.length === 1 && !algumModalAberto) inputRef.current?.focus();
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [modalAvisoOpen]);
+  }, [algumModalAberto]);
 
-  // Esc fecha o modal de troca (padrão de modal; descarta edições não salvas)
+  // Esc fecha o modal de cima: o formulário volta ao painel da aula; painel e
+  // lista fecham. Diálogo de confirmação aberto (UIContext) tem prioridade.
   useEffect(() => {
-    if (!modalAvisoOpen) return;
-    const onEsc = (e) => { if (e.key === 'Escape') setModalAvisoOpen(false); };
+    if (!algumModalAberto) return;
+    const onEsc = (e) => {
+      if (e.key !== 'Escape' || document.querySelector('[data-ui-modal]')) return;
+      if (formAberto) setFormAberto(false);
+      else if (aulaAberta) setAulaAberta(null);
+      else setListaAberta(false);
+    };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [modalAvisoOpen]);
+  }, [algumModalAberto, formAberto, aulaAberta]);
 
   const dataProcessed = useMemo(() => {
     try {
@@ -307,428 +303,97 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
     );
   }, [dataProcessed, filtro]);
 
-  const handleCellClick = async (slot, salaAtual) => {
-    if (!slot.ocupado) return;
+  // Trocas de hoje até 6 dias à frente, em ordem — a mesma seleção do badge da
+  // aba (o hook só devolve trocas vigentes e troca de chave a cada dia).
+  const itensTrocas = useMemo(
+    () => listarTrocas(trocasAtivas, rawGradeData?.grade, getProximosSeteDias()),
+    [trocasAtivas, rawGradeData]
+  );
+  const totalTrocasNaGrade = itensTrocas.filter(i => i.bloco).length;
 
-    const registroExistente = trocasAtivas[slot.aulaUniqueKey];
+  // Aula = bloco da grade (mesma regra de blocos de utils/aulasDoDia) + a data
+  // da próxima ocorrência do dia dela — é para essa data que vale a troca.
+  const abrirAula = (chave, { editar = false } = {}) => {
+    const bloco = blocoDaChave(rawGradeData?.grade, chave);
+    if (!bloco) return;
+    const { data, semana } = getProximaOcorrencia(bloco.dia);
+    setAulaAberta({ ...bloco, data, semana });
+    setFormAberto(editar && canEditGrade);
+  };
 
-    // Sem 'edicao_grade' não há o que registrar — só abre troca já existente
-    // (para consultar e reimprimir o cartaz).
-    if (!registroExistente && !canEditGrade) return;
+  // Clicar MOSTRA a aula (para todos); trocar de sala é um botão no painel.
+  const handleCellClick = (slot) => {
+    if (slot.ocupado) abrirAula(slot.aulaUniqueKey);
+  };
 
-    // A troca é da próxima ocorrência do dia exibido (hoje incluso) — fixada
-    // aqui para o modal, a gravação e o cartaz usarem a mesma data.
-    const ocorrencia = getProximaOcorrencia(day);
+  // Cartaz a partir do registro salvo (ou do que acabou de ser salvo).
+  const imprimir = (aula, registro) => {
+    const afetados = periodosAfetadosPelaTroca(registro, aula.periodos);
+    const ok = imprimirCartazTroca({
+      nomeAula: registro.nome_aula_editado || aula.nomeAula || aula.nome,
+      codCred: registro.cod_cred,
+      professor: registro.professor,
+      predioDestino: registro.predio_destino,
+      salaDestino: registro.sala_destino,
+      salaOrigem: aula.sala,
+      periodos: afetados.join(''),
+      horario: horarioDosPeriodos(afetados),
+      dia: aula.dia,
+      dataAula: aula.data,
+      nomePredio: predioNome || acesso?.predioNome || '',
+      logos: LOGOS_CARTAZ,
+    });
+    if (!ok) toast.error('O navegador bloqueou a janela de impressão. Libere pop-ups para este site e tente novamente.');
+  };
 
-    if (!registroExistente) {
-        const confirma = await showConfirm(
-            `Registrar uma troca de sala para esta aula em ${dataPorExtenso(day, ocorrencia.data)}? A troca vale só para essa data.`,
-            'Registrar Troca de Sala'
-        );
-        if (!confirma) return;
+  // Salvar (e imprimir). Sem mudança em relação ao salvo, não regrava — só
+  // reimprime se pedido.
+  const salvar = async (form, { imprimir: imprimirDepois }) => {
+    const aula = aulaAberta;
+    if (!aula || !canEditGrade) return;
+    const registro = trocasAtivas[aula.chave];
+    const campos = camposDaTroca(aula, form);
+    const mudou = !registro || Object.keys(campos).some(k => limpar(registro[k]) !== limpar(campos[k]));
+    if (mudou) {
+      try {
+        await salvarTrocaMutation.mutateAsync({ aula, campos });
+      } catch {
+        return; // onError da mutation já mostrou o motivo; o formulário continua aberto
+      }
+      toast.success(`Troca de sala registrada para ${dataPorExtenso(aula.dia, aula.data)}.`);
     }
-
-    // slot já carrega aulaUniqueKey/periodosStr/horarioStr (calculados no
-    // dataProcessed); `dia` e `dataAula` entram para o modal e o cartaz.
-    setAulaSelecionadaParaTroca({
-        ...slot, salaAtual, dia: day,
-        dataAula: ocorrencia.data,
-        semana: registroExistente?.semana || ocorrencia.semana,
-    });
-
-    // Auto-preenchimento: cod/cred e nome limpo do padrão "97316-04/1 - NOME DA
-    // AULA", já parseados na montagem da grade.
-    const { codCred: codAutoDetectado, nomeAula: nomeAutoDetectado } = slot.aulaParseada;
-
-    setFormTroca({
-        predio: registroExistente?.predio_destino || '',
-        sala: registroExistente?.sala_destino || '',
-        motivo: registroExistente?.motivo || '',
-        nomeAulaEditado: registroExistente?.nome_aula_editado || nomeAutoDetectado,
-        professor: registroExistente?.professor || '',
-        codCred: registroExistente?.cod_cred || codAutoDetectado,
-        // Bloco (LMNP) começa todo selecionado; reabrir uma troca já salva com
-        // parte dos períodos restaura só aquela parte marcada.
-        periodosSelecionados: periodosAfetadosPelaTroca(registroExistente, slot.periodos),
-    });
-    setModalAvisoOpen(true);
+    if (imprimirDepois) imprimir(aula, { ...registro, ...campos });
+    setFormAberto(false);
+    setAulaAberta(null);
   };
 
-  // Marca/desmarca um período do bloco na seleção do form — nunca deixa
-  // desmarcar o último (sempre precisa sobrar pelo menos 1 período na troca).
-  const togglePeriodoTroca = (periodo) => {
-    setFormTroca(f => {
-      const jaSelecionado = f.periodosSelecionados.includes(periodo);
-      if (jaSelecionado && f.periodosSelecionados.length === 1) return f;
-      const periodosSelecionados = jaSelecionado
-        ? f.periodosSelecionados.filter(p => p !== periodo)
-        : [...f.periodosSelecionados, periodo];
-      return { ...f, periodosSelecionados };
-    });
+  // Desfazer apaga o aviso para todos — confirma antes.
+  const desfazer = async (chave, semana) => {
+    const confirma = await showConfirm('Desfazer esta troca de sala? O aviso deixa de aparecer na grade para todos.', 'Desfazer troca de sala');
+    if (confirma) removerTrocaMutation.mutate({ chave, semana });
   };
 
-  const handleSalvarTroca = (e) => {
-    e.preventDefault();
-    if (!canEditGrade) return; // modal em modo consulta
-    salvarTrocaMutation.mutate({ aula: aulaSelecionadaParaTroca, form: formTroca }, {
-        onSuccess: () => {
-            toast.success('Troca de sala registrada com sucesso!');
-            setModalAvisoOpen(false);
-        }
-    });
+  // Aula de um item da lista (troca cuja aula saiu da grade: monta o mínimo para o cartaz)
+  const aulaDoItem = (item) => item.bloco
+    ? { ...item.bloco, data: item.data, semana: item.registro.semana }
+    : { chave: item.chave, sala: item.sala, dia: item.dia, data: item.data, semana: item.registro.semana, periodos: item.afetados, nomeAula: item.registro.nome_aula_editado };
+
+  const verNaGrade = (item) => {
+    setListaAberta(false);
+    setDay(item.dia);
+    setAutoMode(false);
+    setFiltro(item.sala);
   };
 
-  // Remoção é destrutiva (o aviso some para todos os clientes) — confirma antes.
-  const handleRemoverTroca = async () => {
-    const confirma = await showConfirm('Remover o aviso de troca desta aula? Ele deixa de aparecer na grade para todos.', 'Remover Troca de Sala');
-    if (!confirma) return;
-    removerTrocaMutation.mutate({ aulaUniqueKey: aulaSelecionadaParaTroca.aulaUniqueKey, semana: aulaSelecionadaParaTroca.semana });
+  const editarDaLista = (item) => {
+    if (!item.bloco) return;
+    setListaAberta(false);
+    setAulaAberta(aulaDoItem(item));
+    setFormAberto(true);
   };
 
-  const handleImprimirCartaz = async () => {
-    // O botão é type="button" — força a validação dos campos obrigatórios do
-    // form (prédio/sala destino) também no fluxo de impressão.
-    if (!formRef.current?.reportValidity()) return;
-
-    // O cartaz impresso precisa refletir o que está salvo: regrava quando o form
-    // difere do registro (ou não há registro) — sem isso, editar um campo e clicar
-    // direto em Imprimir gerava cartaz com dados novos e grade/banco com os velhos.
-    // Sem alterações, não grava; quem não tem 'edicao_grade' (modal em modo
-    // consulta, campos travados) só reimprime o que está salvo.
-    const registro = trocasAtivas[aulaSelecionadaParaTroca?.aulaUniqueKey];
-    const { periodosStrDb, periodosStr: periodosStrSelecao, horarioStr: horarioStrSelecao } =
-        calcularSelecaoPeriodos(aulaSelecionadaParaTroca, formTroca.periodosSelecionados);
-    const formDifereDoSalvo = canEditGrade && (!registro ||
-        limpar(registro.predio_destino)    !== limpar(formTroca.predio) ||
-        limpar(registro.sala_destino)      !== limpar(formTroca.sala) ||
-        limpar(registro.motivo)            !== limpar(formTroca.motivo) ||
-        limpar(registro.nome_aula_editado) !== limpar(formTroca.nomeAulaEditado) ||
-        limpar(registro.professor)         !== limpar(formTroca.professor) ||
-        limpar(registro.cod_cred)          !== limpar(formTroca.codCred) ||
-        limpar(registro.periodos_str)      !== periodosStrDb);
-    if (formDifereDoSalvo) {
-        try {
-            await salvarTrocaMutation.mutateAsync({ aula: aulaSelecionadaParaTroca, form: formTroca });
-        } catch {
-            return; // onError da mutation já exibiu o motivo
-        }
-    }
-
-    // Tudo que entra no HTML do cartaz passa por escapeHtml (dados vêm do
-    // form e de registros gravados por outros usuários). Períodos/horário
-    // refletem só o subconjunto selecionado no form, não o bloco inteiro.
-    const nomeAula      = escapeHtml(formTroca.nomeAulaEditado || aulaSelecionadaParaTroca.nome);
-    const codCred       = escapeHtml(limpar(formTroca.codCred));
-    const professor     = escapeHtml(limpar(formTroca.professor));
-    const predioDestino = escapeHtml(limpar(formTroca.predio));
-    const salaDestino   = escapeHtml(limpar(formTroca.sala));
-    const periodos      = escapeHtml(periodosStrSelecao);
-    const horario       = escapeHtml(horarioStrSelecao);
-    const salaOrigem    = escapeHtml(aulaSelecionadaParaTroca.salaAtual);
-    // Data da aula por extenso: o cartaz fica na porta e precisa dizer que a
-    // troca vale só para aquele dia ("Segunda-feira, 09/11/2026").
-    const diaPorExtenso = dataPorExtenso(aulaSelecionadaParaTroca.dia, aulaSelecionadaParaTroca.dataAula);
-    const dataAula      = escapeHtml(diaPorExtenso.charAt(0).toUpperCase() + diaPorExtenso.slice(1));
-    const dataAulaEN    = escapeHtml(dataEmIngles(aulaSelecionadaParaTroca.dia, aulaSelecionadaParaTroca.dataAula));
-    // "Gerado em" no fuso da PUCRS, não no do browser (regra do projeto)
-    // Cabeçalho do cartaz por prédio: o logo do Living 360 só vale para o
-    // prédio 15; nos demais vai o logo da PUCRS + o nome do prédio em texto.
-    const nomePredioCartaz = predioNome || acesso?.predioNome || '';
-    const ehLiving360   = /living\s*360/i.test(nomePredioCartaz) || /(^|\D)15(\D|$)/.test(nomePredioCartaz);
-    const marcaPredio   = ehLiving360
-      ? `<img class="header-logo-living360" src="${logoLiving360}" alt="Living 360" />`
-      : (nomePredioCartaz ? `<div class="header-predio">${escapeHtml(nomePredioCartaz)}</div>` : '');
-    const geradoEm      = escapeHtml(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
-
-    // Linha em inglês — só inclui os campos preenchidos
-    const partesEN = [`Class: ${nomeAula}`];
-    if (codCred)   partesEN.push(`Code/Credits: ${codCred}`);
-    if (professor) partesEN.push(`Instructor: ${professor}`);
-    partesEN.push(`has been moved from Room ${salaOrigem} to Room ${salaDestino}, Building ${predioDestino}`);
-    partesEN.push(`${dataAulaEN} only · Periods: ${periodos} (${horario.replace(' às ', ' to ')})`);
-    const linhaEN = partesEN.join(' · ');
-
-    const blocoCodCred   = codCred   ? `
-      <div class="field">
-        <div class="field-label">COD / CRED</div>
-        <div class="field-value small">${codCred}</div>
-      </div>` : '';
-
-    const blocoProfessor = professor ? `
-      <div class="field">
-        <div class="field-label">PROFESSOR</div>
-        <div class="field-value">${professor}</div>
-      </div>` : '';
-
-    const printWindow = window.open('', '', 'width=794,height=1123');
-    if (!printWindow) {
-        toast.error('O navegador bloqueou a janela de impressão. Libere pop-ups para este site e tente novamente.');
-        return;
-    }
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8">
-          <title>Aviso de Troca de Sala</title>
-          <style>
-            @page { size: A4 portrait; margin: 0; }
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-
-            body {
-              font-family: 'Arial', sans-serif;
-              width: 210mm;
-              min-height: 297mm;
-              background: #fff;
-              color: #0f172a;
-              display: flex;
-              align-items: stretch;
-            }
-
-            .page {
-              width: 100%;
-              min-height: 297mm;
-              display: flex;
-              flex-direction: column;
-            }
-
-            /* Cabeçalho — logos PUCRS + Living 360 */
-            .header {
-              background: #fff;
-              padding: 18px 36px;
-              display: flex;
-              align-items: center;
-              gap: 24px;
-              border-bottom: 4px solid #003DA5;
-            }
-
-            .header-logo-pucrs { height: 48px; width: auto; display: block; }
-            .header-logo-living360 { height: 42px; width: auto; display: block; }
-            .header-predio { font-size: 26px; font-weight: 800; color: #003DA5; letter-spacing: -0.3px; }
-
-            .header-divider-v {
-              width: 1px;
-              height: 42px;
-              background: #CBD5E1;
-              flex-shrink: 0;
-            }
-
-            /* Faixa vermelha de atenção */
-            .atencao-bar {
-              background: #DC2626;
-              padding: 18px 36px;
-              display: flex;
-              align-items: center;
-              gap: 14px;
-            }
-            .atencao-icon { font-size: 36px; line-height: 1; }
-            .atencao-text {
-              font-size: 36px;
-              font-weight: 900;
-              color: #fff;
-              letter-spacing: 2px;
-              text-transform: uppercase;
-            }
-
-            /* Corpo */
-            .body {
-              flex: 1;
-              padding: 32px 36px;
-              display: flex;
-              flex-direction: column;
-              gap: 24px;
-            }
-
-            /* Seção da aula */
-            .aula-section {
-              background: #F8FAFC;
-              border: 2px solid #E2E8F0;
-              border-left: 6px solid #003DA5;
-              border-radius: 8px;
-              padding: 20px 24px;
-              display: flex;
-              flex-direction: column;
-              gap: 14px;
-            }
-
-            .field-label {
-              font-size: 10px;
-              font-weight: 700;
-              color: #64748B;
-              letter-spacing: 1.5px;
-              text-transform: uppercase;
-              margin-bottom: 3px;
-            }
-
-            .field-value {
-              font-size: 26px;
-              font-weight: 800;
-              color: #0F172A;
-              text-transform: uppercase;
-              line-height: 1.2;
-            }
-
-            .field-value.small { font-size: 18px; }
-
-            .divider {
-              border: none;
-              border-top: 1px solid #E2E8F0;
-            }
-
-            /* Caixa destino — centralizada, destaque total */
-            .destino-section {
-              background: linear-gradient(135deg, #DC2626 0%, #9B1C1C 100%);
-              border-radius: 12px;
-              padding: 36px 24px;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              gap: 10px;
-              text-align: center;
-            }
-
-            .destino-label {
-              font-size: 13px;
-              font-weight: 700;
-              color: rgba(255,255,255,0.8);
-              letter-spacing: 2px;
-              text-transform: uppercase;
-            }
-
-            .destino-sala {
-              font-size: 110px;
-              font-weight: 900;
-              color: #fff;
-              line-height: 1;
-              letter-spacing: -4px;
-            }
-
-            .destino-predio {
-              font-size: 22px;
-              font-weight: 600;
-              color: rgba(255,255,255,0.9);
-              background: rgba(0,0,0,0.2);
-              padding: 6px 20px;
-              border-radius: 20px;
-              margin-top: 4px;
-            }
-
-            /* Badge de períodos */
-            .periodos-section {
-              display: flex;
-              justify-content: center;
-            }
-
-            .periodos-badge {
-              background: #003DA5;
-              color: #fff;
-              font-size: 17px;
-              font-weight: 700;
-              padding: 12px 28px;
-              border-radius: 50px;
-              letter-spacing: 0.5px;
-              text-align: center;
-            }
-
-            /* Linha em inglês */
-            .en-line {
-              font-size: 10px;
-              color: #94A3B8;
-              text-align: center;
-              font-style: italic;
-              line-height: 1.6;
-              padding: 0 20px;
-            }
-
-            /* Rodapé */
-            .footer {
-              background: #F1F5F9;
-              border-top: 2px solid #E2E8F0;
-              padding: 12px 36px;
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-            }
-
-            .footer-left { font-size: 10px; color: #64748B; }
-            .footer-right { font-size: 10px; color: #94A3B8; font-style: italic; }
-
-            @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-
-            <!-- Cabeçalho — logo PUCRS + marca do prédio (Living 360 ou nome) -->
-            <div class="header">
-              <img class="header-logo-pucrs" src="${logoPucrs}" alt="PUCRS" />
-              ${marcaPredio ? `<div class="header-divider-v"></div>${marcaPredio}` : ''}
-            </div>
-
-            <!-- Faixa de atenção -->
-            <div class="atencao-bar">
-              <div class="atencao-icon">⚠</div>
-              <div class="atencao-text">Atenção — Aviso de Troca de Sala</div>
-            </div>
-
-            <!-- Corpo -->
-            <div class="body">
-
-              <!-- Dados da aula -->
-              <div class="aula-section">
-                <div class="field">
-                  <div class="field-label">Aula</div>
-                  <div class="field-value">${nomeAula}</div>
-                </div>
-                ${blocoCodCred ? `<hr class="divider">${blocoCodCred}` : ''}
-                ${blocoProfessor ? `<hr class="divider">${blocoProfessor}` : ''}
-                <hr class="divider">
-                <div class="field">
-                  <div class="field-label">Sala de Origem</div>
-                  <div class="field-value small">Sala ${salaOrigem}</div>
-                </div>
-              </div>
-
-              <!-- Destino — centralizado e em destaque -->
-              <div class="destino-section">
-                <div class="destino-label">Foi transferida para a sala</div>
-                <div class="destino-sala">${salaDestino}</div>
-                <div class="destino-predio">Prédio ${predioDestino}</div>
-              </div>
-
-              <!-- Períodos -->
-              <div class="periodos-section">
-                <div class="periodos-badge">
-                  ${dataAula} &nbsp;·&nbsp; PERÍODOS: ${periodos} &nbsp;·&nbsp; ${horario}
-                </div>
-              </div>
-
-              <!-- Linha em inglês -->
-              <div class="en-line">${linhaEN}</div>
-
-            </div>
-
-            <!-- Rodapé -->
-            <div class="footer">
-              <div class="footer-left">Secretaria Acadêmica — PUCRS</div>
-              <div class="footer-right">Gerado em ${geradoEm}</div>
-            </div>
-
-          </div>
-          <script>
-            // print() é assíncrono em alguns navegadores — fechar a janela logo
-            // após chamá-lo cancelava o diálogo. onafterprint fecha só ao concluir
-            // (ou cancelar) a impressão.
-            window.onload = () => { window.focus(); window.print(); };
-            window.onafterprint = () => window.close();
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
+  const ultimoDia = getProximosSeteDias()[6];
+  const registroAberto = aulaAberta ? trocasAtivas[aulaAberta.chave] || null : null;
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
   if (loading || (!rawGradeData && !error)) return <div className="empty-st">Carregando matriz de horários...</div>;
@@ -737,125 +402,43 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
 
   return (
     <div className="view active" id="vTl" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      
-      {modalAvisoOpen && aulaSelecionadaParaTroca && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ background: 'var(--panel)', padding: '30px', borderRadius: '12px', width: '500px', border: '1px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-                <h2 style={{ margin: '0 0 6px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    🔁 {canEditGrade ? 'Registrar Troca de Sala' : 'Troca de Sala'}
-                </h2>
-                {/* A troca é de uma data só — deixa explícito para qual */}
-                <div style={{ margin: '0 0 15px 0', fontSize: '13px', fontWeight: 'bold', color: 'var(--text)' }}>
-                    📅 Vale só para {dataPorExtenso(aulaSelecionadaParaTroca.dia, aulaSelecionadaParaTroca.dataAula)}
-                </div>
 
-                <form onSubmit={handleSalvarTroca} ref={formRef}>
-                    {/* Sem 'edicao_grade' o modal é só consulta: fieldset desabilita todos os campos */}
-                    <fieldset disabled={!canEditGrade} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-                    <div style={{ padding: '15px', background: 'var(--panel2)', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '5px' }}>NOME DA DISCIPLINA (IMPRESSÃO)</div>
-                        <input 
-                            type="text" 
-                            value={formTroca.nomeAulaEditado} 
-                            onChange={e => setFormTroca({...formTroca, nomeAulaEditado: e.target.value})} 
-                            style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontWeight: 'bold' }} 
-                            required 
-                        />
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                            <span>De: Sala {aulaSelecionadaParaTroca.salaAtual}</span>
-                            <span style={{ fontFamily: 'var(--mono)', fontWeight: 'bold' }}>
-                                Períodos {aulaSelecionadaParaTroca.periodos.filter(p => formTroca.periodosSelecionados.includes(p)).join('')}
-                            </span>
-                        </div>
-                    </div>
+      {aulaAberta && !formAberto && (
+        <ModalAulaTroca
+          aula={aulaAberta}
+          registro={registroAberto}
+          canEditGrade={canEditGrade}
+          desfazendo={removerTrocaMutation.isPending}
+          onFechar={() => setAulaAberta(null)}
+          onTrocar={() => setFormAberto(true)}
+          onDesfazer={() => desfazer(aulaAberta.chave, registroAberto?.semana || aulaAberta.semana)}
+          onImprimir={() => registroAberto && imprimir(aulaAberta, registroAberto)}
+        />
+      )}
 
-                    {aulaSelecionadaParaTroca.periodos.length > 1 && (
-                        <div style={{ marginBottom: '15px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '8px' }}>
-                                PERÍODOS DESTA TROCA <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(desmarque os que continuam na sala de origem)</span>
-                            </label>
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                {aulaSelecionadaParaTroca.periodos.map(p => {
-                                    const marcado = formTroca.periodosSelecionados.includes(p);
-                                    return (
-                                        <button
-                                            type="button"
-                                            key={p}
-                                            onClick={() => togglePeriodoTroca(p)}
-                                            title={marcado ? `Período ${p} muda de sala` : `Período ${p} permanece na sala de origem`}
-                                            style={{
-                                                minWidth: '36px', padding: '8px 10px', borderRadius: '6px', fontWeight: 'bold',
-                                                fontFamily: 'var(--mono)', fontSize: '13px', cursor: canEditGrade ? 'pointer' : 'default',
-                                                border: marcado ? '1px solid var(--blue)' : '1px solid var(--border)',
-                                                background: marcado ? 'var(--blue)' : 'var(--panel2)',
-                                                color: marcado ? '#fff' : 'var(--muted)',
-                                                textDecoration: marcado ? 'none' : 'line-through',
-                                                transition: 'all .15s'
-                                            }}
-                                        >
-                                            {p}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
+      {aulaAberta && formAberto && canEditGrade && (
+        <ModalTrocaSala
+          key={aulaAberta.chave}
+          aula={aulaAberta}
+          registro={registroAberto}
+          salvando={salvarTrocaMutation.isPending}
+          onCancelar={() => setFormAberto(false)}
+          onSalvar={salvar}
+        />
+      )}
 
-                    <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>COD/CRED <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(opcional)</span></label>
-                            <input type="text" placeholder="Ex: 34221-04" value={formTroca.codCred} onChange={e => setFormTroca({...formTroca, codCred: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
-                        </div>
-                        <div style={{ flex: 2 }}>
-                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>PROFESSOR <span style={{ fontWeight: 'normal', opacity: 0.6 }}>(opcional)</span></label>
-                            <input type="text" placeholder="Ex: João da Silva" value={formTroca.professor} onChange={e => setFormTroca({...formTroca, professor: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>PRÉDIO DESTINO</label>
-                            <input autoFocus type="text" placeholder="Ex: 32" value={formTroca.predio} onChange={e => setFormTroca({...formTroca, predio: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} required />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>SALA DESTINO</label>
-                            <input type="text" placeholder="Ex: 301" value={formTroca.sala} onChange={e => setFormTroca({...formTroca, sala: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} required />
-                        </div>
-                    </div>
-                    
-                    <div style={{ marginBottom: '25px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', marginBottom: '5px' }}>MOTIVO (CONTROLE INTERNO)</label>
-                        <input type="text" placeholder="Ex: Problema no projetor..." value={formTroca.motivo} onChange={e => setFormTroca({...formTroca, motivo: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
-                    </div>
-                    </fieldset>
-
-                    {!canEditGrade && (
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', margin: '-10px 0 15px 0' }}>
-                            Somente consulta: registrar, alterar ou remover trocas exige a permissão de edição da grade.
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                        <button type="button" onClick={() => setModalAvisoOpen(false)} style={{ padding: '10px 16px', background: 'transparent', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            {canEditGrade ? 'Cancelar' : 'Fechar'}
-                        </button>
-                        {canEditGrade && trocasAtivas[aulaSelecionadaParaTroca.aulaUniqueKey] && (
-                            <button type="button" onClick={handleRemoverTroca} disabled={removerTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--red-b)', color: 'var(--red)', border: '1px solid rgba(160, 40, 40, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                {removerTrocaMutation.isPending ? 'Removendo...' : 'Remover'}
-                            </button>
-                        )}
-                        <button type="button" onClick={handleImprimirCartaz} disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            🖨️ Imprimir
-                        </button>
-                        {canEditGrade && (
-                            <button type="submit" disabled={salvarTrocaMutation.isPending} style={{ padding: '10px 16px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                {salvarTrocaMutation.isPending ? 'Salvando...' : 'Salvar Alteração'}
-                            </button>
-                        )}
-                    </div>
-                </form>
-            </div>
-        </div>
+      {listaAberta && (
+        <ModalListaTrocas
+          itens={itensTrocas}
+          ate={dataPorExtenso(ultimoDia.dia, ultimoDia.data)}
+          canEditGrade={canEditGrade}
+          desfazendoChave={removerTrocaMutation.isPending ? removerTrocaMutation.variables?.chave : null}
+          onFechar={() => setListaAberta(false)}
+          onVerNaGrade={verNaGrade}
+          onImprimir={(item) => imprimir(aulaDoItem(item), item.registro)}
+          onEditar={editarDaLista}
+          onDesfazer={(item) => desfazer(item.chave, item.registro.semana)}
+        />
       )}
 
       <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
@@ -881,6 +464,18 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
           >
             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: autoMode ? '#22c55e' : 'var(--muted)', display: 'inline-block', animation: autoMode ? 'pulse 2s infinite' : 'none' }} />
             Ao vivo
+          </button>
+          <button
+            onClick={() => setListaAberta(true)}
+            title="Trocas de sala de hoje e dos próximos 6 dias — reimprimir, editar ou desfazer"
+            style={{
+              padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', border: '1px solid',
+              background: totalTrocasNaGrade > 0 ? 'rgba(234, 88, 12, 0.12)' : 'var(--panel2)',
+              borderColor: totalTrocasNaGrade > 0 ? 'rgba(234, 88, 12, 0.45)' : 'var(--border)',
+              color: totalTrocasNaGrade > 0 ? '#ea580c' : 'var(--muted)',
+            }}
+          >
+            🔁 Trocas{totalTrocasNaGrade > 0 ? ` (${totalTrocasNaGrade})` : ''}
           </button>
         </div>
 
@@ -950,7 +545,7 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
                     const isRoomMatch = termoNormalizado && linha.salaNorm.includes(termoNormalizado);
 
                     const tooltip = slot.ocupado
-                        ? `${slot.nome}\nPeríodos: ${slot.periodosStr}\nHorário: ${slot.horarioStr}`
+                        ? `${slot.nome}\nPeríodos: ${slot.periodosStr}\nHorário: ${slot.horarioStr}\n\n${canEditGrade ? 'Clique para ver a aula ou trocar de sala' : 'Clique para ver a aula'}`
                         : `Livre (${slot.horario})`;
 
                     return (
@@ -958,11 +553,11 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
                         key={slot.periodo}
                         className={`tl-cell ${statusClass} ${slot.isAgora ? 'now' : ''}`}
                         title={tooltip}
-                        onClick={() => handleCellClick(slot, linha.sala)}
+                        onClick={() => handleCellClick(slot)}
                         onMouseEnter={() => slot.ocupado && setHoveredAulaId(slot.aulaUniqueKey)}
                         onMouseLeave={() => setHoveredAulaId(null)}
                         style={{
-                          flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'auto', minHeight: '100%', boxSizing: 'border-box', cursor: slot.ocupado && (canEditGrade || registroTroca) ? 'pointer' : 'default', transition: 'all 0.2s ease', position: 'relative', overflow: 'hidden',
+                          flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'auto', minHeight: '100%', boxSizing: 'border-box', cursor: slot.ocupado ? 'pointer' : 'default', transition: 'all 0.2s ease', position: 'relative', overflow: 'hidden',
                           
                           backgroundColor: temTroca ? 'rgba(239, 68, 68, 0.15)' : (isHovered ? 'rgba(255, 255, 255, 0.15)' : (isSearchMatch ? 'rgba(59, 130, 246, 0.25)' : undefined)),
                           

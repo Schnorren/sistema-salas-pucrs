@@ -511,7 +511,14 @@ export default function Dashboard({ session }) {
               <NavLink to={ROTAS.linhaDoTempo} className="navtab">
                 Linha do Tempo
                 {totalTrocasAtivas > 0 && (
-                  <span title="Trocas de sala de hoje e dos próximos 6 dias" style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle' }}>
+                  // Clicar no número abre a lista de trocas (o resto da aba só abre a Linha do tempo).
+                  // ?trocas= muda a cada clique para a lista reabrir mesmo já estando na aba.
+                  <span
+                    role="button"
+                    title="Ver as trocas de sala de hoje e dos próximos 6 dias"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`${ROTAS.linhaDoTempo}?trocas=${Date.now()}`); }}
+                    style={{ marginLeft: '6px', background: '#ea580c', color: '#fff', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', padding: '1px 6px', verticalAlign: 'middle', cursor: 'pointer' }}
+                  >
                     {totalTrocasAtivas}
                   </span>
                 )}
@@ -593,7 +600,7 @@ export default function Dashboard({ session }) {
             element={
               <ErrorBoundary>
                 {/* ?dia=&filtro= vem da busca global (link compartilhável) */}
-                <Timeline session={session} acesso={acesso} canEditGrade={canEditGrade} initialDay={searchParams.get('dia')} initialFiltro={searchParams.get('filtro')} />
+                <Timeline session={session} acesso={acesso} canEditGrade={canEditGrade} initialDay={searchParams.get('dia')} initialFiltro={searchParams.get('filtro')} abrirTrocas={searchParams.get('trocas')} />
               </ErrorBoundary>
             }
           />

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { PERIODS, computarChavesDeBlocos, getProximosSeteDias } from '../backend_core/utils/timeHelpers.js';
 import {
   slotsDoDia, blocosDaSala, blocoNoPeriodo, periodosAfetadosPelaTroca, trocaNoPeriodo, trocasVigentes,
+  desmontarChave, blocoDaChave, horarioDosPeriodos, dataCurta, dataPorExtenso, listarTrocas,
   salaCoincide, diaDaData, ordenarPeriodos, parsearNomeAula,
 } from '../src/utils/aulasDoDia.js';
 
@@ -118,4 +119,52 @@ test('períodos seguem a ordem da PUCRS (E1 depois de E)', () => {
 test('código/turma separado do nome da aula', () => {
   assert.deepEqual(parsearNomeAula('97316-04/1 - BRANDED CONTENT'), { codCred: '97316-04/1', nomeAula: 'BRANDED CONTENT' });
   assert.deepEqual(parsearNomeAula('INTERNO - REUNIÃO'), { codCred: '', nomeAula: 'INTERNO - REUNIÃO' });
+});
+
+test('chave da troca: dia, sala (com hífen) e período inicial', () => {
+  assert.deepEqual(desmontarChave('Segunda-205-L'), { dia: 'Segunda', sala: '205', periodo: 'L' });
+  assert.deepEqual(desmontarChave('Terça-LAB-2-E1'), { dia: 'Terça', sala: 'LAB-2', periodo: 'E1' });
+  assert.equal(desmontarChave('semdia'), null);
+});
+
+test('horário e datas por extenso, sem fuso', () => {
+  assert.equal(horarioDosPeriodos(['M', 'L']), '19:15 às 20:45');
+  assert.equal(horarioDosPeriodos(['E', 'E1']), '11:30 às 13:00');
+  assert.equal(horarioDosPeriodos([]), '');
+  assert.equal(dataCurta('2026-11-09'), '09/11');
+  assert.equal(dataPorExtenso('Segunda', '2026-11-09'), 'segunda-feira, 09/11/2026');
+  assert.equal(dataPorExtenso('Sábado', '2026-11-07'), 'sábado, 07/11/2026');
+});
+
+test('lista de trocas: aula da grade, períodos afetados e ordem por data/período', () => {
+  const grade = [
+    ...['L', 'M', 'N', 'P'].map(p => ({ dia_semana: 'Segunda', periodo: p, nome_aula: '97316-04/1 - BRANDED CONTENT', sala: '205' })),
+    ...['A', 'B'].map(p => ({ dia_semana: 'Quinta', periodo: p, nome_aula: 'CÁLCULO', sala: '201' })),
+    { dia_semana: 'Quinta', periodo: 'J', nome_aula: 'FÍSICA', sala: '101' },
+  ];
+  assert.equal(blocoDaChave(grade, 'Segunda-205-L').nomeAula, 'BRANDED CONTENT');
+  assert.equal(blocoDaChave(grade, 'Segunda-205-M'), null); // M não inicia bloco
+
+  // Quinta 05/11: Quinta = hoje (0), Segunda = 09/11 (4)
+  const proximosDias = [
+    { dia: 'Quinta', data: '2026-11-05', semana: '2026-11-02', emDias: 0 },
+    { dia: 'Segunda', data: '2026-11-09', semana: '2026-11-09', emDias: 4 },
+  ];
+  const trocas = {
+    'Segunda-205-L': { periodos_str: 'L,M', predio_destino: '32', sala_destino: '410', semana: '2026-11-09' },
+    'Quinta-101-J': { periodos_str: 'J', predio_destino: '9', sala_destino: '1', semana: '2026-11-02' },
+    'Quinta-201-A': { periodos_str: 'A,B', predio_destino: '30', sala_destino: '2', semana: '2026-11-02' },
+    'Quinta-999-C': { periodos_str: 'C,D', nome_aula_editado: 'SUMIU DA GRADE', semana: '2026-11-02' },
+    'Domingo-1-A': { periodos_str: 'A', semana: '2026-11-02' }, // dia fora dos próximos dias
+  };
+  const itens = listarTrocas(trocas, grade, proximosDias);
+  assert.deepEqual(itens.map(i => i.chave), ['Quinta-201-A', 'Quinta-999-C', 'Quinta-101-J', 'Segunda-205-L']);
+  const branded = itens.find(i => i.chave === 'Segunda-205-L');
+  assert.deepEqual(branded.afetados, ['L', 'M']);
+  assert.equal(branded.data, '2026-11-09');
+  assert.equal(branded.bloco.periodos.length, 4);
+  const orfa = itens.find(i => i.chave === 'Quinta-999-C');
+  assert.equal(orfa.bloco, null);
+  assert.deepEqual(orfa.afetados, ['C', 'D']);
+  assert.deepEqual(listarTrocas(null, grade, proximosDias), []);
 });
