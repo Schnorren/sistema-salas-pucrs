@@ -127,8 +127,9 @@ Cada usuário tem um registro em `usuarios_acessos` com:
 | `admin` | Painel administrativo global, todos os prédios |
 | `grade` | Visualização e upload de grade |
 | `avisos` | Mural de avisos e chaves |
-| `emprestimos` | Módulo de empréstimos de equipamentos |
-| `relatorios` | Relatórios e estatísticas de empréstimos |
+| `emprestimos` | Balcão de empréstimos (só os pontos de empréstimo vinculados ao login) |
+| `gestao_emprestimos` | Gestão de Empréstimos: pontos, categorias, itens, limite por aluno, suspensões |
+| `relatorios` | Relatórios e estatísticas de empréstimos (prédio todo) |
 | `edicao_grade` | Registro de trocas de sala |
 | `equipe` | Gestão de equipe do prédio |
 
@@ -173,31 +174,31 @@ Para produção, configure as mesmas variáveis no painel da Vercel em **Setting
 | `sistema_modulos` | Módulos disponíveis no sistema |
 | `avisos` | Avisos de chave e intercorrências |
 | `trocas_sala` | Registros de troca de sala por dia |
-| `emprestimo_categorias` | Categorias de itens emprestáveis |
-| `emprestimo_itens` | Itens individuais (patrimônio) |
-| `emprestimos_registro` | Histórico de retiradas e devoluções |
-| `alunos_cache` | Cache de nomes por matrícula |
+| `emprestimo_pontos` | Pontos de empréstimo do prédio (ex.: Recepção, Secretaria) e limite por aluno |
+| `emprestimo_ponto_usuarios` | Quais logins operam cada ponto |
+| `emprestimo_categorias` | Categorias de itens de cada ponto |
+| `emprestimo_itens` | Itens individuais (código/patrimônio; baixa via `ativo`) |
+| `emprestimos_registro` | Retiradas e devoluções (com prédio, ponto, balcão e ocorrência) |
+| `emprestimo_bloqueios` | Alunos suspensos dos empréstimos do prédio |
+| `alunos_cache` | Nome por matrícula |
 
-### RPCs obrigatórias
+### Migrations e RPCs
 
-Execute no SQL Editor do Supabase (dev e prod):
+A forma recomendada é `npm run migrate` (aplica tudo, na ordem certa — ver
+`ORDEM` em `scripts/migrate.mjs` e a seção "Banco / Supabase" do CLAUDE.md).
+As seções abaixo descrevem as principais.
 
-**1. Devolução atômica:**
-```sql
--- arquivo: supabase/migrations/concluir_devolucao_rpc.sql
-```
+**1. Empréstimos** — `emprestimos_schema.sql` (schema-base), `emprestimo_status_item_rpc.sql`,
+`emprestimos_v2.sql` (pontos de empréstimo, bloqueios) e `emprestimos_v2_rpcs.sql`
+(retirada, devolução, desfazer, estatísticas — todas só para a service role).
+`emprestimos_limpeza.sql` remove as RPCs da v1 e só pode rodar depois do deploy do código v2.
 
-**2. Estatísticas de empréstimos no banco:**
-```sql
--- arquivo: supabase/migrations/estatisticas_emprestimos_rpc.sql
-```
-
-**3. Trocas de sala por dia (adicionar coluna `data_aula`):**
+**2. Trocas de sala por dia (adicionar coluna `data_aula`):**
 ```sql
 -- arquivo: supabase/migrations/trocas_sala_data_aula.sql
 ```
 
-**4. Row Level Security (isolamento multi-prédio no banco) — obrigatória:**
+**3. Row Level Security (isolamento multi-prédio no banco) — obrigatória:**
 ```sql
 -- arquivo: supabase/migrations/rls_policies.sql
 ```
@@ -206,12 +207,12 @@ Execute no SQL Editor do Supabase (dev e prod):
 > no banco). Ela também é onde a permissão `edicao_grade` é de fato aplicada
 > (escrita em `trocas_sala`). Aplique e **teste os fluxos** do frontend depois.
 
-**5. Trilha de auditoria (ações sensíveis / LGPD):**
+**4. Trilha de auditoria (ações sensíveis / LGPD):**
 ```sql
 -- arquivo: supabase/migrations/auditoria_log.sql
 ```
 
-**6. Trocas de sala por semana (após a #3):**
+**5. Trocas de sala por semana (após a #2):**
 ```sql
 -- arquivo: supabase/migrations/trocas_sala_semana.sql
 ```
@@ -220,11 +221,15 @@ Execute no SQL Editor do Supabase (dev e prod):
 
 Os arquivos SQL estão em `supabase/migrations/`. Rode-os **na ordem** acima.
 
-**Verificar se as RPCs foram criadas:**
+**Verificar se as RPCs existem e NÃO estão abertas para a anon key:**
 ```sql
-SELECT routine_name FROM information_schema.routines
-WHERE routine_schema = 'public'
-AND routine_name IN ('concluir_devolucao', 'estatisticas_emprestimos', 'limpar_trocas_antigas');
+SELECT p.proname,
+       has_function_privilege('anon', p.oid, 'execute')          AS anon,
+       has_function_privilege('authenticated', p.oid, 'execute') AS logado
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.prosecdef
+ORDER BY 1;
+-- esperado: anon = false em todas; logado = true só em app_* e limpar_trocas_antigas
 ```
 
 ---
@@ -320,8 +325,7 @@ sistema-salas-pucrs/
 │   ├── admin/index.js          # CRUD de usuários, prédios, perfis
 │   ├── avisos/index.js         # Mural de avisos e chaves
 │   ├── emprestimos/
-│   │   ├── index.js            # Retirada, devolução, manutenção
-│   │   └── estatisticas.js     # Relatórios (via RPC Supabase)
+│   │   └── index.js            # Balcão, relatório e gestão (pontos, acervo, suspensões)
 │   ├── equipe/index.js         # Gestão de membros por prédio
 │   └── grade/
 │       ├── index.js            # Busca e publicação de grade

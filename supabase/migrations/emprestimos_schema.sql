@@ -6,11 +6,10 @@
 -- 2026-11-05) para que o schema do módulo fique no repositório.
 --
 -- Tudo é IF NOT EXISTS: no banco atual nada é recriado. A única mudança real é
--- remover dois índices duplicados criados à mão (mesmas colunas de índices
--- versionados em realizar_emprestimo_rpc.sql).
+-- remover dois índices duplicados criados à mão.
 --
 -- Fora do escopo: predios / usuarios_acessos (tabelas do núcleo do sistema).
--- Rode PRIMEIRO (antes das RPCs de empréstimo) — ver ORDEM em scripts/migrate.mjs.
+-- Rode PRIMEIRO — ver ORDEM em scripts/migrate.mjs.
 
 do $$
 begin
@@ -67,8 +66,12 @@ create table if not exists alunos_cache (
 create index if not exists idx_emp_cat_predio    on emprestimo_categorias (predio_id);
 create index if not exists idx_emp_reg_matricula on emprestimos_registro (matricula_aluno);
 create index if not exists idx_emp_reg_status    on emprestimos_registro (status);
+create index if not exists idx_emprestimo_itens_categoria on emprestimo_itens (categoria_id);
+create index if not exists idx_emprestimos_registro_item    on emprestimos_registro (item_id);
+create index if not exists idx_emprestimos_registro_ativo_matricula
+    on emprestimos_registro (matricula_aluno) where status = 'ATIVO';
 
--- Duplicados de idx_emprestimo_itens_categoria e idx_emprestimos_registro_item
+-- Duplicados (criados à mão) de idx_emprestimo_itens_categoria e idx_emprestimos_registro_item
 drop index if exists idx_emp_itens_cat;
 drop index if exists idx_emp_reg_item;
 
