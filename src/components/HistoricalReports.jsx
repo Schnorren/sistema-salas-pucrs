@@ -63,9 +63,11 @@ function HistoricalReportsCore({ session, acesso }) {
         return Array.from(rooms).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     }, [semanaAtiva]);
 
+    // Semana nova carregada sem filtro de salas → todas marcadas (forma
+    // funcional: não depende do activeRooms do render)
     useEffect(() => {
-        if (allAvailableRooms.length > 0 && activeRooms.size === 0) {
-            setActiveRooms(new Set(allAvailableRooms));
+        if (allAvailableRooms.length > 0) {
+            setActiveRooms(prev => (prev.size === 0 ? new Set(allAvailableRooms) : prev));
         }
     }, [allAvailableRooms]);
 

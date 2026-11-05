@@ -1,3 +1,5 @@
+import { escaparHtml as esc, numeroSeguro as num } from './html.js';
+
 const SHARED_STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   
@@ -71,10 +73,10 @@ export const generateSingleReportPDF = (reportData, sortedRoomsArray, activeDays
   const kpis = reportData.data?.kpis || {};
   const curvaHorario = reportData.dinamico?.curvaHorario || [];
 
-  const maxSalasNaCurva = Math.max(...curvaHorario.map(c => c.salasOcupadas), 1);
+  const maxSalasNaCurva = Math.max(...curvaHorario.map(c => num(c.salasOcupadas)), 1);
 
   const cleanRoomName = (name) => {
-    const parts = name.split('.');
+    const parts = String(name ?? '').split('.');
     if (parts.length >= 2) return `${parts[parts.length - 2]}${parts[parts.length - 1]}`;
     return name;
   };
@@ -111,43 +113,44 @@ export const generateSingleReportPDF = (reportData, sortedRoomsArray, activeDays
     <body>
       <div class="header">
         <h1>Dashboard Analítico de Ocupação</h1>
-        <div class="gen-date">Exportado em: ${new Date().toLocaleString('pt-BR')} | Ref: ${reportData.nome}</div>
+        <div class="gen-date">Exportado em: ${esc(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }))} | Ref: ${esc(reportData.nome)}</div>
       </div>
       
       <div class="filters-box">
-        <strong>Dias Considerados:</strong> ${activeDays.join(', ')} <br/>
-        <strong style="margin-top: 4px; display: block;">Períodos:</strong> ${activePers.join(', ')} <br/>
-        <strong style="margin-top: 4px; display: block;">Salas Analisadas:</strong> ${sortedRoomsArray.join(', ')}
+        <strong>Dias Considerados:</strong> ${esc(activeDays.join(', '))} <br/>
+        <strong style="margin-top: 4px; display: block;">Períodos:</strong> ${esc(activePers.join(', '))} <br/>
+        <strong style="margin-top: 4px; display: block;">Salas Analisadas:</strong> ${esc(sortedRoomsArray.join(', '))}
       </div>
 
       <div>
         <div class="kpi-card" style="border-top-color: ${COLORS[0]}">
           <div class="kpi-title">Eficiência do Prédio</div>
-          <div class="kpi-value" style="color: ${COLORS[0]}">${reportData.percentual.toFixed(1)}%</div>
+          <div class="kpi-value" style="color: ${COLORS[0]}">${num(reportData.percentual).toFixed(1)}%</div>
           <div class="kpi-sub">Taxa de Ocupação Global</div>
         </div>
         <div class="kpi-card" style="border-top-color: ${COLORS[1]}">
           <div class="kpi-title">Volume de Aulas</div>
-          <div class="kpi-value" style="color: ${COLORS[1]}">${reportData.totalFiltrado}</div>
+          <div class="kpi-value" style="color: ${COLORS[1]}">${num(reportData.totalFiltrado)}</div>
           <div class="kpi-sub">Alocações nos Filtros Ativos</div>
         </div>
         <div class="kpi-card last" style="border-top-color: ${COLORS[2]}">
           <div class="kpi-title">Salas Encontradas</div>
-          <div class="kpi-value" style="color: ${COLORS[2]}">${kpis.totalSalas || 0}</div>
-          <div class="kpi-sub">Sala Crítica:<br/>${cleanRoomName(kpis.salaMaisUsada || '-')}</div>
+          <div class="kpi-value" style="color: ${COLORS[2]}">${num(kpis.totalSalas)}</div>
+          <div class="kpi-sub">Sala Crítica:<br/>${esc(cleanRoomName(kpis.salaMaisUsada || '-'))}</div>
         </div>
       </div>
 
       <div class="section-title">Curva de Ocupação Operacional</div>
       <div class="chart-container">
         ${curvaHorario.map(c => {
-    const hPerc = (c.salasOcupadas / maxSalasNaCurva) * 100;
+    const ocupadas = num(c.salasOcupadas);
+    const hPerc = (ocupadas / maxSalasNaCurva) * 100;
     return `
               <div class="chart-bar-wrapper">
                 <div class="chart-bar" style="height: ${hPerc}%;">
-                  ${c.salasOcupadas > 0 ? `<div class="chart-val">${c.salasOcupadas}</div>` : ''}
+                  ${ocupadas > 0 ? `<div class="chart-val">${ocupadas}</div>` : ''}
                 </div>
-                <div class="chart-label">${c.horario}</div>
+                <div class="chart-label">${esc(c.horario)}</div>
               </div>
             `;
   }).join('')}
@@ -157,16 +160,16 @@ export const generateSingleReportPDF = (reportData, sortedRoomsArray, activeDays
       <div>
         ${sortedRoomsArray.map(room => {
     const stat = reportData.roomStats[room] || { perc: 0, count: 0 };
-    const pNum = Number(stat.perc);
+    const pNum = num(stat.perc);
     const ringColor = pNum > 80 ? '#ef4444' : pNum > 45 ? '#f59e0b' : '#3b82f6';
 
     return `
               <div class="room-card">
-                <div class="room-name">${room}</div>
+                <div class="room-name">${esc(room)}</div>
                 <div class="pie" style="background: conic-gradient(${ringColor} ${pNum}%, #e2e8f0 0);">
-                  <div class="pie-inner">${stat.perc}%</div>
+                  <div class="pie-inner">${pNum}%</div>
                 </div>
-                <div class="room-aulas">${stat.count} aulas alocadas</div>
+                <div class="room-aulas">${num(stat.count)} aulas alocadas</div>
               </div>
             `;
   }).join('')}
@@ -208,18 +211,18 @@ export const generateHeatmapPDF = (stats, activeDays) => {
     <body>
       <div class="header">
         <h1>Heatmap de Ocupação Semanal</h1>
-        <div class="gen-date">Exportado em: ${new Date().toLocaleString('pt-BR')}</div>
+        <div class="gen-date">Exportado em: ${esc(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }))}</div>
       </div>
       <div class="summary">
-        <div class="kpi"><div class="kpi-val">${stats.percGeral}%</div><div class="kpi-lbl">Taxa de Ocupação Global</div></div>
-        <div class="kpi"><div class="kpi-val">${stats.totalOccupied}</div><div class="kpi-lbl">Slots Ocupados</div></div>
+        <div class="kpi"><div class="kpi-val">${num(stats.percGeral)}%</div><div class="kpi-lbl">Taxa de Ocupação Global</div></div>
+        <div class="kpi"><div class="kpi-val">${num(stats.totalOccupied)}</div><div class="kpi-lbl">Slots Ocupados</div></div>
         <div class="kpi"><div class="kpi-val">${stats.heatmap.length}</div><div class="kpi-lbl">Salas Analisadas</div></div>
       </div>
       <table>
         <thead>
           <tr>
             <th>Sala</th>
-            ${dias.map(d => `<th>${d}</th>`).join('')}
+            ${dias.map(d => `<th>${esc(d)}</th>`).join('')}
             <th>Total</th>
             <th>Ocup.%</th>
           </tr>
@@ -227,16 +230,16 @@ export const generateHeatmapPDF = (stats, activeDays) => {
         <tbody>
           ${stats.heatmap.map(row => `
             <tr>
-              <td class="sala-col">${row.sala}</td>
+              <td class="sala-col">${esc(row.sala)}</td>
               ${dias.map(dia => {
-                const val = (row.contagemPorDia && row.contagemPorDia[dia]) || 0;
+                const val = num(row.contagemPorDia && row.contagemPorDia[dia]);
                 const intensity = Math.min(val / maxVal, 1);
                 const alpha = (intensity * 0.75).toFixed(2);
                 const txtColor = intensity > 0.45 ? '#fff' : '#0f172a';
                 return '<td style="background:rgba(59,130,246,' + alpha + ');color:' + txtColor + '">' + (val > 0 ? val : '-') + '</td>';
               }).join('')}
-              <td class="total-col">${row.totalSala}</td>
-              <td class="total-col">${row.percSala}%</td>
+              <td class="total-col">${num(row.totalSala)}</td>
+              <td class="total-col">${num(row.percSala)}%</td>
             </tr>
           `).join('')}
         </tbody>
@@ -248,9 +251,15 @@ export const generateHeatmapPDF = (stats, activeDays) => {
   executePrint(html);
 };
 
+// Devolve false se o navegador bloqueou a janela (antes: TypeError e nada acontecia)
 const executePrint = (html) => {
   const win = window.open('', '_blank');
+  if (!win) {
+    window.alert('O navegador bloqueou a janela do relatório. Libere pop-ups para este site e tente de novo.');
+    return false;
+  }
   win.document.write(html);
   win.document.close();
   setTimeout(() => { win.print(); }, 500);
+  return true;
 };

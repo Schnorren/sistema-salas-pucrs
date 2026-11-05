@@ -23,19 +23,40 @@ const GestaoEmprestimos = lazy(() => import('./GestaoEmprestimos'));
 import { useContatos } from '../hooks/useContatos';
 import { buscarNoDiretorio } from '../utils/contatosBusca';
 
+// Depois de um deploy, os chunks antigos (nome com hash) deixam de existir: a
+// aba que ficou aberta (os PCs da recepção ficam o dia todo) quebra ao abrir
+// uma tela carregada sob demanda. Recarregar a página resolve.
+const ERRO_DE_CHUNK = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|ChunkLoadError/i;
+const CHAVE_RECARGA = 'pucrs.recarregouPorChunk';
+
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
   // Detalhes técnicos vão para o console (F12), não para a tela
-  componentDidCatch(error, info) { console.error('Erro na tela:', error, info?.componentStack); }
+  componentDidCatch(error, info) {
+    console.error('Erro na tela:', error, info?.componentStack);
+    // Uma recarga automática por sessão de aba (evita laço se o erro persistir)
+    if (ERRO_DE_CHUNK.test(String(error?.message || '')) && !sessionStorage.getItem(CHAVE_RECARGA)) {
+      sessionStorage.setItem(CHAVE_RECARGA, '1');
+      window.location.reload();
+    }
+  }
   render() {
     if (this.state.error) {
+      const versaoNova = ERRO_DE_CHUNK.test(String(this.state.error?.message || ''));
       return (
         <div style={{ padding: '40px', color: 'var(--text)', fontSize: '14px' }}>
-          <strong style={{ color: 'var(--red)' }}>Esta tela encontrou um erro e não pôde ser exibida.</strong><br /><br />
-          <span style={{ color: 'var(--muted)' }}>Tente de novo. Se continuar, avise a coordenação informando o que estava fazendo.</span><br />
-          <button onClick={() => this.setState({ error: null })} style={{ marginTop: '20px', padding: '8px 16px', cursor: 'pointer' }}>
-            Tentar novamente
+          <strong style={{ color: 'var(--red)' }}>
+            {versaoNova ? 'O sistema foi atualizado enquanto esta tela estava aberta.' : 'Esta tela encontrou um erro e não pôde ser exibida.'}
+          </strong><br /><br />
+          <span style={{ color: 'var(--muted)' }}>
+            {versaoNova ? 'Recarregue a página para usar a versão nova.' : 'Tente de novo. Se continuar, avise a coordenação informando o que estava fazendo.'}
+          </span><br />
+          <button
+            onClick={() => (versaoNova ? window.location.reload() : this.setState({ error: null }))}
+            style={{ marginTop: '20px', padding: '8px 16px', cursor: 'pointer' }}
+          >
+            {versaoNova ? 'Recarregar' : 'Tentar novamente'}
           </button>
         </div>
       );
@@ -83,10 +104,15 @@ export default function Dashboard({ session }) {
   const searchRef = useRef(null);
   const adminMenuRef = useRef(null);
 
-  const getAuthHeaders = () => ({
-    'Authorization': `Bearer ${session?.access_token}`,
-    'x-predio-id': predioAtivo || acesso?.predioId || ''
-  });
+  // Recarga automática por chunk velho (ErrorBoundary): depois de 30 s de uso
+  // estável, libera uma nova recarga para o próximo deploy. Se a versão nova
+  // estiver quebrada, o erro volta antes disso e não entra em laço.
+  useEffect(() => {
+    const t = setTimeout(() => sessionStorage.removeItem(CHAVE_RECARGA), 30000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const token = session?.access_token;
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
@@ -109,7 +135,7 @@ export default function Dashboard({ session }) {
       try {
         const response = await fetch(
           `${import.meta.env.VITE_API_URL}/api/grade/busca?q=${encodeURIComponent(searchQuery)}`,
-          { headers: getAuthHeaders() }
+          { headers: { 'Authorization': `Bearer ${token}`, 'x-predio-id': predioAtivo || acesso?.predioId || '' } }
         );
         const data = await response.json().catch(() => null);
         // Erro da API volta como { error } — nunca pode chegar ao .map() do
@@ -124,7 +150,7 @@ export default function Dashboard({ session }) {
     }, 300);
 
     return () => clearTimeout(delayDebounce);
-  }, [searchQuery, predioAtivo, acesso]);
+  }, [searchQuery, predioAtivo, acesso, token]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -551,6 +577,8 @@ export default function Dashboard({ session }) {
       </>
 
       <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+        {/* key: o erro de uma tela não "gruda" nas outras ao navegar */}
+        <ErrorBoundary key={location.pathname}>
         <Suspense fallback={<div className="empty-st">Carregando...</div>}>
         <Routes>
           <Route path={ROTAS.planta} element={<LiveMap session={session} acesso={acesso} />} />
@@ -590,6 +618,7 @@ export default function Dashboard({ session }) {
           <Route path="*" element={<Navigate to={ROTAS.planta} replace />} />
         </Routes>
         </Suspense>
+        </ErrorBoundary>
       </div>
     </div>
   );

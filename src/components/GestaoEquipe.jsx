@@ -69,7 +69,7 @@ export default function GestaoEquipe({ session, acesso }) {
         setEmailBusca('');
         setCargoSelecionado('');
         setBuscaCargo('');
-        setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
+        setPermissoesEditadas([]);
         setPontosEditados([]);
         setDropdownAberto(false);
     };

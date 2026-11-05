@@ -45,7 +45,7 @@ export default function AdminPanel({ session, acesso }) {
         } finally {
             setLoading(false);
         }
-    }, [token, isAdmin]);
+    }, [token, isAdmin, toast]);
 
     useEffect(() => {
         carregarDados();
