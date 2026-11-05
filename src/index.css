@@ -1122,8 +1122,39 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
   background: var(--blue-b);
 }
 
-.pdf-export-area {
-  background: var(--bg); 
-  padding: 24px;
-  border-radius: 8px;
+/* Relatório de empréstimos v2 */
+.relatorios-header { flex-wrap: wrap; gap: 16px; }
+.rel-filtro-aplicado { margin: 4px 0 0 0; font-size: 13px; color: var(--muted); }
+.rel-filtro-aplicado strong { color: var(--text2); }
+.btn-atualizar-filtro.pendente { box-shadow: 0 0 0 3px var(--amber-b); }
+.rel-barra { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: -12px 0; }
+.rel-periodos { display: flex; gap: 6px; flex-wrap: wrap; }
+.rel-periodo {
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text2); font-size: 12px; font-weight: 600;
+  font-family: var(--sans); cursor: pointer;
 }
+.rel-periodo:hover { background: var(--panel2); color: var(--text); }
+.rel-periodo.ativo { background: var(--blue-b); border-color: var(--blue); color: var(--blue); }
+.rel-exportar { display: flex; gap: 6px; }
+.rel-exportar .btn-exportar-pdf { border: 1px solid var(--border); }
+.kpi-sub { font-size: 12px; color: var(--muted); }
+.kpi-valor.purple { color: var(--purple); }
+.kpi-valor.red { color: var(--red); }
+.kpi-valor.navy { color: var(--navy); }
+.kpi-valor.muted { color: var(--muted); }
+.chart-sub { font-size: 12px; font-weight: normal; color: var(--muted); margin-left: 8px; }
+.rel-calor { display: grid; gap: 3px; font-size: 12px; }
+.rel-calor-hora { text-align: center; color: var(--muted); font-weight: 600; font-size: 11px; padding-bottom: 2px; }
+.rel-calor-dia { color: var(--text2); font-weight: 700; display: flex; align-items: center; }
+.rel-calor-celula {
+  height: 30px; border-radius: 4px; background: var(--panel2);
+  display: flex; align-items: center; justify-content: center; font-weight: 700;
+}
+.rel-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.rel-chip {
+  padding: 6px 10px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--border);
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.rel-chip small { font-weight: normal; color: var(--muted); margin-left: 4px; }
+.rel-td-data { font-family: var(--mono); font-size: 12px; white-space: nowrap; }

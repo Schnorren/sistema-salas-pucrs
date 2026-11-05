@@ -18,7 +18,7 @@ const AdminPanel = lazy(() => import('./AdminPanel'));
 const GestaoEquipe = lazy(() => import('./GestaoEquipe'));
 const MeuPerfil = lazy(() => import('./MeuPerfil'));
 // Telas de relatório carregam sob demanda: trazem gráficos (recharts) e
-// geração de PDF (jspdf/html2canvas), que as outras telas não usam.
+// geração de PDF (jspdf), que as outras telas não usam.
 const WeeklyHeatmap = lazy(() => import('./WeeklyHeatmap'));
 const HistoricalReports = lazy(() => import('./HistoricalReports'));
 const RelatoriosEmprestimos = lazy(() => import('./RelatoriosEmprestimos'));

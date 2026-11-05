@@ -249,10 +249,13 @@ class EmprestimosRepository {
         }, 'Erro ao alterar o status do item.');
     }
 
-    estatisticasRpc({ predioId, pontoIds, inicio, fim }) {
-        return rpc('emprestimo_estatisticas', {
+    // Dados brutos do relatório (retiradas, acervo e pontos do período); as
+    // contas ficam em src/utils/relatorioEmprestimos.js
+    // (ver supabase/migrations/emprestimos_relatorio.sql).
+    relatorioRpc({ predioId, pontoIds, inicio, fim }) {
+        return rpc('emprestimo_relatorio', {
             p_predio_id: predioId, p_pontos: pontoIds, p_inicio: inicio, p_fim: fim
-        }, 'Erro ao calcular as estatísticas.');
+        }, 'Erro ao montar o relatório.');
     }
 }
 
