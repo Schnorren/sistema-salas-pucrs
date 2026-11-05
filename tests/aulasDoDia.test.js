@@ -2,11 +2,11 @@
 // O teste mais importante é a PARIDADE: as chaves de bloco do front precisam
 // ser idênticas às de computarChavesDeBlocos() (timeHelpers), que conta as
 // trocas ativas do badge. Se divergirem, trocas somem ou aparecem em dobro.
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { PERIODS, computarChavesDeBlocos } from '../backend_core/utils/timeHelpers.js';
+import { PERIODS, computarChavesDeBlocos, getProximosSeteDias } from '../backend_core/utils/timeHelpers.js';
 import {
-  slotsDoDia, blocosDaSala, blocoNoPeriodo, periodosAfetadosPelaTroca, trocaNoPeriodo,
+  slotsDoDia, blocosDaSala, blocoNoPeriodo, periodosAfetadosPelaTroca, trocaNoPeriodo, trocasVigentes,
   salaCoincide, diaDaData, ordenarPeriodos, parsearNomeAula,
 } from '../src/utils/aulasDoDia.js';
 
@@ -76,6 +76,26 @@ test('troca parcial só afeta os períodos gravados; formato antigo vale para o 
   assert.equal(trocaNoPeriodo(trocas, bloco, 'M').sala_destino, '301');
   assert.equal(trocaNoPeriodo(trocas, bloco, 'N'), null);
   assert.equal(trocaNoPeriodo(trocas, null, 'M'), null);
+});
+
+test('trocas vigentes: vale o registro da próxima ocorrência de cada dia', () => {
+  // Quinta 05/11: Quinta..Domingo são da semana de 02/11; Segunda..Quarta, da de 09/11
+  mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-05T15:00:00-03:00') });
+  let proximosDias;
+  try { proximosDias = getProximosSeteDias(); } finally { mock.timers.reset(); }
+
+  const registros = [
+    { aula_unique_key: 'Segunda-205-L', semana: '2026-11-02', sala_destino: 'passou' },
+    { aula_unique_key: 'Segunda-205-L', semana: '2026-11-09', sala_destino: 'antecedencia' },
+    { aula_unique_key: 'Quinta-301-A', semana: '2026-11-02', sala_destino: 'hoje' },
+    { aula_unique_key: 'Quinta-302-A', semana: '2026-11-09', sala_destino: 'daqui-7-dias' },
+    { aula_unique_key: 'Sábado-102-C', semana: '2026-11-02T00:00:00', sala_destino: 'sabado' },
+    { aula_unique_key: 'semdia', semana: '2026-11-02' },
+  ];
+  const vigentes = trocasVigentes(registros, proximosDias);
+  assert.deepEqual(Object.keys(vigentes).sort(), ['Quinta-301-A', 'Segunda-205-L', 'Sábado-102-C']);
+  assert.equal(vigentes['Segunda-205-L'].sala_destino, 'antecedencia'); // a de 02/11 já passou
+  assert.deepEqual(trocasVigentes(null, proximosDias), {});
 });
 
 test('sala da autorização de chave compara por palavra inteira', () => {

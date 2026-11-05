@@ -1,34 +1,38 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase';
-import { getSemanaAtual } from '../../backend_core/utils/timeHelpers';
+import { getProximosSeteDias } from '../../backend_core/utils/timeHelpers';
+import { trocasVigentes } from '../utils/aulasDoDia';
 
 // Sufixo único por assinatura: Dashboard e Timeline montam o hook ao mesmo
 // tempo e cada canal Realtime precisa de um tópico distinto.
 let canalSeq = 0;
 
-// Trocas de sala ativas do prédio na semana corrente, como mapa
-// aula_unique_key → registro. Fonte única do dado para o badge do Dashboard
-// e para a Timeline: faz a própria busca (não depende de outra aba popular o
-// cache) e invalida via Realtime. A `semana` entra na queryKey para o dado
-// zerar na virada da semana; as mutations da Timeline invalidam pelo prefixo
-// ['trocas_sala', predioId], que alcança a key de qualquer semana.
+// Trocas de sala que valem do prédio, como mapa aula_unique_key → registro.
+// Uma troca é de uma data só: para cada dia da semana vale o registro da
+// PRÓXIMA ocorrência dele, hoje incluso (trocasVigentes). Por isso a busca
+// cobre a semana atual e a seguinte (troca registrada com antecedência).
+// Fonte única do dado para o badge do Dashboard, a Timeline, a Planta, as
+// Próximas aulas e a busca do topo: faz a própria busca e invalida via
+// Realtime. O dia de hoje entra na queryKey porque a seleção muda a cada
+// virada de dia; as mutations da Timeline invalidam pelo prefixo
+// ['trocas_sala', predioId], que alcança a key de qualquer dia.
 export function useTrocasSala(predioId) {
     const queryClient = useQueryClient();
-    const semana = getSemanaAtual();
+    const hoje = getProximosSeteDias()[0].data;
 
     const { data: trocasAtivas = {} } = useQuery({
-        queryKey: ['trocas_sala', predioId, semana],
+        queryKey: ['trocas_sala', predioId, hoje],
         queryFn: async () => {
+            const proximosDias = getProximosSeteDias();
+            const semanas = [...new Set(proximosDias.map(d => d.semana))]; // 1 (na segunda) ou 2
             const { data, error } = await supabase
                 .from('trocas_sala')
                 .select('*')
                 .eq('predio_id', predioId)
-                .eq('semana', semana);
+                .in('semana', semanas);
             if (error) throw error;
-            const map = {};
-            data.forEach(t => { map[t.aula_unique_key] = t; });
-            return map;
+            return trocasVigentes(data, proximosDias);
         },
         enabled: !!predioId
     });

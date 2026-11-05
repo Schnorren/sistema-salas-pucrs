@@ -23,21 +23,50 @@ export const PERIODS = [
 export const getDataSaoPaulo = () =>
   new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 
+// Nomes dos dias na ordem de Date#getDay() (0 = domingo) — os mesmos valores
+// dos seletores de dia e do prefixo da aula_unique_key de trocas_sala.
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
 // Retorna o nome do dia atual em português
-export const getDiaAtual = () => {
-  const DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-  return DAYS[getDataSaoPaulo().getDay()] || 'Segunda';
+export const getDiaAtual = () => DIAS_SEMANA[getDataSaoPaulo().getDay()] || 'Segunda';
+
+// Aritmética de datas em meia-noite UTC: somar dias não passa pelo fuso do
+// browser. "Hoje" continua vindo do relógio de Brasília (getDataSaoPaulo).
+const dataUTC = (ano, mes, dia) => new Date(Date.UTC(ano, mes, dia));
+const somarDias = (d, n) => dataUTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + n);
+const isoDaData = (d) =>
+  `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+const hojeEmBrasilia = () => {
+  const sp = getDataSaoPaulo();
+  return dataUTC(sp.getFullYear(), sp.getMonth(), sp.getDate());
 };
+// Segunda-feira (ISO) da semana de uma data — domingo pertence à semana da segunda anterior
+const segundaDaSemana = (d) => somarDias(d, d.getUTCDay() === 0 ? -6 : 1 - d.getUTCDay());
 
 // Segunda-feira (ISO) da semana atual como "YYYY-MM-DD", no fuso da PUCRS —
 // mesma regra do default da coluna `semana` de trocas_sala e de
 // limpar_trocas_antigas() no banco.
-export const getSemanaAtual = () => {
-  const d = getDataSaoPaulo();
-  const dow = d.getDay();                 // 0=Dom .. 6=Sáb
-  const diff = dow === 0 ? -6 : 1 - dow;  // dias até a segunda-feira
-  d.setDate(d.getDate() + diff);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const getSemanaAtual = () => isoDaData(segundaDaSemana(hojeEmBrasilia()));
+
+// Os 7 dias a partir de hoje (hoje incluso), no fuso da PUCRS. Cada item:
+// { dia: 'Segunda', data: '2026-11-09', semana: '2026-11-09', emDias: 4 }.
+// É o que um dia da semana significa para uma troca de sala: a PRÓXIMA vez
+// que ele acontece. Numa quinta, 'Quinta' é hoje e 'Segunda' é a segunda que
+// vem — nunca a que já passou. `semana` + o dia da aula_unique_key apontam
+// para essa data única em trocas_sala.
+export const getProximosSeteDias = () => {
+  const hoje = hojeEmBrasilia();
+  return [0, 1, 2, 3, 4, 5, 6].map(emDias => {
+    const d = somarDias(hoje, emDias);
+    return { dia: DIAS_SEMANA[d.getUTCDay()], data: isoDaData(d), semana: isoDaData(segundaDaSemana(d)), emDias };
+  });
+};
+
+// Próxima ocorrência (hoje incluso) de um dia da semana — ver getProximosSeteDias.
+// Dia desconhecido cai em hoje.
+export const getProximaOcorrencia = (dia) => {
+  const dias = getProximosSeteDias();
+  return dias.find(d => d.dia === dia) || dias[0];
 };
 
 // Array de horários de início dos períodos PUCRS (para comparação de relógio)

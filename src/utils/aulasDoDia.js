@@ -88,6 +88,23 @@ export const periodosAfetadosPelaTroca = (registro, periodosDoBloco) => {
   return validos.length ? validos : periodosDoBloco;
 };
 
+// Trocas que valem agora, como mapa aula_unique_key -> registro. Uma troca é
+// de UMA data: o dia (prefixo da chave "<dia>-<sala>-<período>") na `semana`
+// do registro. Para cada dia, vale só o registro da próxima ocorrência dele
+// (hoje incluso) — `proximosDias` é o getProximosSeteDias() do timeHelpers.
+// Assim, troca de dia que já passou some na hora, e troca registrada com
+// antecedência para a semana seguinte aparece no dia certo.
+export const trocasVigentes = (registros, proximosDias) => {
+  const semanaDoDia = Object.fromEntries((proximosDias || []).map((d) => [d.dia, d.semana]));
+  const vigentes = {};
+  for (const registro of registros || []) {
+    const chave = String(registro?.aula_unique_key || '');
+    const semana = semanaDoDia[chave.split('-')[0]];
+    if (semana && String(registro.semana).slice(0, 10) === semana) vigentes[chave] = registro;
+  }
+  return vigentes;
+};
+
 // Troca que afeta o bloco no período `code` (ou null).
 export const trocaNoPeriodo = (trocas, bloco, code) => {
   const registro = bloco ? trocas?.[bloco.chave] : null;

@@ -18,7 +18,8 @@ export default function NextClasses({ acesso }) {
   const { predioAtivo } = usePredio();
   const predioAtual = predioAtivo || acesso?.predioId || '';
   const { dados: rawGradeData, loading, error } = useGrade(predioAtual);
-  // Trocas de sala da semana — a chave do bloco é "<dia>-<sala>-<período inicial>"
+  // Trocas de sala vigentes (de cada dia, a da próxima ocorrência, hoje
+  // incluso) — a chave do bloco é "<dia>-<sala>-<período inicial>"
   const trocas = useTrocasSala(predioAtual);
   const trocaDaAula = (aula) => {
     const registro = trocas[`${day}-${aula.sala}-${aula.periodos[0]}`];
