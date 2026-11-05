@@ -225,35 +225,71 @@ select.cel-chip, .cel-chip {
 .cel-legenda { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text2); margin-bottom: 8px; }
 .cel-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 
-/* Mini-grade: sala parada à esquerda | 16 períodos rolando para os lados.
-   --col e --gap espelham COLUNA_PX/ESPACO_PX de MiniGrade.jsx. */
-.cel-mg-rolagem { --col: 34px; --gap: 4px; overflow-x: auto; margin: 0 -12px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+/* Mini-grade: sala parada à esquerda | 16 períodos rolando para os lados, com
+   o nome de cada aula. --col e --gap espelham COLUNA_PX/ESPACO_PX de MiniGrade.jsx. */
+.cel-mg-rolagem { --col: 56px; --gap: 4px; overflow-x: auto; margin: 0 -12px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .cel-mg-rolagem::-webkit-scrollbar { display: none; }
 .cel-mg-tabela { width: max-content; min-width: 100%; padding-right: 12px; }
 .cel-mg-cab, .cel-mg-linha { display: grid; grid-template-columns: 58px max-content; column-gap: 6px; }
 .cel-mg-fixa, .cel-mg-sala { position: sticky; left: 0; z-index: 2; background: var(--bg); padding-left: 12px; }
 .cel-mg-cab { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.cel-mg-turnos, .cel-mg-horas, .cel-faixa { display: grid; grid-template-columns: repeat(16, var(--col, 1fr)); column-gap: var(--gap, 4px); }
+.cel-mg-turnos, .cel-mg-horas, .cel-mg-faixa, .cel-faixa { display: grid; grid-template-columns: repeat(16, var(--col, 1fr)); column-gap: var(--gap, 4px); }
 /* Espaço extra entre manhã | tarde | noite (antes do F e do L). Deslocamento,
    não margem: margem num item de grade estreitaria a célula. */
-.cel-mg-rolagem .cel-mg-horas > :nth-child(n+7), .cel-mg-rolagem .cel-faixa > :nth-child(n+7), .cel-mg-turnos > :nth-child(2) { transform: translateX(6px); }
-.cel-mg-rolagem .cel-mg-horas > :nth-child(n+13), .cel-mg-rolagem .cel-faixa > :nth-child(n+13), .cel-mg-turnos > :nth-child(3) { transform: translateX(12px); }
-.cel-mg-rolagem .cel-mg-horas, .cel-mg-rolagem .cel-faixa, .cel-mg-turnos { margin-right: 12px; }
+.cel-mg-horas > :nth-child(n+7), .cel-mg-turnos > :nth-child(2), .cel-mg-faixa > .t2 { transform: translateX(6px); }
+.cel-mg-horas > :nth-child(n+13), .cel-mg-turnos > :nth-child(3), .cel-mg-faixa > .t3 { transform: translateX(12px); }
+.cel-mg-horas, .cel-mg-faixa, .cel-mg-turnos { margin-right: 12px; }
 .cel-mg-turnos { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 3px; }
-/* O rótulo do turno acompanha a rolagem dentro do próprio turno (sticky de
-   item de grade fica preso à área dele) */
-.cel-mg-turnos span { justify-self: start; position: sticky; left: 64px; padding-left: 4px; border-left: 1px solid var(--border2); white-space: nowrap; }
+/* Cada turno ocupa a área dele; o rótulo dentro fica parado na tela (sticky)
+   só enquanto o turno está à vista — o contêiner limita o sticky. */
+.cel-mg-turnos > span { display: block; border-left: 1px solid var(--border2); }
+.cel-mg-turnos > span > span { display: inline-block; position: sticky; left: 64px; padding-left: 4px; white-space: nowrap; }
 .cel-mg-horas span { display: flex; flex-direction: column; align-items: center; font: 9px/1.2 var(--mono); color: var(--muted); }
 .cel-mg-horas b { font-size: 11px; color: var(--text2); }
 .cel-mg-horas .agora, .cel-mg-horas .agora b { color: var(--accent); }
-.cel-mg-linha {
-  width: 100%; border: 0; border-bottom: 1px solid var(--border); background: none; color: inherit;
-  padding: 8px 0 7px; text-align: left; cursor: pointer; font-family: inherit;
+.cel-mg-linha { border-bottom: 1px solid var(--border); padding: 6px 0; cursor: pointer; }
+.cel-mg-sala {
+  border: 0; text-align: left; cursor: pointer; font: bold 14px var(--mono); color: var(--navy);
+  display: flex; align-items: center; padding-right: 0;
 }
-.cel-mg-linha:active, .cel-mg-linha:active .cel-mg-sala { background: var(--panel2); }
-.cel-mg-sala { font: bold 14px/26px var(--mono); color: var(--navy); }
 .cel-mg-sala.agora { color: var(--accent); }
-.cel-faixa { height: 26px; }
+.cel-mg-faixa { min-height: 54px; }
+.cel-mg-vazio {
+  display: flex; align-items: center; justify-content: center; border-radius: 3px;
+  background: var(--bg2); font: 10px var(--mono); color: var(--muted);
+}
+.cel-mg-vazio.agora { outline: 2px solid var(--accent); outline-offset: -2px; color: var(--accent); font-weight: bold; }
+.cel-mg-aula {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow: hidden;
+  border: 0; border-radius: 4px; padding: 3px 6px 5px; text-align: left; cursor: pointer;
+  font-family: inherit; color: #fff; background-color: var(--blue);
+  /* divisória fina no meio do espaço entre um período e o seguinte */
+  background-image: repeating-linear-gradient(90deg,
+    transparent 0 calc(var(--col) + var(--gap) / 2 - 1px),
+    rgba(0, 0, 0, .3) calc(var(--col) + var(--gap) / 2 - 1px) calc(var(--col) + var(--gap) / 2),
+    transparent calc(var(--col) + var(--gap) / 2) calc(var(--col) + var(--gap)));
+}
+.cel-mg-aula.interno { background-color: var(--purple); }
+.cel-mg-aula.troca { background-color: var(--red); }
+.cel-mg-aula.cont { margin-left: calc(-1 * var(--gap)); border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 rgba(0, 0, 0, .35); }
+.cel-mg-aula.agora { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cel-mg-aula .pers { display: grid; column-gap: var(--gap); margin: 0 -6px; font: 9.5px var(--mono); opacity: .8; }
+.cel-mg-aula.cont .pers { padding-left: var(--gap); }
+.cel-mg-aula .pers span { text-align: center; }
+.cel-mg-aula .pers .agora { opacity: 1; font-weight: bold; color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+.cel-mg-aula .nome {
+  font-size: 10.5px; font-weight: bold; line-height: 1.2; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cel-mg-aula .troca-faixa { font-size: 9.5px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: rgba(0, 0, 0, .25); margin: 0 -6px; padding: 1px 6px; }
+
+/* Agenda da sala */
+.cel-ag-cab { display: flex; align-items: center; gap: 4px; margin: 0 0 2px -6px; }
+.cel-ag-cab b { font: bold 22px var(--mono); color: var(--text); }
+.cel-ag-sub { font-size: 13px; color: var(--text2); margin-bottom: 12px; }
+.cel-ag-faixa { --col: minmax(0, 1fr); --gap: 3px; margin-bottom: 14px; }
+.cel-ag-faixa .cel-faixa { height: 28px; }
+/* Faixa compacta (agenda da sala): uma célula por período, com a letra */
 .cel-faixa i {
   display: flex; align-items: center; justify-content: center; font: 10px var(--mono); font-style: normal;
   color: var(--muted); background: var(--bg2); border-radius: 3px;
@@ -265,20 +301,6 @@ select.cel-chip, .cel-chip {
 .cel-faixa i.cont { margin-left: calc(-1 * var(--gap, 4px)); border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 rgba(0, 0, 0, .35); }
 .cel-faixa i:has(+ i.cont) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .cel-faixa i.agora { outline: 2px solid var(--accent); outline-offset: -2px; font-weight: bold; }
-/* Texto da linha: parado na tela enquanto a faixa rola */
-.cel-mg-txt {
-  grid-column: 2; position: sticky; left: 64px; width: calc(100vw - 76px);
-  font-size: 12px; color: var(--text2); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.cel-mg-txt em { font-style: normal; color: var(--accent); font-weight: bold; }
-.cel-mg-txt strong { color: var(--red); }
-
-/* Agenda da sala */
-.cel-ag-cab { display: flex; align-items: center; gap: 4px; margin: 0 0 2px -6px; }
-.cel-ag-cab b { font: bold 22px var(--mono); color: var(--text); }
-.cel-ag-sub { font-size: 13px; color: var(--text2); margin-bottom: 12px; }
-.cel-ag-faixa { --col: minmax(0, 1fr); --gap: 3px; margin-bottom: 14px; }
-.cel-ag-faixa .cel-faixa { height: 28px; }
 .cel-ag { display: grid; grid-template-columns: 50px 1fr; gap: 10px; margin-bottom: 8px; }
 .cel-ag-hora { font: 12px/1.35 var(--mono); color: var(--text2); padding-top: 9px; text-align: right; }
 .cel-ag-card {

@@ -2,9 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PERIODS } from '../backend_core/utils/timeHelpers.js';
-import { segmentosDaLinha, itensDaAgenda, resumoDaLinha } from '../src/utils/miniGrade.js';
-
-const INICIOS = PERIODS.map((p) => p.lb);
+import { segmentosDaLinha, itensDaAgenda, blocosDaFaixa } from '../src/utils/miniGrade.js';
 
 // Slots no formato que a Timeline monta: blocos = [[índice inicial, quantidade, nome, tipo?]]
 function slotsDe(blocos, idxAgora = -1, sala = '204') {
@@ -60,35 +58,29 @@ test('itensDaAgenda: sala sem aula é um item livre do dia inteiro', () => {
   assert.deepEqual(itensDaAgenda(slotsDe([])), [{ livre: true, ini: 0, fim: 15 }]);
 });
 
-test('resumoDaLinha: aula de agora, com a troca que vale no período', () => {
-  const trocas = { 'Quinta-204-C': { predio_destino: '32', sala_destino: '410', periodos_str: 'C,D' } };
-  const r = resumoDaLinha(slotsDe([[2, 2, 'PRODUÇÃO']], 2), trocas, 2, INICIOS);
-  assert.equal(r.tipo, 'agora');
-  assert.equal(r.bloco.nome, 'PRODUÇÃO');
-  assert.equal(r.troca.sala_destino, '410');
+test('blocosDaFaixa: cada aula é um bloco com nome, letras e o período atual', () => {
+  const blocos = blocosDaFaixa(slotsDe([[2, 2, 'PRODUÇÃO'], [4, 2, 'FOTOGRAFIA', 'Interno']], 3), {});
+  const aulas = blocos.filter((b) => !b.livre);
+  assert.deepEqual(aulas.map((b) => [b.nome, b.periodos.join(''), b.tipo, b.idxAgora, b.continua]), [
+    ['PRODUÇÃO', 'CD', 'regular', 1, false],
+    ['FOTOGRAFIA', 'EE1', 'interno', -1, false],
+  ]);
+  const livres = blocos.filter((b) => b.livre);
+  assert.equal(livres.length, 12);
+  assert.deepEqual(livres.slice(0, 2).map((b) => b.periodo), ['A', 'B']);
 });
 
-test('resumoDaLinha: troca que não cobre o período atual não aparece', () => {
-  const trocas = { 'Quinta-204-L': { periodos_str: 'N,P' } };
-  const r = resumoDaLinha(slotsDe([[12, 4, 'PROJETO']], 12), trocas, 12, INICIOS);
-  assert.equal(r.tipo, 'agora');
-  assert.equal(r.troca, null);
+test('blocosDaFaixa: troca parcial divide a aula; a parte trocada traz o registro', () => {
+  const registro = { predio_destino: '32', sala_destino: '410', periodos_str: 'L,M' };
+  const aulas = blocosDaFaixa(slotsDe([[12, 4, 'PROJETO']]), { 'Quinta-204-L': registro }).filter((b) => !b.livre);
+  assert.deepEqual(aulas.map((b) => [b.periodos.join(''), b.tipo, b.continua, b.troca?.sala_destino ?? null, b.nome]), [
+    ['LM', 'troca', false, '410', 'PROJETO'],
+    ['NP', 'regular', true, null, 'PROJETO'],
+  ]);
 });
 
-test('resumoDaLinha: livre agora mostra a próxima aula e o horário', () => {
-  const r = resumoDaLinha(slotsDe([[0, 2, 'ESTATÍSTICA'], [4, 2, 'REDAÇÃO']], 2), {}, 2, INICIOS);
-  assert.deepEqual([r.tipo, r.bloco.nome, r.inicio], ['livre', 'REDAÇÃO', '11:30']);
-});
-
-test('resumoDaLinha: sem mais aulas no dia', () => {
-  assert.equal(resumoDaLinha(slotsDe([[0, 2, 'ESTATÍSTICA']], 5), {}, 5, INICIOS).tipo, 'livreResto');
-});
-
-test('resumoDaLinha: outro dia (sem período atual) mostra a primeira aula e o total', () => {
-  const r = resumoDaLinha(slotsDe([[6, 2, 'ÁLGEBRA'], [10, 2, 'FÍSICA']]), {}, -1, INICIOS);
-  assert.deepEqual([r.tipo, r.bloco.nome, r.inicio, r.total], ['dia', 'ÁLGEBRA', '14:00', 2]);
-});
-
-test('resumoDaLinha: sala sem aula', () => {
-  assert.equal(resumoDaLinha(slotsDe([]), {}, 3, INICIOS).tipo, 'vazia');
+test('blocosDaFaixa: sem aula, 16 períodos livres', () => {
+  const blocos = blocosDaFaixa(slotsDe([]), {});
+  assert.equal(blocos.length, 16);
+  assert.ok(blocos.every((b) => b.livre));
 });
