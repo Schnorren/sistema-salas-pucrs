@@ -22,6 +22,22 @@ export const usePontosEmprestimo = (session, predioId, uso = 'balcao') => {
     return { pontos: query.data || [], carregando: query.isLoading, erro: query.error?.message || null };
 };
 
+// Pontos do relatório da rede (vários prédios): os liberados no Painel Admin
+// para este login; admin vê todos. Não depende do prédio ativo.
+// [{ id, nome, ativo, predioId, predioNome }], ordenados por prédio e nome.
+export const usePontosDaRede = (session, ativo = true) => {
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    const query = useQuery({
+        queryKey: ['emprestimos', 'rede', 'pontos', userId],
+        queryFn: async () => parseResponse(await fetch(`${API}/rede/pontos`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })),
+        enabled: ativo && !!userId
+    });
+    return { pontos: query.data || [], carregando: query.isLoading, erro: query.error?.message || null };
+};
+
 // Balcão de um PONTO de empréstimo. Todas as queries ficam sob ['emprestimos', …]
 // para o Realtime invalidar tudo do prédio por prefixo.
 export const useEmprestimos = (session, predioId, pontoId, buscaHistorico = '') => {

@@ -15,8 +15,9 @@ const USUARIOS = {
   // token próprio: o withAuth guarda a sessão em cache por token, e o teste do
   // banco fora do ar precisa de uma sessão que ainda não passou pelo cache
   'tok-membro-db': { id: 'membro-1', email: 'membro@pucrs.br' },
+  'tok-coord': { id: 'coord-1', email: 'coord@pucrs.br' },
 };
-const EMAIL_PARA_ID = { 'admin@pucrs.br': 'admin-1', 'gestor@pucrs.br': 'gestor-1', 'membro@pucrs.br': 'membro-1' };
+const EMAIL_PARA_ID = { 'admin@pucrs.br': 'admin-1', 'gestor@pucrs.br': 'gestor-1', 'membro@pucrs.br': 'membro-1', 'coord@pucrs.br': 'coord-1' };
 let acessos;
 let modoAuth;
 let modoDb;
@@ -27,6 +28,8 @@ beforeEach(() => {
     'admin-1': { user_id: 'admin-1', predio_id: null, permissoes: ['admin', 'equipe'] },
     'gestor-1': { user_id: 'gestor-1', predio_id: 'p15', permissoes: ['equipe', 'grade'] },
     'membro-1': { user_id: 'membro-1', predio_id: 'p15', permissoes: ['grade'] },
+    // coordenação da recepção: relatório da rede, sem prédio
+    'coord-1': { user_id: 'coord-1', predio_id: null, permissoes: ['relatorio_emprestimos_rede'] },
   };
   modoAuth = 'ok';
   modoDb = 'ok';
@@ -55,7 +58,7 @@ beforeEach(() => {
         ? { data: { user_id: id, permissoes: a.permissoes }, error: null }
         : { data: null, error: { code: 'PGRST116' } };
     }
-    if (q.tabela === 'sistema_modulos') return { data: [{ id: 'admin' }, { id: 'grade' }], error: null };
+    if (q.tabela === 'sistema_modulos') return { data: [{ id: 'admin' }, { id: 'grade' }, { id: 'relatorio_emprestimos_rede' }], error: null };
     return { data: [], error: null };
   });
 });
@@ -124,6 +127,26 @@ test('equipe: edição normal grava permissões sanitizadas e a auditoria antes 
   const update = escritas.find((e) => e.tabela === 'usuarios_acessos' && e.acao === 'update');
   assert.deepEqual(update.payload.permissoes, ['avisos']);
   assert.ok(escritas.some((e) => e.tabela === 'auditoria_log'));
+});
+
+test('equipe: gestor não "reconvida" o login da rede (prédio nulo) nem o revoga', async () => {
+  const convite = await comoGestor({ metodo: 'POST', url: '/api/equipe/convidar', body: { email: 'coord@pucrs.br', permissoes: ['grade'] } });
+  assert.equal(convite.status, 409);
+  assert.equal(escritas.filter((e) => e.tabela === 'usuarios_acessos').length, 0);
+  acessos['coord-1'].predio_id = 'p15';
+  assert.equal((await comoGestor({ metodo: 'DELETE', url: '/api/equipe/membro', body: { email: 'coord@pucrs.br' } })).status, 403);
+  assert.equal(escritas.filter((e) => e.tabela === 'usuarios_acessos').length, 0);
+});
+
+test('equipe: editar membro com o relatório da rede mantém o módulo; gestor não o concede a outro', async () => {
+  acessos['coord-1'] = { user_id: 'coord-1', predio_id: 'p15', permissoes: ['grade', 'relatorio_emprestimos_rede'] };
+  const r = await comoGestor({ metodo: 'PUT', url: '/api/equipe/membro', body: { email: 'coord@pucrs.br', permissoes: ['avisos'] } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(escritas.find((e) => e.tabela === 'usuarios_acessos').payload.permissoes, ['avisos', 'relatorio_emprestimos_rede']);
+
+  escritas = [];
+  await comoGestor({ metodo: 'PUT', url: '/api/equipe/membro', body: { email: 'membro@pucrs.br', permissoes: ['grade', 'relatorio_emprestimos_rede'] } });
+  assert.deepEqual(escritas.find((e) => e.tabela === 'usuarios_acessos').payload.permissoes, ['grade']);
 });
 
 test('equipe: lista de módulos não mostra admin para gestor comum', async () => {

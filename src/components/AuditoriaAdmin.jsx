@@ -23,6 +23,8 @@ const ACOES = {
     'equipe.membro.atualizar': 'Permissões alteradas',
     'equipe.membro.remover': 'Acesso revogado',
     'admin.usuario.atualizar': 'Usuário editado (admin)',
+    'admin.usuario.excluir': 'Conta excluída (admin)',
+    'admin.usuario.criar': 'Conta criada (admin)',
     'admin.predio.criar': 'Prédio criado',
     'admin.predio.excluir': 'Prédio excluído',
     'admin.perfil.criar': 'Cargo criado',
@@ -72,7 +74,17 @@ function resumir(item, nomeModulo) {
         case 'equipe.convidar':
         case 'equipe.membro.atualizar': return [d.email, modulos && `módulos: ${modulos}`].filter(Boolean).join(' · ');
         case 'equipe.membro.remover': return d.email || '';
-        case 'admin.usuario.atualizar': return [modulos && `módulos: ${modulos}`, d.senhaAlterada && 'senha alterada'].filter(Boolean).join(' · ');
+        case 'admin.usuario.excluir': return [d.email, d.motivo].filter(Boolean).join(' · ');
+        case 'admin.usuario.criar': return [
+            d.email,
+            d.modo === 'senha' ? 'senha definida pelo admin' : 'convite por e-mail',
+            modulos && `módulos: ${modulos}`,
+        ].filter(Boolean).join(' · ');
+        case 'admin.usuario.atualizar': return [
+            modulos && `módulos: ${modulos}`,
+            Array.isArray(d.pontosRede) && `${d.pontosRede.length} ponto${d.pontosRede.length === 1 ? '' : 's'} no relatório da rede`,
+            d.senhaAlterada && 'senha alterada',
+        ].filter(Boolean).join(' · ');
         case 'contatos.curso_adicionar':
         case 'contatos.curso_remover': return [d.curso, d.contato].filter(Boolean).join(' · ');
         case 'grade.importar': return [

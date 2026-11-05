@@ -90,7 +90,7 @@ import Icone from './celular/Icone';
 // 05/11: não esconder; o balcão de empréstimos fica nos PCs da recepção).
 const TELAS_DE_COMPUTADOR = [
   ROTAS.emprestimos, ROTAS.ocupacao, ROTAS.historicoAulas, ROTAS.atualizarGrade, ROTAS.equipe,
-  ROTAS.relatorioEmprestimos, ROTAS.gestaoEmprestimos, ROTAS.admin,
+  ROTAS.relatorioEmprestimos, ROTAS.relatorioEmprestimosRede, ROTAS.gestaoEmprestimos, ROTAS.admin,
 ];
 
 export default function Dashboard({ session }) {
@@ -315,8 +315,13 @@ export default function Dashboard({ session }) {
 
   const isAdmin = acesso.permissoes?.includes('admin');
   const hasPredioContext = Boolean(acesso.predioId || predioAtivo);
+  // Relatório de empréstimos de vários prédios (pontos escolhidos no Painel
+  // Admin). Não depende de prédio: a coordenação da recepção não tem um.
+  const canViewRelatorioRede = acesso.permissoes?.includes('relatorio_emprestimos_rede') || isAdmin;
   // Órfão = sem prédio e sem admin. Global exige admin; prédio nulo sem admin não dá acesso.
-  const isOrphan = !isAdmin && !acesso.predioId;
+  // O login da rede sem prédio não é órfão: vê só o relatório da rede (abaixo).
+  const isOrphan = !isAdmin && !acesso.predioId && !canViewRelatorioRede;
+  const soRelatorioRede = !isAdmin && !acesso.predioId && canViewRelatorioRede;
 
   if (isOrphan) {
     return (
@@ -346,7 +351,34 @@ export default function Dashboard({ session }) {
   // (o diretório é institucional/global). Só a edição é gated.
   const canEditContatos = acesso.permissoes?.includes('edicao_contatos') || isAdmin;
 
-  const isGestor = isAdmin || canViewRelatorios || canViewEquipe || canViewEmprestimos || canGerirEmprestimos || canEditGrade || canViewOperacional;
+  const isGestor = isAdmin || canViewRelatorios || canViewEquipe || canViewEmprestimos || canGerirEmprestimos || canEditGrade || canViewOperacional || canViewRelatorioRede;
+
+  // Login da rede sem prédio: nada de grade, avisos ou busca (tudo é por
+  // prédio). Só o topo e o relatório, que também fica na raiz — sem redirect,
+  // para não apagar o hash do link de convite (ver rotas.js).
+  if (soRelatorioRede) {
+    const telaRede = <RelatoriosEmprestimos rede session={session} acesso={acesso} />;
+    return (
+      <div id="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        <Topbar
+          session={session} acesso={acesso} onAbrirPerfil={() => navigate(ROTAS.perfil)}
+          escuro={escuro} onAlternarTema={() => setEscuro(e => !e)}
+        />
+        <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+          <ErrorBoundary key={location.pathname}>
+            <Suspense fallback={<div className="empty-st">Carregando...</div>}>
+              <Routes>
+                <Route path={ROTAS.planta} element={telaRede} />
+                <Route path={ROTAS.relatorioEmprestimosRede} element={telaRede} />
+                <Route path={ROTAS.perfil} element={<MeuPerfil session={session} onClose={() => navigate(ROTAS.planta)} />} />
+                <Route path="*" element={<Navigate to={ROTAS.planta} replace />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
 
   // Mesmo gating das abas, aplicado à URL: quem digita o endereço de uma tela
   // sem permissão (ou sem prédio) volta para a Planta. É só UX — o backend
@@ -361,6 +393,7 @@ export default function Dashboard({ session }) {
     canEditGrade && { to: ROTAS.salasPredio, rotulo: 'Salas do Prédio' },
     canViewEquipe && { to: ROTAS.equipe, rotulo: 'Gestão de Equipe' },
     (canViewEmprestimos || canViewRelatorios || canGerirEmprestimos) && { to: ROTAS.relatorioEmprestimos, rotulo: 'Relatório de Empréstimos' },
+    canViewRelatorioRede && { to: ROTAS.relatorioEmprestimosRede, rotulo: 'Relatório de Empréstimos da Rede' },
     canGerirEmprestimos && { to: ROTAS.gestaoEmprestimos, rotulo: 'Gestão de Empréstimos' },
     // Painel Admin saiu das abas (só admin vê)
     isAdmin && { to: ROTAS.admin, rotulo: 'Painel Admin' },
@@ -696,6 +729,8 @@ export default function Dashboard({ session }) {
           <Route path={ROTAS.salasPredio} element={restrita(canEditGrade, <SalasPredio session={session} acesso={acesso} />)} />
           <Route path={ROTAS.equipe} element={restrita(canViewEquipe, <GestaoEquipe session={session} acesso={acesso} />)} />
           <Route path={ROTAS.relatorioEmprestimos} element={restrita(canViewEmprestimos || canViewRelatorios || canGerirEmprestimos, <RelatoriosEmprestimos session={session} acesso={acesso} />)} />
+          {/* key: a mesma tela, em outro modo — não reaproveita o estado da do prédio */}
+          <Route path={ROTAS.relatorioEmprestimosRede} element={restrita(canViewRelatorioRede, <RelatoriosEmprestimos key="rede" rede session={session} acesso={acesso} />)} />
           <Route path={ROTAS.gestaoEmprestimos} element={restrita(canGerirEmprestimos, <GestaoEmprestimos session={session} acesso={acesso} />)} />
 
           {/* Endereço desconhecido → Planta */}

@@ -46,6 +46,29 @@ test('PDF: só o resumo, sem a lista de retiradas — o tamanho não cresce com 
   assert.ok(gerarPdfRelatorio(montarRelatorio(dadosBase(1200), periodo), meta).output('arraybuffer').byteLength < 100 * 1024);
 });
 
+test('PDF da rede: título próprio, retiradas por prédio e ranking somando os prédios', () => {
+  const dados = {
+    pontos: [{ id: 'r15', nome: 'Recepção', predio: 'Prédio 15' }, { id: 'r9', nome: 'Recepção', predio: 'Prédio 9' }],
+    itens: [
+      { id: 'u15', nome: 'Uno', patrimonio: 'U-15', categoria: 'Jogos', ponto: 'r15', ativo: true },
+      { id: 'u9', nome: 'Uno', patrimonio: 'U-9', categoria: 'Jogos', ponto: 'r9', ativo: true },
+    ],
+    registros: [
+      { item: 'u15', ponto: 'r15', retirada: '2026-03-02T13:00:00Z', devolucao: '2026-03-02T13:30:00Z', status: 'CONCLUIDO', ocorrencia: null },
+      { item: 'u9', ponto: 'r9', retirada: '2026-03-03T13:00:00Z', devolucao: '2026-03-03T13:30:00Z', status: 'CONCLUIDO', ocorrencia: null },
+    ],
+    retiradasPorAluno: [1, 1],
+  };
+  const pdf = gerarPdfRelatorio(montarRelatorio(dados, periodo), {
+    ...meta, titulo: 'Relatório de Empréstimos da Rede', predioNome: '', pontoNome: 'Todos os pontos liberados (2 prédios, 2 pontos)',
+  }, { compress: false });
+  const txt = conteudo(pdf);
+  assert.ok(txt.includes('Relatório de Empréstimos da Rede'));
+  assert.ok(txt.includes('Retiradas por prédio'));
+  assert.ok(txt.includes('somando os prédios'));
+  assert.ok(!txt.includes('Retiradas por ponto de empr'), 'um ponto por prédio: sem o bloco repetido');
+});
+
 test('PDF: período sem retiradas não quebra', () => {
   const pdf = gerarPdfRelatorio(montarRelatorio({ pontos: [], itens: [], registros: [] }, periodo), meta, { compress: false });
   assert.equal(pdf.getNumberOfPages(), 1);

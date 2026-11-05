@@ -3,18 +3,23 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useQuery } from '@tanstack/react-query';
 import { usePredio } from '../contexts/PredioContext';
 import { useUI } from '../contexts/UIContext';
-import { usePontosEmprestimo } from '../hooks/useEmprestimos';
+import { usePontosEmprestimo, usePontosDaRede } from '../hooks/useEmprestimos';
 import { lerResposta } from '../utils/api';
 import { baixarCsv } from '../utils/csv';
 import { formatarDuracao } from '../../backend_core/utils/emprestimoRegras';
 import {
     montarRelatorio, periodoPredefinido, periodoAtivo, PERIODOS_PREDEFINIDOS, descreverPeriodo,
     formatarDataHora, formatarNumero, formatarHoras, descreverRetirada, nomeArquivoRelatorio, linhasCsvRelatorio,
+    agruparPontosPorPredio, selecaoDaRede,
 } from '../utils/relatorioEmprestimos';
 
 // Relatório de empréstimos. Todas as contas vêm de montarRelatorio()
 // (utils/relatorioEmprestimos.js), as mesmas do PDF e da planilha.
 // ANÔNIMO: sem nome nem matrícula de aluno (dados confidenciais).
+//
+// `rede`: relatório de vários prédios (módulo relatorio_emprestimos_rede —
+// ex.: coordenação da recepção). Os pontos são os liberados no Painel Admin,
+// não os do prédio ativo; o filtro é por prédio ou ponto.
 
 const LIMITE_REGISTROS_TELA = 15;
 const estiloTooltip = { background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)' };
@@ -75,7 +80,7 @@ function Kpi({ titulo, valor, sub, cor }) {
 
 const TAG_SITUACAO = { aberto: 'pendente', nao_devolvido: 'perdido', problema: 'problema', devolvido: 'concluido' };
 
-export default function RelatoriosEmprestimos({ session, acesso }) {
+export default function RelatoriosEmprestimos({ session, acesso, rede = false }) {
     const { predioAtivo, predioNome: predioNomeContexto } = usePredio();
     const { toast } = useUI();
     const currentPredioId = predioAtivo || acesso?.predioId || acesso?.predio_id;
@@ -85,26 +90,39 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
     // atalhos de período e ponto valem na hora)
     const [filtro, setFiltro] = useState(() => periodoPredefinido('hoje'));
     const [rascunho, setRascunho] = useState(filtro);
+    // Prédio: id do ponto ou ''. Rede: '' · 'predio:<id>' · 'ponto:<id>'
     const [pontoFiltro, setPontoFiltro] = useState('');
     const [verTodos, setVerTodos] = useState(false);
     const [gerandoPdf, setGerandoPdf] = useState(false);
 
     // Pontos que este login vê no relatório; o filtro só aparece com mais de um
-    const { pontos } = usePontosEmprestimo(session, currentPredioId, 'relatorio');
+    const doPredio = usePontosEmprestimo(session, rede ? null : currentPredioId, 'relatorio');
+    const daRede = usePontosDaRede(session, rede);
+    const pontos = rede ? daRede.pontos : doPredio.pontos;
     const pontoNome = pontoFiltro
         ? (pontos.find(p => p.id === pontoFiltro)?.nome || '')
         : (pontos.length === 1 ? pontos[0].nome : 'Todos os pontos');
+    const selRede = rede ? selecaoDaRede(pontos, pontoFiltro) : null;
+    const semPontosNaRede = rede && !daRede.carregando && !daRede.erro && pontos.length === 0;
 
     const { data: dados, isLoading, isError, error, isFetching } = useQuery({
-        queryKey: ['relatorio_emprestimos', currentPredioId, filtro.inicio, filtro.fim, pontoFiltro],
+        queryKey: rede
+            ? ['relatorio_emprestimos_rede', session?.user?.id, filtro.inicio, filtro.fim, pontoFiltro]
+            : ['relatorio_emprestimos', currentPredioId, filtro.inicio, filtro.fim, pontoFiltro],
         queryFn: async () => {
-            const params = new URLSearchParams({ inicio: filtro.inicio, fim: filtro.fim, ...(pontoFiltro ? { ponto: pontoFiltro } : {}) });
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/relatorio?${params}`, {
-                headers: { 'Authorization': `Bearer ${session?.access_token}`, 'x-predio-id': currentPredioId },
+            const params = new URLSearchParams({ inicio: filtro.inicio, fim: filtro.fim });
+            if (rede && selRede.pontoIds.length) params.set('pontos', selRede.pontoIds.join(','));
+            if (!rede && pontoFiltro) params.set('ponto', pontoFiltro);
+            const caminho = rede ? 'rede/relatorio' : 'relatorio';
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/emprestimos/${caminho}?${params}`, {
+                headers: rede
+                    ? { 'Authorization': `Bearer ${session?.access_token}` }
+                    : { 'Authorization': `Bearer ${session?.access_token}`, 'x-predio-id': currentPredioId },
             });
             return lerResposta(res);
         },
-        enabled: !!currentPredioId,
+        // Rede: espera a lista de pontos (o filtro vira ids)
+        enabled: rede ? pontos.length > 0 : !!currentPredioId,
         staleTime: 1000 * 60 * 2,
     });
 
@@ -127,16 +145,19 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
     const atalhoAtivo = periodoAtivo(filtro.inicio, filtro.fim);
     const rascunhoPendente = rascunho.inicio !== filtro.inicio || rascunho.fim !== filtro.fim;
 
-    const arquivo = (extensao) => nomeArquivoRelatorio({
-        predioNome, pontoNome: pontoFiltro ? pontoNome : '', inicio: filtro.inicio, fim: filtro.fim, extensao,
-    });
+    const arquivo = (extensao) => nomeArquivoRelatorio(rede
+        ? { predioNome: 'Rede', pontoNome: selRede.arquivo, inicio: filtro.inicio, fim: filtro.fim, extensao }
+        : { predioNome, pontoNome: pontoFiltro ? pontoNome : '', inicio: filtro.inicio, fim: filtro.fim, extensao });
+    const titulo = rede ? 'Relatório de Empréstimos da Rede' : 'Relatório de Empréstimos';
+    const descricaoFiltro = rede ? selRede.descricao : [predioNome, pontoNome].filter(Boolean).join(' · ');
     const exportarPdf = async () => {
         if (!rel) return;
         setGerandoPdf(true);
         try {
             // jsPDF só carrega quando alguém exporta
             const { gerarPdfRelatorio } = await import('../utils/pdfRelatorioEmprestimos');
-            const pdf = gerarPdfRelatorio(rel, { predioNome, pontoNome, geradoEm: new Date(), geradoPor: session?.user?.email || '' });
+            const meta = rede ? { titulo, predioNome: '', pontoNome: selRede.descricao } : { predioNome, pontoNome };
+            const pdf = gerarPdfRelatorio(rel, { ...meta, geradoEm: new Date(), geradoPor: session?.user?.email || '' });
             pdf.save(arquivo('pdf'));
         } catch (err) {
             console.error(err);
@@ -153,22 +174,45 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
     const total = r?.retiradas || 1;
     const comPct = (v) => `${formatarNumero(v)} (${formatarNumero((v / total) * 100)}%)`;
     const registros = rel ? (verTodos ? rel.registros : rel.registros.slice(0, LIMITE_REGISTROS_TELA)) : [];
+    // Prédio (só na rede), ponto e categoria: o que tiver, dois por linha
+    const contagens = rel ? [
+        rel.variosPredios && { chave: 'predio', titulo: '🏢 Retiradas por prédio', cor: 'var(--blue)', dados: rel.porPredio },
+        rel.mostrarPorPonto && { chave: 'ponto', titulo: '📍 Retiradas por ponto de empréstimo', cor: 'var(--purple)', dados: rel.porPonto },
+        { chave: 'categoria', titulo: '🗂️ Retiradas por categoria', cor: 'var(--purple)', dados: rel.porCategoria },
+    ].filter(Boolean) : [];
+    const subItens = rel?.itensAgrupadosPorNome ? ', somando os prédios' : '';
 
     return (
         <div className="relatorios-container">
             <div className="relatorios-header">
                 <div>
                     <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text)', display: 'flex', alignItems: 'center' }}>
-                        Relatório de Empréstimos
+                        {titulo}
                         {isFetching && <span className="badge-atualizando">Atualizando...</span>}
                     </h2>
                     <p className="rel-filtro-aplicado">
-                        {[predioNome, pontoNome].filter(Boolean).join(' · ')} · <strong>{descreverPeriodo(filtro.inicio, filtro.fim)}</strong>
+                        {descricaoFiltro} · <strong>{descreverPeriodo(filtro.inicio, filtro.fim)}</strong>
                     </p>
                 </div>
 
                 <form className="filtros-wrapper" onSubmit={handleAtualizar}>
-                    {pontos.length > 1 && (
+                    {rede && pontos.length > 1 && (
+                        <div className="input-filtro-box">
+                            <label>PRÉDIO / PONTO</label>
+                            <select value={pontoFiltro} onChange={e => { setPontoFiltro(e.target.value); setVerTodos(false); }} className="input-filtro">
+                                <option value="">Todos os pontos liberados</option>
+                                {agruparPontosPorPredio(pontos).map(g => (
+                                    <optgroup key={g.predioId} label={g.predioNome}>
+                                        {g.pontos.length > 1 && <option value={`predio:${g.predioId}`}>{g.predioNome} · todos os pontos</option>}
+                                        {g.pontos.map(p => (
+                                            <option key={p.id} value={`ponto:${p.id}`}>{g.predioNome} · {p.nome}{!p.ativo ? ' (inativo)' : ''}</option>
+                                        ))}
+                                    </optgroup>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    {!rede && pontos.length > 1 && (
                         <div className="input-filtro-box">
                             <label>PONTO</label>
                             <select value={pontoFiltro} onChange={e => { setPontoFiltro(e.target.value); setVerTodos(false); }} className="input-filtro">
@@ -212,7 +256,14 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                 </div>
             </div>
 
-            {isError ? (
+            {semPontosNaRede ? (
+                <div className="empty-st">
+                    Nenhum ponto de empréstimo foi liberado para este acesso.<br />
+                    Peça ao administrador do sistema para escolher os pontos no Painel Admin.
+                </div>
+            ) : (rede && daRede.erro) ? (
+                <div className="empty-st" style={{ color: 'var(--red)' }}>{daRede.erro}</div>
+            ) : isError ? (
                 <div className="empty-st" style={{ color: 'var(--red)' }}>{error?.message || 'Erro ao carregar o relatório. Tente novamente.'}</div>
             ) : (isLoading || !rel) ? (
                 <div className="empty-st">Analisando os dados do período...</div>
@@ -255,29 +306,24 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                                 </ResponsiveContainer>
                             </div>
 
-                            <div className={rel.variosPontos ? 'charts-grid' : ''}>
-                                {rel.variosPontos && (
-                                    <div className="chart-box">
-                                        <h3 className="chart-title">📍 Retiradas por ponto de empréstimo</h3>
-                                        <BarrasHorizontais nome="Retiradas" cor="var(--purple)" formatar={comPct}
-                                            dados={rel.porPonto.map(p => ({ rotulo: p.nome, valor: p.quantidade }))} />
+                            <div className={contagens.length > 1 ? 'charts-grid' : ''}>
+                                {contagens.map(c => (
+                                    <div key={c.chave} className="chart-box">
+                                        <h3 className="chart-title">{c.titulo}</h3>
+                                        <BarrasHorizontais nome="Retiradas" cor={c.cor} formatar={comPct}
+                                            dados={c.dados.map(d => ({ rotulo: d.nome, valor: d.quantidade }))} />
                                     </div>
-                                )}
-                                <div className="chart-box">
-                                    <h3 className="chart-title">🗂️ Retiradas por categoria</h3>
-                                    <BarrasHorizontais nome="Retiradas" cor="var(--purple)" formatar={comPct}
-                                        dados={rel.porCategoria.map(c => ({ rotulo: c.nome, valor: c.quantidade }))} />
-                                </div>
+                                ))}
                             </div>
 
                             <div className="charts-grid">
                                 <div className="chart-box">
-                                    <h3 className="chart-title">🏆 Itens mais retirados <span className="chart-sub">top 10, vezes</span></h3>
+                                    <h3 className="chart-title">🏆 Itens mais retirados <span className="chart-sub">top 10, vezes{subItens}</span></h3>
                                     <BarrasHorizontais nome="Retiradas" cor="var(--blue)"
                                         dados={rel.itensMaisRetirados.map(i => ({ rotulo: i.nome, valor: i.quantidade }))} />
                                 </div>
                                 <div className="chart-box">
-                                    <h3 className="chart-title">⏳ Itens com maior tempo de uso <span className="chart-sub">top 10, horas somadas</span></h3>
+                                    <h3 className="chart-title">⏳ Itens com maior tempo de uso <span className="chart-sub">top 10, horas somadas{subItens}</span></h3>
                                     <BarrasHorizontais nome="Tempo de uso" cor="var(--amber)" formatar={formatarHoras}
                                         dados={rel.itensMaisTempo.map(i => ({ rotulo: i.nome, valor: i.minutos }))} />
                                 </div>

@@ -29,6 +29,8 @@ export const podeGerir = (user) => temModulo(user, MODULOS.GESTAO_EMPRESTIMOS);
 export const podeVerRelatorio = (user) => podeOperar(user) || podeGerir(user) || temModulo(user, MODULOS.RELATORIOS);
 // Vê o prédio inteiro (todos os pontos) no relatório
 const veTodosOsPontos = (user) => Boolean(user?.is_admin) || podeGerir(user) || temModulo(user, MODULOS.RELATORIOS);
+// Relatório da rede: pontos escolhidos pelo admin, de vários prédios (admin vê todos)
+export const podeVerRelatorioRede = (user) => temModulo(user, MODULOS.RELATORIO_EMPRESTIMOS_REDE);
 
 const SEM_ACESSO_PONTO = 'Você não tem acesso a este ponto de empréstimo.';
 
@@ -97,6 +99,47 @@ const paraTimestamptz = (valor, { fimDoMinuto = false } = {}) => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T${fimDoMinuto ? '23:59:59.999' : '00:00:00'}-03:00`;
     return Number.isFinite(new Date(s).getTime()) ? s : null;
 };
+
+// Período do relatório (datetime-local de Brasília) → timestamptz
+const lerPeriodo = (inicio, fim) => {
+    const ini = paraTimestamptz(inicio);
+    const fimTs = paraTimestamptz(fim, { fimDoMinuto: true });
+    if (!ini || !fimTs) throw new ErroPublico('Parâmetros inicio e fim são obrigatórios.');
+    if (new Date(ini) > new Date(fimTs)) throw new ErroPublico('O início do período precisa ser antes do fim.');
+    return { ini, fimTs };
+};
+
+// Só os campos anônimos: sem nome nem matrícula de aluno (dados
+// confidenciais), mesmo que o banco mande algo a mais.
+const respostaAnonima = (dados) => {
+    const total = dados?.registros?.length || 0;
+    if (total > MAX_RETIRADAS_RELATORIO) {
+        throw new ErroPublico(
+            `O período tem ${total.toLocaleString('pt-BR')} retiradas, mais do que o relatório monta de uma vez `
+            + `(até ${MAX_RETIRADAS_RELATORIO.toLocaleString('pt-BR')}). Escolha um período menor.`, 422);
+    }
+    return {
+        pontos: dados?.pontos || [],
+        itens: dados?.itens || [],
+        registros: dados?.registros || [],
+        retiradasPorAluno: dados?.retiradasPorAluno || [],
+    };
+};
+
+// ?pontos=a,b (ou repetido) → ids distintos. Não filtra formato: id que não é
+// de um ponto liberado é recusado adiante (403), não ignorado.
+const MAX_PONTOS_NO_FILTRO = 500;
+const lerListaDeIds = (valor) => {
+    const lista = [...new Set([].concat(valor ?? [])
+        .flatMap(v => String(v).split(','))
+        .map(v => v.trim())
+        .filter(Boolean))];
+    if (lista.length > MAX_PONTOS_NO_FILTRO) throw new ErroPublico('Pontos demais no filtro.');
+    return lista;
+};
+
+const ordenarPorPredioENome = (a, b) =>
+    a.predioNome.localeCompare(b.predioNome, 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome, 'pt-BR');
 
 class EmprestimosService {
     // ------------------------------------------------------------- pontos
@@ -326,10 +369,7 @@ class EmprestimosService {
             throw new ErroPublico('Acesso negado. Requer o módulo de Empréstimos ou Relatórios.', 403);
         }
         const predioId = exigirPredio(user);
-        const ini = paraTimestamptz(inicio);
-        const fimTs = paraTimestamptz(fim, { fimDoMinuto: true });
-        if (!ini || !fimTs) throw new ErroPublico('Parâmetros inicio e fim são obrigatórios.');
-        if (new Date(ini) > new Date(fimTs)) throw new ErroPublico('O início do período precisa ser antes do fim.');
+        const { ini, fimTs } = lerPeriodo(inicio, fim);
 
         const pontos = await this.pontosDoRelatorio(user);
         let pontoIds;
@@ -341,19 +381,39 @@ class EmprestimosService {
             pontoIds = veTodosOsPontos(user) ? null : pontos.map(p => p.id);
         }
         const dados = await repository.relatorioRpc({ predioId, pontoIds, inicio: ini, fim: fimTs });
-        const total = dados?.registros?.length || 0;
-        if (total > MAX_RETIRADAS_RELATORIO) {
-            throw new ErroPublico(
-                `O período tem ${total.toLocaleString('pt-BR')} retiradas, mais do que o relatório monta de uma vez `
-                + `(até ${MAX_RETIRADAS_RELATORIO.toLocaleString('pt-BR')}). Escolha um período menor.`, 422);
+        return respostaAnonima(dados);
+    }
+
+    // ----------------------------------------------------- relatório da rede
+    // Pontos que este login vê no relatório da rede: os marcados pelo admin
+    // no Painel Admin (emprestimo_relatorio_rede_pontos); admin vê todos.
+    // Não depende do prédio do login (o da rede tem prédio nulo).
+    async pontosDaRede(user) {
+        if (!podeVerRelatorioRede(user)) return [];
+        const pontos = user.is_admin
+            ? await repository.getTodosOsPontos()
+            : await repository.getPontosDaRedeDoUsuario(user.id);
+        return pontos
+            .map(p => ({ id: p.id, nome: p.nome, ativo: p.ativo, predioId: p.predio_id, predioNome: p.predio?.nome || '' }))
+            .sort(ordenarPorPredioENome);
+    }
+
+    // Mesmos dados anônimos do relatório do prédio, para os pontos pedidos
+    // (vazio = todos os liberados) — cada um tem que estar liberado.
+    async relatorioRede(user, { inicio, fim, pontos } = {}) {
+        if (!podeVerRelatorioRede(user)) {
+            throw new ErroPublico('Acesso negado. Requer o módulo Relatório de Empréstimos da Rede.', 403);
         }
-        // Sem nome nem matrícula de aluno: o relatório é anônimo (dados confidenciais)
-        return {
-            pontos: dados?.pontos || [],
-            itens: dados?.itens || [],
-            registros: dados?.registros || [],
-            retiradasPorAluno: dados?.retiradasPorAluno || [],
-        };
+        const { ini, fimTs } = lerPeriodo(inicio, fim);
+        const liberados = new Set((await this.pontosDaRede(user)).map(p => p.id));
+        if (!liberados.size) {
+            throw new ErroPublico('Nenhum ponto de empréstimo foi liberado para este acesso. Peça ao administrador do sistema.', 403);
+        }
+        const pedidos = lerListaDeIds(pontos);
+        if (pedidos.some(id => !liberados.has(id))) throw new ErroPublico(SEM_ACESSO_PONTO, 403);
+        const pontoIds = pedidos.length ? pedidos : [...liberados];
+        const dados = await repository.relatorioRedeRpc({ pontoIds, inicio: ini, fim: fimTs });
+        return respostaAnonima(dados);
     }
 }
 

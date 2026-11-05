@@ -1,66 +1,11 @@
 import supabase from '../../backend_core/config/supabase.js';
 import { withAuth, invalidarAcessoEmCache } from '../../backend_core/middlewares/withAuth.js';
-import { responderErro, ErroPublico } from '../../backend_core/utils/http.js';
+import { responderErro } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
-import { sanitizarPermissoes } from '../../backend_core/utils/modulos.js';
+import { sanitizarPermissoes, MODULOS_SO_ADMIN } from '../../backend_core/utils/modulos.js';
 import gestaoEmprestimos from '../../backend_core/services/emprestimosGestao.service.js';
 import { barrarEdicaoDeMembro, barrarRevogacao, barrarReconvite } from '../../backend_core/utils/equipeRegras.js';
-
-// O Auth grava e-mail sempre em minúsculas — normalizar evita 404 na busca
-// (view) e erro de validação no convite por espaço/maiúscula digitados.
-function normalizarEmail(email) {
-    return String(email || '').trim().toLowerCase();
-}
-
-const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Traduz o erro do GoTrue (Auth) numa mensagem segura e no status certo.
-// Sem isso qualquer falha do provedor de e-mail vira 500 "Erro interno" e o
-// gestor não descobre que só precisa esperar (rate limit) ou corrigir o e-mail.
-function traduzirErroDeConvite(authError) {
-    const msg = String(authError?.message || '');
-    const status = authError?.status;
-
-    if (status === 429 || /rate limit/i.test(msg)) {
-        return new ErroPublico(
-            'Limite de e-mails de convite do provedor atingido. Aguarde alguns minutos e tente novamente.',
-            429
-        );
-    }
-    if (status === 400 || /invalid/i.test(msg)) {
-        return new ErroPublico('E-mail inválido ou domínio inexistente. Confira o endereço.', 400);
-    }
-    if (/send|smtp|mail/i.test(msg)) {
-        return new ErroPublico(
-            'Não foi possível enviar o e-mail de convite (falha no provedor de e-mail). Tente novamente em instantes.',
-            502
-        );
-    }
-    return null; // desconhecido → 500 genérico + log, via responderErro
-}
-
-// Para onde o link do e-mail de convite deve levar. Sem isso o Supabase usa a
-// "Site URL" do dashboard, cujo default é http://localhost:3000 — o convidado
-// recebe um link quebrado. Defina APP_URL na Vercel; o fallback é o domínio de
-// produção do projeto. Nunca derive do header Host (seria open redirect).
-function urlDoApp() {
-    const bruta = process.env.APP_URL
-        || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
-    if (!bruta) return null;
-    const url = String(bruta).trim().replace(/\/+$/, '');
-    return /^https?:\/\//i.test(url) ? url : `https://${url}`;
-}
-
-// Allowlist opcional de domínios de e-mail para convite.
-// Configure INVITE_EMAIL_DOMINIOS="pucrs.br,edu.pucrs.br" para restringir.
-// Vazio/ausente = sem restrição.
-function emailPermitido(email) {
-    const raw = process.env.INVITE_EMAIL_DOMINIOS;
-    if (!raw || !raw.trim()) return true;
-    const dominios = raw.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
-    const dom = String(email || '').split('@')[1]?.toLowerCase();
-    return dom ? dominios.includes(dom) : false;
-}
+import { normalizarEmail, RE_EMAIL, traduzirErroDeConvite, urlDoApp, emailPermitido, ehContaExistente } from '../../backend_core/utils/convite.js';
 
 // Localiza um usuário do Auth pelo e-mail (paginado — não há busca direta).
 async function encontrarUsuarioAuthPorEmail(email) {
@@ -90,7 +35,9 @@ async function handler(req, res) {
     const isAdminReq = req.user?.permissoes?.includes('admin');
     const isGestor = isAdminReq || req.user?.permissoes?.includes('equipe');
 
-    const sanitizar = (lista) => sanitizarPermissoes(lista, { permitirAdmin: isAdminReq });
+    // `atuais`: o gestor comum não concede nem retira os módulos do admin
+    // (admin, relatório da rede) — os que o membro já tem são mantidos.
+    const sanitizar = (lista, atuais = []) => sanitizarPermissoes(lista, { permitirAdmin: isAdminReq, atuais });
 
     if (req.method === 'GET' && !caminho1) {
         try {
@@ -142,9 +89,9 @@ async function handler(req, res) {
                 .order('nome', { ascending: true });
 
             if (error) throw error;
-            // Gestor comum não concede 'admin' (o sanitizar descartaria em
-            // silêncio) — então nem mostra o card.
-            return res.status(200).json(isAdminReq ? data : (data || []).filter(m => m.id !== 'admin'));
+            // Gestor comum não concede os módulos do admin (o sanitizar
+            // descartaria em silêncio) — então nem mostra o card.
+            return res.status(200).json(isAdminReq ? data : (data || []).filter(m => !MODULOS_SO_ADMIN.includes(m.id)));
         } catch (error) {
             return responderErro(res, error);
         }
@@ -167,7 +114,7 @@ async function handler(req, res) {
 
             if (errBusca || !usuario) return res.status(404).json({ error: "Usuário não encontrado." });
 
-            const permissoesFinais = sanitizar(permissoes);
+            const permissoesFinais = sanitizar(permissoes, usuario.permissoes);
             // Admin só é editado por admin; ninguém tira de si a própria gestão
             const barrado = barrarEdicaoDeMembro({ alvo: usuario, editorId: req.user.id, editorAdmin: isAdminReq, permissoesNovas: permissoesFinais });
             if (barrado) return res.status(barrado.status).json({ error: barrado.error });
@@ -234,7 +181,7 @@ async function handler(req, res) {
 
             if (authError) {
                 // Usuário já existe no Auth (ex.: foi removido antes e reconvidado).
-                const jaExiste = authError.status === 422 || /already|registered|exists/i.test(authError.message || '');
+                const jaExiste = ehContaExistente(authError);
                 // Falhas do provedor de e-mail (rate limit, e-mail inválido, SMTP)
                 // viram mensagem explícita — nunca 500 genérico.
                 if (!jaExiste) throw traduzirErroDeConvite(authError) || authError;

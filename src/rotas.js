@@ -28,5 +28,8 @@ export const ROTAS = {
   salasPredio: '/gestao/salas-do-predio',
   equipe: '/gestao/equipe',
   relatorioEmprestimos: '/gestao/relatorio-emprestimos',
+  // Vários prédios (módulo relatorio_emprestimos_rede). Para o login que só
+  // tem esse módulo e nenhum prédio, a tela também fica na raiz.
+  relatorioEmprestimosRede: '/gestao/relatorio-emprestimos-rede',
   gestaoEmprestimos: '/gestao/emprestimos',
 };

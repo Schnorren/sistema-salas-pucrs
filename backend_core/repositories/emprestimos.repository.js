@@ -51,6 +51,61 @@ class EmprestimosRepository {
         return (data || []).map(r => r.ponto_id);
     }
 
+    // ------------------------------------------------------- relatório da rede
+    // Pontos de todos os prédios, com o nome do prédio (Painel Admin e o
+    // relatório da rede do admin).
+    async getTodosOsPontos() {
+        const { data, error } = await supabase
+            .from('emprestimo_pontos')
+            .select('id, predio_id, nome, ativo, predio:predios (nome)')
+            .order('nome');
+        if (error) throw new Error(error.message || 'Erro ao listar os pontos de empréstimo.');
+        return data || [];
+    }
+
+    // Pontos liberados para um login no relatório da rede
+    async getPontosDaRedeDoUsuario(userId) {
+        const { data, error } = await supabase
+            .from('emprestimo_relatorio_rede_pontos')
+            .select('ponto:emprestimo_pontos!inner (id, predio_id, nome, ativo, predio:predios (nome))')
+            .eq('user_id', userId);
+        if (error) throw new Error(error.message || 'Erro ao listar os pontos do relatório da rede.');
+        return (data || []).map(r => r.ponto).filter(Boolean);
+    }
+
+    // Todos os vínculos (Painel Admin): [{ user_id, ponto_id }]
+    async getVinculosDaRede() {
+        const { data, error } = await supabase
+            .from('emprestimo_relatorio_rede_pontos')
+            .select('user_id, ponto_id');
+        if (error) throw new Error(error.message || 'Erro ao listar os pontos do relatório da rede.');
+        return data || [];
+    }
+
+    // Troca a lista do login pela nova: só apaga o que saiu e insere o que entrou
+    // (um delete+insert deixaria o login sem nada se o insert falhasse).
+    async definirPontosDaRede(userId, pontoIds) {
+        const { data: atuais, error } = await supabase
+            .from('emprestimo_relatorio_rede_pontos')
+            .select('ponto_id')
+            .eq('user_id', userId);
+        if (error) throw new Error(error.message || 'Erro ao ler os pontos do relatório da rede.');
+        const antes = new Set((atuais || []).map(r => r.ponto_id));
+        const depois = new Set(pontoIds);
+        const sair = [...antes].filter(id => !depois.has(id));
+        const entrar = [...depois].filter(id => !antes.has(id));
+        if (sair.length) {
+            const { error: e } = await supabase.from('emprestimo_relatorio_rede_pontos')
+                .delete().eq('user_id', userId).in('ponto_id', sair);
+            if (e) throw new Error(e.message || 'Erro ao remover pontos do relatório da rede.');
+        }
+        if (entrar.length) {
+            const { error: e } = await supabase.from('emprestimo_relatorio_rede_pontos')
+                .insert(entrar.map(ponto_id => ({ user_id: userId, ponto_id })));
+            if (e) throw new Error(e.message || 'Erro ao liberar pontos do relatório da rede.');
+        }
+    }
+
     // ------------------------------------------------------------------ painel
     // Acervo ativo do ponto (itens de baixa e categorias inativas ficam de fora)
     async getItensDoPonto(pontoId) {
@@ -256,6 +311,14 @@ class EmprestimosRepository {
         return rpc('emprestimo_relatorio', {
             p_predio_id: predioId, p_pontos: pontoIds, p_inicio: inicio, p_fim: fim
         }, 'Erro ao montar o relatório.');
+    }
+
+    // Mesmo formato, pela lista de pontos (vários prédios) e com o prédio de
+    // cada ponto (ver supabase/migrations/emprestimos_relatorio_rede.sql).
+    relatorioRedeRpc({ pontoIds, inicio, fim }) {
+        return rpc('emprestimo_relatorio_rede', {
+            p_pontos: pontoIds, p_inicio: inicio, p_fim: fim
+        }, 'Erro ao montar o relatório da rede.');
     }
 }
 

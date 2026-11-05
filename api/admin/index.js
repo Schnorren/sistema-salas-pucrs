@@ -21,6 +21,7 @@ async function handler(req, res) {
             if (endpoint === 'perfis')  return res.status(200).json(await service.listarPerfis());
             if (endpoint === 'usuarios') return res.status(200).json(await service.listarUsuarios());
             if (endpoint === 'modulos')  return res.status(200).json(await service.listarModulos());
+            if (endpoint === 'pontos-emprestimo') return res.status(200).json(await service.listarPontosEmprestimo());
             if (endpoint === 'auditoria') return res.status(200).json(await service.listarAuditoria(req.query?.limite));
         } catch (error) {
             return responderErro(res, error);
@@ -37,6 +38,25 @@ async function handler(req, res) {
                 const novo = await service.criarPredio(nome);
                 await registrarAuditoria({ user: req.user, acao: 'admin.predio.criar', entidade: 'predios', entidadeId: novo.id, detalhes: { nome } });
                 return res.status(201).json(novo);
+            }
+
+            // Conta nova (convite por e-mail ou senha definida pelo admin)
+            if (endpoint === 'usuarios') {
+                const { email, nome, predioId, perfilId, permissoes, pontosRede, pontosBalcao, modo, senha } = req.body || {};
+                if ((predioId && !UUID_REGEX.test(String(predioId))) || (perfilId && !UUID_REGEX.test(String(perfilId)))) {
+                    return res.status(400).json({ error: 'Prédio ou cargo inválido.' });
+                }
+                const criado = await service.criarUsuario({ email, nome, predioId, perfilId, permissoes, pontosRede, pontosBalcao, modo, senha });
+                await registrarAuditoria({
+                    user: req.user, acao: 'admin.usuario.criar', entidade: 'usuarios_acessos',
+                    entidadeId: criado.id, predioId: predioId || null,
+                    detalhes: {
+                        email: criado.email, perfilId: perfilId || null, permissoes: criado.permissoes, modo: criado.modo,
+                        ...(criado.pontosRede.length ? { pontosRede: criado.pontosRede } : {}),
+                        ...(criado.pontosBalcao.length ? { pontosEmprestimo: criado.pontosBalcao } : {}),
+                    }
+                });
+                return res.status(201).json({ success: true, id: criado.id, message: criado.message });
             }
 
             if (endpoint === 'perfis') {
@@ -56,7 +76,7 @@ async function handler(req, res) {
 
     if (req.method === 'PUT' && endpoint === 'usuarios') {
         try {
-            const { usuarioId, nome, predioId, perfilId, senha, permissoes } = req.body || {};
+            const { usuarioId, nome, predioId, perfilId, senha, permissoes, pontosRede } = req.body || {};
 
             if (!usuarioId || !UUID_REGEX.test(String(usuarioId))) return res.status(400).json({ error: 'ID do usuário inválido.' });
             if ((predioId && !UUID_REGEX.test(String(predioId))) || (perfilId && !UUID_REGEX.test(String(perfilId)))) {
@@ -68,17 +88,22 @@ async function handler(req, res) {
                 predioId,
                 perfilId,
                 senha,
-                permissoes
+                permissoes,
+                pontosRede
             }, req.user);
             invalidarAcessoEmCache(usuarioId);
 
             await registrarAuditoria({
                 user: req.user, acao: 'admin.usuario.atualizar', entidade: 'usuarios_acessos',
                 entidadeId: usuarioId, predioId: predioId || null,
-                detalhes: { perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: typeof senha === 'string' && senha !== '' }
+                detalhes: {
+                    perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: typeof senha === 'string' && senha !== '',
+                    // Pontos do relatório da rede gravados (só de quem tem o módulo)
+                    ...(resultado.pontosRede?.length ? { pontosRede: resultado.pontosRede } : {}),
+                }
             });
 
-            return res.status(200).json(resultado);
+            return res.status(200).json({ success: true });
         } catch (error) {
             return responderErro(res, error);
         }
