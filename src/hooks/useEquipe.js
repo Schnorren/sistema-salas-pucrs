@@ -1,11 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
+import { lerResposta as parseResponse } from '../utils/api';
 
-async function parseResponse(res) {
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-    return json;
-}
 
 export const useEquipe = (session, predioId) => {
     const queryClient = useQueryClient();

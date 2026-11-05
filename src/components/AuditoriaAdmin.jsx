@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { lerResposta } from '../utils/api';
 
 // Aba "Auditoria" do Painel Admin: leitura do registro gravado por
 // registrarAuditoria() (backend_core/utils/auditoria.js) — quem mudou
@@ -99,11 +100,8 @@ export default function AuditoriaAdmin({ token, predios, modulos }) {
     useEffect(() => {
         let ativo = true;
         fetch(`${import.meta.env.VITE_API_URL}/api/admin/auditoria`, { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(async res => {
-                const json = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-                if (ativo) setRegistros(json);
-            })
+            .then(lerResposta)
+            .then(json => { if (ativo) setRegistros(json); })
             .catch(e => { if (ativo) setErro(e.message || 'Não foi possível carregar a auditoria.'); });
         return () => { ativo = false; };
     }, [token]);

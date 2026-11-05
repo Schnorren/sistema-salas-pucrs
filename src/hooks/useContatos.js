@@ -1,11 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePredio } from '../contexts/PredioContext';
+import { lerResposta as parseResponse } from '../utils/api';
 
-async function parseResponse(res) {
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-    return json;
-}
 
 const VAZIO = { escolas: [], locais: [] };
 

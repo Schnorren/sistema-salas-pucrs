@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useUI } from '../contexts/UIContext';
 import AuditoriaAdmin from './AuditoriaAdmin';
 import { SENHA_MIN, validarSenha } from '../../backend_core/utils/senha';
+import { lerResposta } from '../utils/api';
 
 export default function AdminPanel({ session, acesso }) {
     const { toast } = useUI();
@@ -60,11 +61,7 @@ export default function AdminPanel({ session, acesso }) {
             'Authorization': `Bearer ${token}`
         };
 
-        const parseRes = async (res) => {
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-            return json;
-        };
+        const parseRes = lerResposta;
 
         try {
             if (modal.tipo === 'novo_predio') {
