@@ -177,6 +177,15 @@ class ContatosService {
 
         if (campos.pai_id === id) throw new ErroPublico('Um contato não pode ser pai de si mesmo.');
 
+        // A árvore é escola → unidade, local → serviço. Trocar o tipo de quem
+        // já tem filhos deixaria unidades penduradas num "local" (ou o
+        // contrário). A tela nunca troca o tipo; a API também não deixa.
+        const atual = await contatosRepository.buscarPorId(id);
+        if (!atual) throw new ErroPublico('Contato não encontrado.', 404);
+        if (atual.tipo !== campos.tipo) {
+            throw new ErroPublico('O tipo de um contato não pode ser alterado. Crie um contato novo do tipo desejado.');
+        }
+
         const atualizado = await contatosRepository.atualizar(id, {
             ...campos,
             atualizado_em: new Date().toISOString(),
