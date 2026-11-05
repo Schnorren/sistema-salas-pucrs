@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { lerResposta } from '../utils/api';
+import { linhaCsv, baixarCsv } from '../utils/csv';
+import { hojeSP } from '../../backend_core/utils/emprestimoRegras';
 
 // Aba "Auditoria" do Painel Admin: leitura do registro gravado por
 // registrarAuditoria() (backend_core/utils/auditoria.js) — quem mudou
@@ -31,6 +34,7 @@ const ACOES = {
     'contatos.curso_remover': 'Curso removido',
     'excluir_aviso': 'Aviso apagado',
     'grade.salas.visibilidade': 'Salas exibidas/ocultadas',
+    'grade.importar': 'Grade importada (PDF)',
 };
 
 const CATEGORIAS = [
@@ -71,6 +75,11 @@ function resumir(item, nomeModulo) {
         case 'admin.usuario.atualizar': return [modulos && `módulos: ${modulos}`, d.senhaAlterada && 'senha alterada'].filter(Boolean).join(' · ');
         case 'contatos.curso_adicionar':
         case 'contatos.curso_remover': return [d.curso, d.contato].filter(Boolean).join(' · ');
+        case 'grade.importar': return [
+            Number.isFinite(d.aulas) && `${d.aulas} períodos de aula`,
+            Number.isFinite(d.novos) && `+${d.novos} / −${d.removidos} / ~${d.alterados} vs. anterior`,
+            d.salasNovas?.length && `salas novas: ${d.salasNovas.join(', ')}`,
+        ].filter(Boolean).join(' · ');
         case 'grade.salas.visibilidade': return [
             d.exibidas?.length && `exibidas: ${d.exibidas.join(', ')}`,
             d.ocultadas?.length && `ocultadas: ${d.ocultadas.join(', ')}`,
@@ -93,11 +102,8 @@ export default function AuditoriaAdmin({ token, predios, modulos }) {
     useEffect(() => {
         let ativo = true;
         fetch(`${import.meta.env.VITE_API_URL}/api/admin/auditoria`, { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(async res => {
-                const json = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-                if (ativo) setRegistros(json);
-            })
+            .then(lerResposta)
+            .then(json => { if (ativo) setRegistros(json); })
             .catch(e => { if (ativo) setErro(e.message || 'Não foi possível carregar a auditoria.'); });
         return () => { ativo = false; };
     }, [token]);
@@ -114,6 +120,17 @@ export default function AuditoriaAdmin({ token, predios, modulos }) {
             .filter(r => !t || `${r.user_email || ''} ${r.rotulo} ${r.resumo} ${nomePredio[r.predio_id] || ''}`.toLowerCase().includes(t));
     }, [registros, categoria, busca, nomeModulo, nomePredio]);
 
+    // Os registros que estão na tela (categoria + busca), para prestação de
+    // contas fora do sistema. celulaCsv neutraliza fórmula (CSV injection).
+    const exportarCsv = () => {
+        const linhas = [linhaCsv(['Data e hora', 'Quem', 'Ação', 'Detalhe', 'Prédio', 'Código da ação', 'Entidade', 'Id'])];
+        filtrados.forEach(r => linhas.push(linhaCsv([
+            dataHora(r.criado_em), r.user_email || 'Sistema', r.rotulo, r.resumo || '', nomePredio[r.predio_id] || '',
+            r.acao, r.entidade, r.entidade_id || '',
+        ])));
+        baixarCsv(`auditoria_${hojeSP()}.csv`, linhas);
+    };
+
     return (
         <div className="bar-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -121,13 +138,23 @@ export default function AuditoriaAdmin({ token, predios, modulos }) {
                     <h3 style={{ margin: 0 }}>Registro de Auditoria</h3>
                     <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>Ações sensíveis feitas no sistema, das mais recentes para as mais antigas (até 500).</p>
                 </div>
-                <input
-                    type="text"
-                    placeholder="Buscar por e-mail, ação ou detalhe..."
-                    value={busca}
-                    onChange={(e) => setBusca(e.target.value)}
-                    style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', width: '300px', outline: 'none' }}
-                />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                        type="text"
+                        placeholder="Buscar por e-mail, ação ou detalhe..."
+                        value={busca}
+                        onChange={(e) => setBusca(e.target.value)}
+                        style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', width: '300px', outline: 'none' }}
+                    />
+                    <button
+                        className="exp-btn"
+                        onClick={exportarCsv}
+                        disabled={!filtrados.length}
+                        title="Exporta os registros filtrados (abre no Excel)"
+                    >
+                        Exportar CSV
+                    </button>
+                </div>
             </div>
 
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>

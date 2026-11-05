@@ -1,12 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePredio } from '../contexts/PredioContext';
 import { avisarGradeRepublicada } from './useGrade';
+import { lerResposta as parseResponse } from '../utils/api';
 
-async function parseResponse(res) {
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-  return json;
-}
 
 // Salas do prédio ativo com a situação (visivel | oculta | pendente) e o resumo
 // da agenda atual. Escrita: PUT /api/grade/salas, que republica o JSON da grade.

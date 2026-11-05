@@ -1,7 +1,11 @@
 import service from '../../backend_core/services/admin.service.js';
-import { withAuth } from '../../backend_core/middlewares/withAuth.js';
+import { withAuth, invalidarAcessoEmCache } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro } from '../../backend_core/utils/http.js';
 import { registrarAuditoria } from '../../backend_core/utils/auditoria.js';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Nome de prédio/cargo: texto curto (o banco aceita qualquer tamanho)
+const lerNome = (valor) => (typeof valor === 'string' ? valor.trim().replace(/\s+/g, ' ') : '');
 
 async function handler(req, res) {
     if (!req.user?.permissoes?.includes('admin')) {
@@ -26,20 +30,22 @@ async function handler(req, res) {
     if (req.method === 'POST') {
         try {
             if (endpoint === 'predios') {
-                const { nome } = req.body;
+                const nome = lerNome(req.body?.nome);
                 if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });
+                if (nome.length > 80) return res.status(400).json({ error: 'Nome muito longo (máximo 80 caracteres).' });
 
                 const novo = await service.criarPredio(nome);
-                registrarAuditoria({ user: req.user, acao: 'admin.predio.criar', entidade: 'predios', entidadeId: novo.id, detalhes: { nome } });
+                await registrarAuditoria({ user: req.user, acao: 'admin.predio.criar', entidade: 'predios', entidadeId: novo.id, detalhes: { nome } });
                 return res.status(201).json(novo);
             }
 
             if (endpoint === 'perfis') {
-                const { nome } = req.body;
+                const nome = lerNome(req.body?.nome);
                 if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });
+                if (nome.length > 80) return res.status(400).json({ error: 'Nome muito longo (máximo 80 caracteres).' });
 
                 const novo = await service.criarPerfil(nome);
-                registrarAuditoria({ user: req.user, acao: 'admin.perfil.criar', entidade: 'perfis', entidadeId: novo.id, detalhes: { nome } });
+                await registrarAuditoria({ user: req.user, acao: 'admin.perfil.criar', entidade: 'perfis', entidadeId: novo.id, detalhes: { nome } });
                 return res.status(201).json(novo);
             }
         } catch (error) {
@@ -50,9 +56,12 @@ async function handler(req, res) {
 
     if (req.method === 'PUT' && endpoint === 'usuarios') {
         try {
-            const { usuarioId, nome, predioId, perfilId, senha, permissoes } = req.body;
+            const { usuarioId, nome, predioId, perfilId, senha, permissoes } = req.body || {};
 
-            if (!usuarioId) return res.status(400).json({ error: 'ID do usuário é obrigatório.' });
+            if (!usuarioId || !UUID_REGEX.test(String(usuarioId))) return res.status(400).json({ error: 'ID do usuário inválido.' });
+            if ((predioId && !UUID_REGEX.test(String(predioId))) || (perfilId && !UUID_REGEX.test(String(perfilId)))) {
+                return res.status(400).json({ error: 'Prédio ou cargo inválido.' });
+            }
 
             const resultado = await service.atualizarUsuarioCompleto(usuarioId, {
                 nome,
@@ -60,12 +69,13 @@ async function handler(req, res) {
                 perfilId,
                 senha,
                 permissoes
-            });
+            }, req.user);
+            invalidarAcessoEmCache(usuarioId);
 
-            registrarAuditoria({
+            await registrarAuditoria({
                 user: req.user, acao: 'admin.usuario.atualizar', entidade: 'usuarios_acessos',
                 entidadeId: usuarioId, predioId: predioId || null,
-                detalhes: { perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: Boolean(senha && senha.trim()) }
+                detalhes: { perfilId: perfilId || null, permissoes: permissoes || [], senhaAlterada: typeof senha === 'string' && senha !== '' }
             });
 
             return res.status(200).json(resultado);
@@ -77,17 +87,17 @@ async function handler(req, res) {
     if (req.method === 'DELETE') {
         try {
             if (endpoint === 'predios') {
-                const { id } = req.body;
-                if (!id) return res.status(400).json({ error: 'ID é obrigatório.' });
+                const id = req.body?.id;
+                if (!id || !UUID_REGEX.test(String(id))) return res.status(400).json({ error: 'ID inválido.' });
                 await service.deletarPredio(id);
-                registrarAuditoria({ user: req.user, acao: 'admin.predio.excluir', entidade: 'predios', entidadeId: id });
+                await registrarAuditoria({ user: req.user, acao: 'admin.predio.excluir', entidade: 'predios', entidadeId: id });
                 return res.status(200).json({ success: true });
             }
             if (endpoint === 'perfis') {
-                const { id } = req.body;
-                if (!id) return res.status(400).json({ error: 'ID é obrigatório.' });
+                const id = req.body?.id;
+                if (!id || !UUID_REGEX.test(String(id))) return res.status(400).json({ error: 'ID inválido.' });
                 await service.deletarPerfil(id);
-                registrarAuditoria({ user: req.user, acao: 'admin.perfil.excluir', entidade: 'perfis', entidadeId: id });
+                await registrarAuditoria({ user: req.user, acao: 'admin.perfil.excluir', entidade: 'perfis', entidadeId: id });
                 return res.status(200).json({ success: true });
             }
         } catch (error) {

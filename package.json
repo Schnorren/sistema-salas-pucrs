@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test \"tests/*.test.js\"",
+    "test": "node --test \"tests/*.test.js\" \"tests/api/*.test.js\"",
     "preview": "vite preview",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node scripts/migrate.mjs",
+    "auditar:banco": "node scripts/auditar-banco.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.0",

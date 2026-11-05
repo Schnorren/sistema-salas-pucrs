@@ -1,13 +1,14 @@
 import service from '../../backend_core/services/grade.service.js';
 import { withAuth } from '../../backend_core/middlewares/withAuth.js';
 import { responderErro } from '../../backend_core/utils/http.js';
-import formidable from 'formidable';
-import fs from 'fs';
+import { lerPdfDoFormulario } from '../../backend_core/utils/uploadPdf.js';
 
+// POST /api/grade/importar-pdf — PDF da agenda semanal → grade do prédio.
+// bodyParser desligado: o multipart é lido pelo formidable (lerPdfDoFormulario).
 export const config = { api: { bodyParser: false } };
 
 async function handler(req, res) {
-    if (req.method !== 'POST') return res.status(405).end();
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
     // Mesmo gate da tela (Dashboard: canEditGrade). Antes aceitava 'grade', o
     // módulo de leitura — quem só via a grade conseguia substituí-la pela API.
@@ -16,33 +17,14 @@ async function handler(req, res) {
         return res.status(403).json({ error: 'Acesso negado. Requer o módulo Atualização de Grade.' });
     }
 
-    const form = formidable({ keepExtensions: true });
-
-    form.parse(req, async (err, fields, files) => {
-        if (err) {
-            return res.status(500).json({ error: "Erro ao processar o formulário multipart." });
-        }
-
-        try {
-            const arquivoArrayOuObjeto = files.arquivo || files.file;
-
-            if (!arquivoArrayOuObjeto) {
-                return res.status(400).json({ error: 'Nenhum arquivo enviado. Verifique se o nome do campo é "arquivo" ou "file".' });
-            }
-
-            const arquivoReal = Array.isArray(arquivoArrayOuObjeto) ? arquivoArrayOuObjeto[0] : arquivoArrayOuObjeto;
-            const buffer = fs.readFileSync(arquivoReal.filepath);
-            const resultado = await service.processarUploadPdf(buffer, req.user.predio_id);
-
-            return res.status(201).json(resultado);
-
-        } catch (error) {
-            if (error.message.includes('Python') || error.message.includes('extração')) {
-                return res.status(502).json({ error: "A API do extrator (Render) está offline ou demorando para responder. Tente novamente em 30 segundos." });
-            }
-            return responderErro(res, error);
-        }
-    });
+    try {
+        const buffer = await lerPdfDoFormulario(req);
+        // Falha do extrator sai como ErroPublico 502 (grade.service)
+        const resultado = await service.processarUploadPdf(buffer, req.user.predio_id, req.user);
+        return res.status(201).json(resultado);
+    } catch (error) {
+        return responderErro(res, error);
+    }
 }
 
 export default withAuth(handler, 'edicao_grade');

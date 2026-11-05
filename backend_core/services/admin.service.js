@@ -1,6 +1,7 @@
 import supabase from '../config/supabase.js';
 import { ErroPublico } from '../utils/http.js';
 import { sanitizarPermissoes } from '../utils/modulos.js';
+import { validarSenha } from '../utils/senha.js';
 
 // Loga o detalhe real do banco no servidor e devolve um Error com mensagem limpa
 // (evita vazar nomes de colunas/constraints para o cliente).
@@ -27,6 +28,8 @@ class AdminService {
             .select()
             .single();
 
+        // 23505 = UNIQUE (nome): antes virava 500 genérico
+        if (error?.code === '23505') throw new ErroPublico('Já existe um prédio com esse nome.', 409);
         if (error) throw falha('Erro ao criar prédio', error);
         return data;
     }
@@ -48,26 +51,44 @@ class AdminService {
             .select()
             .single();
 
+        // 23505 = UNIQUE (nome): antes virava 500 genérico
+        if (error?.code === '23505') throw new ErroPublico('Já existe um cargo com esse nome.', 409);
         if (error) throw falha('Erro ao criar perfil', error);
         return data;
     }
 
     async deletarPredio(id) {
-        // Integridade referencial: não apagar prédio que ainda tem membros ou salas.
-        const [{ count: membros, error: e1 }, { count: salas, error: e2 }] = await Promise.all([
-            supabase.from('usuarios_acessos').select('user_id', { count: 'exact', head: true }).eq('predio_id', id),
-            supabase.from('salas').select('id', { count: 'exact', head: true }).eq('predio_id', id),
-        ]);
-        if (e1 || e2) throw falha('Erro ao verificar referências do prédio', e1 || e2);
+        // Integridade referencial: não apagar prédio que ainda tem dados. Avisos,
+        // pontos/acervo e bloqueios têm FK ON DELETE CASCADE (sumiriam em
+        // silêncio); registros de empréstimo são RESTRICT (o delete falhava
+        // com 500). Trocas de sala não têm FK (predio_id é texto).
+        const contar = (tabela) =>
+            supabase.from(tabela).select('predio_id', { count: 'exact', head: true }).eq('predio_id', id);
+        const tabelas = [
+            ['usuarios_acessos', 'membro(s)'],
+            ['salas', 'sala(s)'],
+            ['avisos', 'aviso(s)'],
+            ['emprestimo_pontos', 'ponto(s) de empréstimo'],
+            ['emprestimos_registro', 'registro(s) de empréstimo'],
+            ['trocas_sala', 'troca(s) de sala'],
+        ];
+        const resultados = await Promise.all(tabelas.map(([t]) => contar(t)));
+        const erro = resultados.find(r => r.error)?.error;
+        if (erro) throw falha('Erro ao verificar referências do prédio', erro);
 
-        if ((membros || 0) > 0 || (salas || 0) > 0) {
-            throw new ErroPublico(
-                `Não é possível excluir: o prédio tem ${membros || 0} membro(s) e ${salas || 0} sala(s) vinculada(s). Remova-os antes.`
-            );
+        const vinculados = resultados
+            .map((r, i) => ((r.count || 0) > 0 ? `${r.count} ${tabelas[i][1]}` : null))
+            .filter(Boolean);
+        if (vinculados.length) {
+            throw new ErroPublico(`Não é possível excluir: o prédio ainda tem ${vinculados.join(', ')}. Remova-os antes.`);
         }
 
         const { error } = await supabase.from('predios').delete().eq('id', id);
         if (error) throw falha('Erro ao deletar prédio', error);
+
+        // JSON público da grade do prédio (best effort — não existir não é erro)
+        const { error: errStorage } = await supabase.storage.from('grades').remove([`grade_predio_${id}.json`]);
+        if (errStorage) console.error('[admin] prédio excluído, mas o JSON da grade ficou no Storage:', errStorage.message);
     }
 
     async deletarPerfil(id) {
@@ -146,10 +167,21 @@ class AdminService {
     }
 
 
-    async atualizarUsuarioCompleto(id, { nome, predioId, perfilId, senha, permissoes }) {
+    async atualizarUsuarioCompleto(id, { nome, predioId, perfilId, senha, permissoes }, editor = null) {
+        const permissoesFinais = sanitizarPermissoes(permissoes, { permitirAdmin: true });
+
+        // Espelha a tela (o Painel não deixa editar o próprio acesso): o admin
+        // não tira de si mesmo a permissão 'admin' — com um admin só, o sistema
+        // ficaria sem ninguém para devolver.
+        if (editor?.id && editor.id === id && !permissoesFinais.includes('admin')) {
+            throw new ErroPublico('Você não pode remover a sua própria permissão de administrador.');
+        }
+
         const authPayload = { user_metadata: { nome } };
 
-        if (senha && senha.trim() !== '') {
+        if (typeof senha === 'string' && senha !== '') {
+            const problema = validarSenha(senha);
+            if (problema) throw new ErroPublico(problema);
             authPayload.password = senha;
         }
 
@@ -164,7 +196,7 @@ class AdminService {
                 perfil_id: perfilId || null,
                 // Admin pode conceder qualquer módulo, inclusive 'admin' — mas valores
                 // desconhecidos são descartados (não grava uuid/garbage).
-                permissoes: sanitizarPermissoes(permissoes, { permitirAdmin: true })
+                permissoes: permissoesFinais
             }, { onConflict: 'user_id' });
 
         if (accessError) throw falha('Erro ao atualizar acessos', accessError);

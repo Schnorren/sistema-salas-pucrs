@@ -185,3 +185,19 @@ export const groupConsecutiveClasses = (classes) => {
     horarioFim: g.fim ? `${pad(g.fim[0])}:${pad(g.fim[1])}` : '--:--'
   }));
 };
+// "EE1F" → ['E', 'E1', 'F'] (ordem da grade, sem repetição); null se houver
+// algo que não é código de período. Códigos de 2 caracteres (E1) são testados
+// antes dos de 1 — separar letra a letra lia "E1" como "E" + "1" e recusava
+// toda autorização de chave com o período das 12:15.
+const CODIGOS_POR_TAMANHO = PERIODS.map(p => p.code).sort((a, b) => b.length - a.length);
+export const separarCodigosPeriodo = (texto) => {
+  const s = String(texto ?? '').toUpperCase().replace(/\s+/g, '');
+  const encontrados = new Set();
+  for (let i = 0; i < s.length;) {
+    const codigo = CODIGOS_POR_TAMANHO.find(c => s.startsWith(c, i));
+    if (!codigo) return null;
+    encontrados.add(codigo);
+    i += codigo.length;
+  }
+  return PERIODS.map(p => p.code).filter(c => encontrados.has(c));
+};

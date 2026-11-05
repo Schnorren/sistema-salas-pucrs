@@ -46,3 +46,15 @@ test('agrupa períodos consecutivos da mesma aula na mesma sala', () => {
   assert.equal(grupos[0].horarioInicio, '09:45');
   assert.equal(grupos[0].horarioFim, '11:15');
 });
+
+test('separarCodigosPeriodo: E1 é um código só; ordem da grade; lixo → null', async () => {
+  const { separarCodigosPeriodo } = await import('../backend_core/utils/timeHelpers.js');
+  assert.deepEqual(separarCodigosPeriodo('EE1'), ['E', 'E1']);
+  assert.deepEqual(separarCodigosPeriodo('E1'), ['E1']);
+  assert.deepEqual(separarCodigosPeriodo('e1e f'), ['E', 'E1', 'F']);
+  assert.deepEqual(separarCodigosPeriodo('BA'), ['A', 'B']);
+  assert.deepEqual(separarCodigosPeriodo('AAB'), ['A', 'B']);
+  assert.equal(separarCodigosPeriodo('A1'), null);
+  assert.equal(separarCodigosPeriodo('Z'), null);
+  assert.deepEqual(separarCodigosPeriodo(''), []);
+});

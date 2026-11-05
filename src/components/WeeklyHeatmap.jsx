@@ -3,6 +3,8 @@ import { generateHeatmapPDF } from '../utils/reportGenerator';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { PERIODS, extractPeriodCode } from '../../backend_core/utils/timeHelpers';
+import { linhaCsv, baixarCsv } from '../utils/csv';
+import { hojeSP } from '../../backend_core/utils/emprestimoRegras';
 
 const COLORS = ['#1c2b4a', '#1e6b40', '#4e338a', '#a02828', '#96520a', '#1a6878', '#3a6e1a', '#823060'];
 const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -113,21 +115,17 @@ export default function WeeklyHeatmap({ acesso }) {
 
   const exportCSV = () => {
     const days = [...activeDays];
-    let csv = `Sala,${days.join(',')},Total Ocupado,Total Possivel,% Ocupacao\n`;
     const possibleSlots = days.length * activePers.size;
+    const linhas = [linhaCsv(['Sala', ...days, 'Total Ocupado', 'Total Possivel', '% Ocupacao'])];
 
     stats.heatmap.forEach(row => {
       const perc = possibleSlots > 0 ? ((row.totalSala / possibleSlots) * 100).toFixed(1) : 0;
       const rowData = days.map(d => row.contagemPorDia[d] || 0);
-      csv += `${row.sala},${rowData.join(',')},${row.totalSala},${possibleSlots},${perc}%\n`;
+      linhas.push(linhaCsv([row.sala, ...rowData, row.totalSala, possibleSlots, `${perc}%`]));
     });
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `ocupacao_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    // Data de Brasília no nome (toISOString é UTC: depois das 21h saía o dia seguinte)
+    baixarCsv(`ocupacao_${hojeSP()}.csv`, linhas);
   };
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;

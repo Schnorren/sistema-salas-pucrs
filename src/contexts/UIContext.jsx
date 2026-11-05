@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 
 const UIContext = createContext();
 
@@ -9,20 +9,27 @@ export const UIProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
     const [modal, setModal] = useState(null);
 
+    // Contador em vez de Date.now(): dois toasts no mesmo milissegundo tinham o
+    // mesmo id (key repetida e os dois sumiam juntos).
+    const proximoId = useRef(0);
     const addToast = useCallback((message, type = 'info') => {
-        const id = Date.now();
+        const id = ++proximoId.current;
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
         }, 4000);
     }, []);
 
-    const toast = {
+    // Identidade estável: antes `toast` (e o value do contexto) eram objetos
+    // novos a cada render do provider — todo toast que aparecia/sumia
+    // re-renderizava todos os consumidores, e efeitos com `toast` nas deps
+    // (o canal Realtime de avisos do Dashboard) eram desfeitos e refeitos.
+    const toast = useMemo(() => ({
         success: (msg) => addToast(msg, 'success'),
         error:   (msg) => addToast(msg, 'error'),
         info:    (msg) => addToast(msg, 'info'),
         warning: (msg) => addToast(msg, 'warning'),
-    };
+    }), [addToast]);
 
     const showConfirm = useCallback((message, title = 'Confirmação') => {
         return new Promise((resolve) => {
@@ -44,8 +51,10 @@ export const UIProvider = ({ children }) => {
         });
     }, []);
 
+    const valor = useMemo(() => ({ toast, showConfirm, showPrompt }), [toast, showConfirm, showPrompt]);
+
     return (
-        <UIContext.Provider value={{ toast, showConfirm, showPrompt }}>
+        <UIContext.Provider value={valor}>
             {children}
 
             <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>

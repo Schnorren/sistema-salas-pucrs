@@ -2,12 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { supabase } from '../supabase';
+import { lerResposta as parseResponse } from '../utils/api';
 
-async function parseResponse(res) {
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-    return json;
-}
 
 // Busca dos avisos ativos — compartilhada com o badge do Dashboard, que usa a
 // MESMA queryKey ['avisos', predioId, userId]. Os dois observers precisam ter

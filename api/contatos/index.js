@@ -35,6 +35,13 @@ async function handler(req, res) {
     const acao = segmentos[1] || null;
 
     try {
+        // "Qualquer autenticado" = membro da equipe: conta sem acesso liberado
+        // (órfã — ex.: cadastro público pelo Auth, que vem ligado no Supabase)
+        // não lê o diretório. A tela já barra órfãos com "Acesso Restrito".
+        if (!req.user.is_admin && !req.user.predio_id) {
+            return res.status(403).json({ error: 'Seu acesso ainda não foi liberado por um administrador.' });
+        }
+
         if (req.method === 'GET' && !id) {
             const diretorio = await contatosService.obterDiretorio();
             return res.status(200).json(diretorio);

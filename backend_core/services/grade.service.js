@@ -1,7 +1,5 @@
 import gradeRepository from '../repositories/grade.repository.js';
-import {
-    PERIODS, getCurrentPeriod, groupConsecutiveClasses, extractPeriodCode, isInternalClass
-} from '../utils/timeHelpers.js';
+import { groupConsecutiveClasses, extractPeriodCode, isInternalClass } from '../utils/timeHelpers.js';
 import supabase from '../config/supabase.js';
 import {
     STATUS_SALA, salaVisivel, situacaoDaSala, ordenarNumeros, separarSalasNovas,
@@ -9,149 +7,57 @@ import {
 } from '../utils/salas.js';
 import { ErroPublico } from '../utils/http.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
+import { compararGrades } from '../utils/gradeComparacao.js';
 
-const gradeCacheMap = {};
+// Grade usada pela busca do topo, por prédio. Serverless é efêmero e cada
+// instância tem o seu cache: o TTL garante que uma importação feita em outra
+// instância apareça na busca em até 5 min (antes ficava velho até a instância
+// morrer).
+const TTL_CACHE_BUSCA = 5 * 60 * 1000;
+const gradeCache = new Map();
+
+// Extrator de PDF (FastAPI na Vercel). Importação leva ~10 s; acima disso é
+// queda/travamento — antes o fetch não tinha timeout e a função ficava presa
+// até o limite da plataforma.
+const TIMEOUT_EXTRATOR_MS = 90 * 1000;
+const MSG_EXTRATOR_FORA = 'O extrator de PDF está fora do ar ou demorando para responder. Tente de novo em 1 minuto.';
+
+const DIAS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
+// Código do Espaço Físico "C.xx.xx.andar.sala" → número curto da sala
+const simplificarSala = (codigo) => {
+    if (!codigo) return codigo;
+    const texto = String(codigo).trim();
+    const partes = texto.split('.');
+
+    if (partes.length >= 5 && partes[0] === 'C') {
+        const andar = parseInt(partes[3], 10).toString();
+        const sala = partes[4];
+        if (sala.startsWith(andar) && sala.length >= 3) return sala;
+        return `${andar}${sala}`;
+    }
+    return texto;
+};
 
 class GradeService {
 
-    async _obterGradeOtimizada(predio_id) {
-        const cacheKey = predio_id ? String(predio_id) : 'GLOBAL';
+    _invalidarCache(predio_id) {
+        if (predio_id) gradeCache.delete(String(predio_id));
+        gradeCache.delete('GLOBAL');
+    }
 
-        if (gradeCacheMap[cacheKey] && gradeCacheMap[cacheKey].length > 0) {
-            return gradeCacheMap[cacheKey];
-        }
+    async _obterGradeOtimizada(predio_id) {
+        const chave = predio_id ? String(predio_id) : 'GLOBAL';
+        const atual = gradeCache.get(chave);
+        if (atual && atual.exp > Date.now()) return atual.dados;
 
         const data = await gradeRepository.buscarGradeCompleta(predio_id);
-
         // Salas ocultas/pendentes ficam fora de tudo que o sistema mostra
-        gradeCacheMap[cacheKey] = Array.isArray(data) ? data.filter(g => salaVisivel(g.salas)) : [];
-
-        return gradeCacheMap[cacheKey];
+        const dados = Array.isArray(data) ? data.filter(g => salaVisivel(g.salas)) : [];
+        gradeCache.set(chave, { dados, exp: Date.now() + TTL_CACHE_BUSCA });
+        return dados;
     }
 
-    async obterProximasAulas(diaSolicitado, periodoReferencia, predio_id) {
-        const gradeBruta = await this._obterGradeOtimizada(predio_id);
-        const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
-        const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
-
-        const response = {
-            dia: diaSolicitado, periodoAtualReferencia: activePer, labelPeriodoAtual: '',
-            emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: []
-        };
-
-        if (activePer) {
-            const pi = PERIODS.findIndex(p => p.code === activePer);
-            if (pi >= 0) {
-                response.labelPeriodoAtual = PERIODS[pi].lb;
-                const todasAgrupadas = groupConsecutiveClasses(aulasDoDia);
-                response.emAndamento = todasAgrupadas.filter(g => g.periodos.includes(activePer));
-                const nextPeriodCodes = PERIODS.slice(pi + 1, pi + 3).map(p => p.code);
-                response.proximas = todasAgrupadas.filter(g => nextPeriodCodes.includes(g.periodos[0]));
-                const futurePeriodCodes = PERIODS.slice(pi + 3).map(p => p.code);
-                response.restoDoDia = todasAgrupadas.filter(g => futurePeriodCodes.includes(g.periodos[0]));
-            }
-        } else {
-            response.todasAsAulas = groupConsecutiveClasses(aulasDoDia);
-        }
-        return response;
-    }
-
-    async _salasVisiveis(predio_id) {
-        return ((await gradeRepository.buscarSalas(predio_id)) || []).filter(salaVisivel);
-    }
-
-    async obterStatusPlanta(diaSolicitado, periodoReferencia, predio_id) {
-        const salasDb = await this._salasVisiveis(predio_id);
-            const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
-            const activePer = periodoReferencia === 'auto' ? getCurrentPeriod() : periodoReferencia;
-
-            const aulasNoMomento = gradeBruta.filter(d => {
-                const mesmoDia = d.dia_semana?.toLowerCase().includes(diaSolicitado.toLowerCase());
-
-                const codigoPeriodoBanco = extractPeriodCode(d.periodo);
-
-                const noMesmoPeriodo = codigoPeriodoBanco === activePer;
-
-                return mesmoDia && noMesmoPeriodo;
-            });
-
-            const salasProcessadas = salasDb.map(s => {
-                if (!s || !s.numero) return null;
-
-                const aula = aulasNoMomento.find(a => {
-                    const numSala = a.salas?.numero || a.sala;
-                    return numSala === s.numero;
-                });
-
-                let andarDaSala = s.andar;
-                if (!andarDaSala) {
-                    const numString = String(s.numero);
-                    const partes = numString.split('.');
-
-                    if (partes.length >= 4 && partes[0] === 'C') {
-                        andarDaSala = parseInt(partes[3], 10).toString();
-                    } else {
-                        const match = numString.match(/\d/);
-                        andarDaSala = match ? match[0] : '0';
-                    }
-                }
-
-                return {
-                    numero: s.numero,
-                    andar: andarDaSala,
-                    ocupada: !!aula,
-                    disciplina: aula ? (aula.nome_aula || aula.disciplinas?.nome) : null,
-                    tipo: aula ? (aula.tipo || (isInternalClass(aula.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
-                };
-            }).filter(Boolean);
-
-            const andaresUnicos = [...new Set(salasProcessadas.map(s => String(s.andar)))].sort();
-
-            const andares = andaresUnicos.map(num => ({
-                label: num === '0' ? 'Térreo / Outros' : `${num}º Andar`,
-                salas: salasProcessadas.filter(s => String(s.andar) === num)
-            }));
-
-            return {
-                periodoAtual: activePer,
-                contagem: {
-                    total: salasProcessadas.length,
-                    livres: salasProcessadas.filter(s => !s.ocupada).length,
-                    ocupadas: salasProcessadas.filter(s => s.ocupada).length
-                },
-                andares: andares.filter(a => a.salas.length > 0)
-            };
-    }
-
-    async obterSalasLivres(diaSolicitado, predio_id) {
-        const gradeBruta = await this._obterGradeOtimizada(predio_id);
-        const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
-        const salasDb = await this._salasVisiveis(predio_id);
-
-        const salasLivres = salasDb.map(salaRef => {
-            const occupiedPeriods = aulasDoDia
-                .filter(d => {
-                    const numSala = d.salas?.numero || d.sala;
-                    return numSala === salaRef.numero;
-                })
-                .map(d => extractPeriodCode(d.periodo));
-
-            const freePeriods = PERIODS.filter(p => !occupiedPeriods.includes(p.code));
-
-            return {
-                sala: salaRef.numero,
-                quantidadeLivres: freePeriods.length,
-                periodos: freePeriods.map(f => ({
-                    code: f.code,
-                    label: f.lb,
-                    fim: `${String(f.end[0]).padStart(2, '0')}:${String(f.end[1]).padStart(2, '0')}`
-                }))
-            };
-        });
-
-        return salasLivres.filter(s => s.quantidadeLivres > 0);
-    }
-    
     async gerarEPublicarIndexEstatico(predio_id) {
         try {
             const [gradeBruta, salasDb] = await Promise.all([
@@ -174,7 +80,11 @@ class GradeService {
                 .from('grades')
                 .upload(fileName, jsonString, {
                     contentType: 'application/json',
-                    upsert: true
+                    upsert: true,
+                    // O front já busca com ?t= (sem cache); 60 s limita quanto
+                    // tempo qualquer outro leitor pode ver a versão anterior
+                    // (o padrão do Storage é 1 h).
+                    cacheControl: '60',
                 });
 
             if (error) throw error;
@@ -185,52 +95,14 @@ class GradeService {
         }
     }
 
-    async obterTimeline(diaSolicitado, predio_id) {
-        const salasDb = await this._salasVisiveis(predio_id);
-        const gradeBruta = await this._obterGradeOtimizada(predio_id) || [];
-        const aulasDoDia = gradeBruta.filter(d => d.dia_semana === diaSolicitado);
-        const periodoAtual = getCurrentPeriod();
-
-        const timeline = salasDb.map(salaRef => {
-            const slots = PERIODS.map(p => {
-                const aulaNoSlot = aulasDoDia.find(d => {
-                    const numSala = d.salas?.numero || d.sala;
-                    return numSala === salaRef.numero && extractPeriodCode(d.periodo) === p.code;
-                });
-
-                return {
-                    periodo: p.code,
-                    horario: p.lb,
-                    isAgora: p.code === periodoAtual,
-                    ocupado: !!aulaNoSlot,
-                    nome: aulaNoSlot ? (aulaNoSlot.nome_aula || aulaNoSlot.disciplinas?.nome) : null,
-                    tipo: aulaNoSlot ? (aulaNoSlot.tipo || (isInternalClass(aulaNoSlot.nome_aula) ? 'Interno' : 'Regular')) : 'Livre'
-                };
-            });
-            return {
-                sala: salaRef.numero,
-                temAulaAgora: slots.some(s => s.isAgora && s.ocupado),
-                slots
-            };
-        });
-
-        return {
-            dia: diaSolicitado,
-            periodosCabecalho: PERIODS.map(p => ({ code: p.code, label: p.lb, isAgora: p.code === periodoAtual })),
-            timeline
-        };
-    }
-
     // Busca da barra do topo (GET /api/grade/busca): aulas da semana cujo nome,
     // sala ou código contém o termo, agrupadas em blocos de períodos seguidos.
-    // Restaurada do backend antigo — o handler chamava este método, mas ele se
-    // perdeu na migração para serverless e a rota respondia 500.
     async realizarBuscaGlobal(q, predio_id) {
-        if (!q || q.length < 2) return [];
+        if (typeof q !== 'string' || q.trim().length < 2) return [];
         const gradeBruta = await this._obterGradeOtimizada(predio_id);
 
-        const normalizarTexto = (texto) => texto ? String(texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
-        const termoPesquisado = normalizarTexto(q);
+        const normalizarTexto = (texto) => texto ? String(texto).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase() : '';
+        const termoPesquisado = normalizarTexto(q.slice(0, 80));
 
         const filtrados = gradeBruta.filter(d => {
             const nomeNormalizado = normalizarTexto(d.nome_aula || d.disciplinas?.nome);
@@ -239,129 +111,107 @@ class GradeService {
             return nomeNormalizado.includes(termoPesquisado) || salaNormalizada.includes(termoPesquisado) || codigoNormalizado.includes(termoPesquisado);
         });
 
-        const dias = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
         const resultados = [];
-        dias.forEach(dia => {
+        DIAS.forEach(dia => {
             const aulasDoDia = filtrados.filter(f => f.dia_semana === dia);
             groupConsecutiveClasses(aulasDoDia).forEach(aula => resultados.push({ ...aula, dia_semana: dia }));
         });
 
         return resultados.sort((a, b) => {
-            if (a.dia_semana !== b.dia_semana) return dias.indexOf(a.dia_semana) - dias.indexOf(b.dia_semana);
+            if (a.dia_semana !== b.dia_semana) return DIAS.indexOf(a.dia_semana) - DIAS.indexOf(b.dia_semana);
             return String(a.sala).localeCompare(String(b.sala), undefined, { numeric: true });
         }).slice(0, 15);
     }
 
-    _processarOcupacaoSemanl(gradeBruta, salasLista) {
-        const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-        const ocupacaoBase = gradeBruta.map(g => ({
-            sala: g.salas?.numero || g.Sala || g.sala,
-            dia: g.dia_semana || g.Dia || g.dia,
-            periodo: extractPeriodCode(g.periodo || g.Periodo)
-        })).filter(item => item.sala && item.dia);
-
-        return {
-            diasDisponiveis: diasSemana,
-            salasDisponiveis: salasLista,
-            periodosDisponiveis: PERIODS.map(p => p.code),
-            ocupacaoBase
-        };
-    }
-
-    async obterOcupacaoSemanal(predio_id) {
-        const salasDb = await this._salasVisiveis(predio_id);
-        const gradeBruta = await this._obterGradeOtimizada(predio_id);
-        const listaNumeros = salasDb.map(s => s.numero);
-        return this._processarOcupacaoSemanl(gradeBruta, listaNumeros);
-    }
-
-    // `rota` troca o endpoint do extrator (ex.: '/analyze-bi'); padrão = extração da grade
-    async _enviarParaPythonComRetry(buffer, filename, rota = null) {
-        const BASE_PYTHON = process.env.VITE_PYTHON_API_URL || process.env.PYTHON_API_URL;
-        const PYTHON_API_URL = BASE_PYTHON && rota ? BASE_PYTHON.replace('/extract-pdf', rota) : BASE_PYTHON;
-
-        if (!PYTHON_API_URL) {
-            throw new Error("A URL da API Python não está definida nas variáveis de ambiente do backend.");
+    // `rota` troca o endpoint do extrator (ex.: '/analyze-bi'); padrão = extração da grade.
+    // Uma nova tentativa em erro de rede ou 5xx (a extração é pura: repetir é seguro);
+    // timeout e 4xx não repetem. Falha sai como ErroPublico — o detalhe vai só para o log.
+    async _enviarParaExtrator(buffer, filename, rota = null) {
+        const base = process.env.VITE_PYTHON_API_URL || process.env.PYTHON_API_URL;
+        const url = base && rota ? base.replace('/extract-pdf', rota) : base;
+        if (!url) {
+            console.error('[grade] PYTHON_API_URL não definida nas variáveis de ambiente do backend.');
+            throw new ErroPublico('O extrator de PDF não está configurado no servidor. Avise o administrador.', 503);
         }
 
-        const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
-        let body = `--${boundary}\r\n`;
-        body += `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`;
-        body += `Content-Type: application/pdf\r\n\r\n`;
+        const boundary = `----PucrsSalas${Date.now().toString(16)}`;
+        const cabecalho = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/pdf\r\n\r\n`;
+        const corpo = Buffer.concat([Buffer.from(cabecalho, 'utf8'), buffer, Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8')]);
 
-        const footer = `\r\n--${boundary}--\r\n`;
+        let ultimoErro = null;
+        let statusExtrator = null;
+        for (let tentativa = 1; tentativa <= 2; tentativa++) {
+            let response;
+            try {
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': String(corpo.length) },
+                    body: corpo,
+                    signal: AbortSignal.timeout(TIMEOUT_EXTRATOR_MS),
+                });
+            } catch (err) {
+                ultimoErro = err;
+                if (err?.name === 'TimeoutError') break; // já esperou 90 s: não dobra a espera
+                continue;
+            }
 
-        const multipartBody = Buffer.concat([
-            Buffer.from(body, 'utf8'),
-            buffer,
-            Buffer.from(footer, 'utf8')
-        ]);
+            if (response.ok) {
+                try {
+                    return await response.json();
+                } catch {
+                    console.error('[grade] extrator devolveu algo que não é JSON.');
+                    throw new ErroPublico(MSG_EXTRATOR_FORA, 502);
+                }
+            }
 
-        const response = await fetch(PYTHON_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': `multipart/form-data; boundary=${boundary}`,
-                'Content-Length': multipartBody.length
-            },
-            body: multipartBody
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Erro na extração PDF: ${response.status} - ${errorText || response.statusText}`);
+            statusExtrator = response.status;
+            const texto = await response.text().catch(() => '');
+            ultimoErro = new Error(`HTTP ${response.status}: ${texto.slice(0, 300) || response.statusText}`);
+            if (response.status < 500) break; // o problema é o PDF; repetir não muda
         }
-        
-        return await response.json();
+
+        console.error('[grade] extrator falhou:', ultimoErro?.message || ultimoErro);
+        if (statusExtrator && statusExtrator < 500) {
+            throw new ErroPublico('O extrator não conseguiu ler este PDF. Confira se é a agenda semanal exportada do Espaço Físico.', 422);
+        }
+        throw new ErroPublico(MSG_EXTRATOR_FORA, 502);
     }
 
     // Histórico de aulas (BI): devolve o JSON cru do extrator ({ rawRecords, kpis }).
     // Passa pelo backend para exigir login + módulo Relatórios e não expor o
     // endereço do extrator no código do site.
     async analisarBiPdf(buffer) {
-        return await this._enviarParaPythonComRetry(buffer, 'historico.pdf', '/analyze-bi');
+        return await this._enviarParaExtrator(buffer, 'historico.pdf', '/analyze-bi');
     }
 
-    async analisarGradeExternaPdf(buffer) {
-        const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'historico.pdf');
-        return await this.analisarGradeExterna(jsonResponse.records);
+    async processarUploadPdf(buffer, predio_id, user = null) {
+        // Prédio antes do extrator: sem ele nada seria gravado, então não vale
+        // esperar a extração
+        if (!predio_id) throw new ErroPublico('Selecione um prédio no menu superior antes de importar a grade.');
+        const jsonResponse = await this._enviarParaExtrator(buffer, 'agenda.pdf');
+        return await this.processarUploadCsv(jsonResponse?.records, predio_id, user);
     }
 
-    async analisarGradeExterna(dadosCsv) {
-        const salasUnicas = [...new Set(dadosCsv.map(d => d.Sala || d.sala))].filter(s => s).sort();
-        return this._processarOcupacaoSemanl(dadosCsv, salasUnicas);
-    }
-
-    async processarUploadPdf(buffer, predio_id) {
-        const jsonResponse = await this._enviarParaPythonComRetry(buffer, 'agenda.pdf');
-        return await this.processarUploadCsv(jsonResponse.records, predio_id);
-    }
-
-    async processarUploadCsv(dadosCsv, predio_id) {
+    async processarUploadCsv(dadosCsv, predio_id, user = null) {
         if (!predio_id) {
-            throw new Error("Falha de Segurança: É obrigatório definir um prédio para importar a grade.");
+            throw new ErroPublico('Selecione um prédio no menu superior antes de importar a grade.');
+        }
+        if (!Array.isArray(dadosCsv)) {
+            console.error('[grade] resposta do extrator sem "records":', typeof dadosCsv);
+            throw new ErroPublico(MSG_EXTRATOR_FORA, 502);
         }
 
-        const simplificarSala = (codigo) => {
-            if (!codigo) return codigo;
-            const partes = codigo.split('.');
+        // Linha sem sala, dia ou período não vira aula (dia_semana e periodo são
+        // NOT NULL: antes uma linha assim derrubava o INSERT depois do DELETE)
+        const dadosFormatados = dadosCsv
+            .map(d => ({ ...d, Sala: simplificarSala(d?.Sala || d?.sala), periodoCodigo: extractPeriodCode(d?.Periodo) }))
+            .filter(d => d.Sala && d.Dia && d.periodoCodigo);
 
-            if (partes.length >= 5 && partes[0] === 'C') {
-                const andar = parseInt(partes[3], 10).toString();
-                const sala = partes[4];
-
-                if (sala.startsWith(andar) && sala.length >= 3) {
-                    return sala;
-                }
-
-                return `${andar}${sala}`;
-            }
-            return codigo;
-        };
-
-        const dadosFormatados = dadosCsv.map(d => ({
-            ...d,
-            Sala: simplificarSala(d.Sala || d.sala)
-        }));
+        // PDF errado (outro documento, página em branco) → nada é tocado.
+        // Antes a grade era apagada e o prédio ficava sem aulas.
+        if (!dadosFormatados.length) {
+            throw new ErroPublico('Nenhuma aula foi reconhecida neste PDF — a grade atual foi mantida. Confira se é a agenda semanal exportada do Espaço Físico.', 422);
+        }
 
         // Sala que o prédio ainda não conhecia entra como Pendente (oculta até
         // alguém decidir). As existentes não são tocadas: a escolha de
@@ -373,27 +223,51 @@ class GradeService {
         const salasDb = numerosNovos.length ? await gradeRepository.buscarSalasComId(predio_id) : salasExistentes;
 
         const salaMap = {};
-        salasDb.forEach(s => { salaMap[s.numero] = s.id });
+        salasDb.forEach(s => { salaMap[s.numero] = s.id; });
 
         const gradeInsert = dadosFormatados.map(d => ({
             sala_id: salaMap[d.Sala] || null,
             dia_semana: d.Dia,
-            periodo: extractPeriodCode(d.Periodo),
+            periodo: d.periodoCodigo,
             nome_aula: d.Nome_da_Aula,
             tipo: isInternalClass(d.Nome_da_Aula) ? 'Interno' : 'Regular',
             predio_id: predio_id
         })).filter(d => d.sala_id !== null);
 
-        await gradeRepository.limparGrade(predio_id);
-        await gradeRepository.inserirGradeLote(gradeInsert);
-        await this.gerarEPublicarIndexEstatico(predio_id);
+        if (!gradeInsert.length) {
+            throw new ErroPublico('Nenhuma aula do PDF pôde ser ligada a uma sala do prédio — a grade atual foi mantida.', 422);
+        }
 
-        gradeCacheMap[predio_id] = null;
-        gradeCacheMap['GLOBAL'] = null;
+        // O que muda em relação à grade atual (lida antes da troca): mostrado na
+        // tela de sucesso — PDF da semana errada salta aos olhos.
+        const numeroPorId = Object.fromEntries(salasDb.map(s => [s.id, s.numero]));
+        const gradeAnterior = primeiraImportacao ? [] : await gradeRepository.buscarGradeCompleta(predio_id);
+        const comparacao = compararGrades(
+            gradeAnterior.map(g => ({ sala: g.salas?.numero, dia: g.dia_semana, periodo: g.periodo, nome: g.nome_aula })),
+            gradeInsert.map(g => ({ sala: numeroPorId[g.sala_id], dia: g.dia_semana, periodo: g.periodo, nome: g.nome_aula })),
+        );
+
+        // DELETE + INSERT numa transação (grade_substituir): ou entra a grade
+        // nova inteira, ou fica a antiga
+        await gradeRepository.substituirGrade(predio_id, gradeInsert);
+        this._invalidarCache(predio_id);
+
+        await registrarAuditoria({
+            user, acao: 'grade.importar', entidade: 'grade', predioId: predio_id,
+            detalhes: {
+                aulas: gradeInsert.length, salasNovas: numerosNovos.sort(ordenarNumeros),
+                novos: comparacao.novos, removidos: comparacao.removidos, alterados: comparacao.alterados,
+            },
+        });
+
+        const publicado = await this.gerarEPublicarIndexEstatico(predio_id);
+        if (!publicado) {
+            // Antes a resposta dizia "sucesso" e as telas seguiam com a grade antiga
+            throw new ErroPublico('A grade nova foi gravada, mas não foi publicada para as telas. Importe o PDF de novo em instantes.', 502);
+        }
 
         // Salas à espera de decisão (as novas desta importação + pendentes de
         // importações anteriores), com o resumo da semana para a pergunta na tela
-        const numeroPorId = Object.fromEntries(salasDb.map(s => [s.id, s.numero]));
         const resumo = resumirAgendaPorSala(gradeInsert.map(g => ({ sala: numeroPorId[g.sala_id], nome: g.nome_aula, tipo: g.tipo })));
         const novas = new Set(numerosNovos);
         const salasParaDecidir = salasDb
@@ -401,7 +275,7 @@ class GradeService {
             .map(s => ({ numero: s.numero, situacao: 'pendente', nova: novas.has(s.numero), ...(resumo.get(s.numero) || RESUMO_VAZIO) }))
             .sort((a, b) => ordenarNumeros(a.numero, b.numero));
 
-        return { sucesso: true, registrosInseridos: gradeInsert.length, primeiraImportacao, salasParaDecidir };
+        return { sucesso: true, registrosInseridos: gradeInsert.length, primeiraImportacao, salasParaDecidir, comparacao };
     }
 
     // GET /api/grade/salas — todas as salas do prédio (inclusive ocultas e
@@ -434,10 +308,9 @@ class GradeService {
         await gradeRepository.atualizarStatusSalas(predio_id, exibir, STATUS_SALA.ATIVA);
         await gradeRepository.atualizarStatusSalas(predio_id, ocultar, STATUS_SALA.OCULTA);
 
-        gradeCacheMap[predio_id] = null;
-        gradeCacheMap['GLOBAL'] = null;
+        this._invalidarCache(predio_id);
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user, acao: 'grade.salas.visibilidade', entidade: 'sala', predioId: predio_id,
             detalhes: { exibidas: exibir.sort(ordenarNumeros), ocultadas: ocultar.sort(ordenarNumeros) },
         });

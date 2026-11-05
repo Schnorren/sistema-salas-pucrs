@@ -7,6 +7,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { formatarDuracao, minutosEntre, inputDataHoraSP, inputInicioDoDiaSP } from '../../backend_core/utils/emprestimoRegras';
 import { usePontosEmprestimo } from '../hooks/useEmprestimos';
+import { lerResposta } from '../utils/api';
 
 // Período padrão = hoje no horário de Brasília (antes: fuso do navegador)
 const getInicioHojeLocal = () => inputInicioDoDiaSP();
@@ -63,9 +64,7 @@ export default function RelatoriosEmprestimos({ session, acesso }) {
                     'x-predio-id': currentPredioId
                 }
             });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-            return json;
+            return lerResposta(res);
         },
         enabled: !!currentPredioId && !!filtroInicio && !!filtroFim,
         staleTime: 1000 * 60 * 2

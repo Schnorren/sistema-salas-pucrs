@@ -2,13 +2,8 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { useEffect, useMemo } from 'react';
 import { supabase } from '../supabase';
 import { lerBalcao } from '../utils/balcao';
+import { lerResposta as parseResponse } from '../utils/api';
 
-// Lê o corpo do erro da resposta HTTP e lança com a mensagem correta do servidor
-async function parseResponse(res) {
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-    return json;
-}
 
 const API = `${import.meta.env.VITE_API_URL}/api/emprestimos`;
 

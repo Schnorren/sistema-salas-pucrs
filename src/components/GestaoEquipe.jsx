@@ -26,6 +26,8 @@ export default function GestaoEquipe({ session, acesso }) {
     const [ordenacao, setOrdenacao] = useState('email_asc');
 
     const modoEdicao = !!usuarioSelecionado;
+    const souAdmin = Boolean(acesso?.permissoes?.includes('admin'));
+    const meuId = session?.user?.id;
 
     useEffect(() => {
         carregarDados();
@@ -67,7 +69,7 @@ export default function GestaoEquipe({ session, acesso }) {
         setEmailBusca('');
         setCargoSelecionado('');
         setBuscaCargo('');
-        setPermissoesEditadas([]); // eslint-disable-line react-hooks/set-state-in-effect
+        setPermissoesEditadas([]);
         setPontosEditados([]);
         setDropdownAberto(false);
     };
@@ -358,6 +360,11 @@ export default function GestaoEquipe({ session, acesso }) {
                                     equipeProcessada.map(user => {
                                         const isSelecionado = usuarioSelecionado?.user_id === user.user_id;
                                         const temPermissao = (user.permissoes || []).length > 0;
+                                        // Mesmas travas do backend (api/equipe): admin do sistema só
+                                        // é gerenciado no Painel Admin; ninguém revoga o próprio acesso.
+                                        const alvoAdmin = (user.permissoes || []).includes('admin');
+                                        const podeEditar = !alvoAdmin || souAdmin;
+                                        const podeRevogar = !alvoAdmin && user.user_id !== meuId;
 
                                         return (
                                             <tr key={user.user_id} style={{ 
@@ -387,6 +394,11 @@ export default function GestaoEquipe({ session, acesso }) {
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: '12px', textAlign: 'right' }}>
+                                                    {!podeEditar ? (
+                                                        <span title="Administradores são gerenciados no Painel Admin" style={{ color: 'var(--muted)', fontSize: '12px', fontWeight: 'bold' }}>
+                                                            Administrador
+                                                        </span>
+                                                    ) : (<>
                                                     <button
                                                         onClick={() => handleSelecionar(user)}
                                                         style={{ 
@@ -400,7 +412,7 @@ export default function GestaoEquipe({ session, acesso }) {
                                                     >
                                                         {isSelecionado ? 'Editando...' : 'Editar'}
                                                     </button>
-                                                    <button
+                                                    {podeRevogar && <button
                                                         onClick={() => handleRemover(user)}
                                                         style={{
                                                             background: 'rgba(220,38,38,0.1)',
@@ -412,7 +424,8 @@ export default function GestaoEquipe({ session, acesso }) {
                                                         title="Revogar acesso deste usuário"
                                                     >
                                                         🗑
-                                                    </button>
+                                                    </button>}
+                                                    </>)}
                                                 </td>
                                             </tr>
                                         )

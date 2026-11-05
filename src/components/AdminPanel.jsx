@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useUI } from '../contexts/UIContext';
 import AuditoriaAdmin from './AuditoriaAdmin';
+import { SENHA_MIN, validarSenha } from '../../backend_core/utils/senha';
+import { lerResposta } from '../utils/api';
 
 export default function AdminPanel({ session, acesso }) {
     const { toast } = useUI();
@@ -44,7 +46,7 @@ export default function AdminPanel({ session, acesso }) {
         } finally {
             setLoading(false);
         }
-    }, [token, isAdmin]);
+    }, [token, isAdmin, toast]);
 
     useEffect(() => {
         carregarDados();
@@ -59,11 +61,7 @@ export default function AdminPanel({ session, acesso }) {
             'Authorization': `Bearer ${token}`
         };
 
-        const parseRes = async (res) => {
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-            return json;
-        };
+        const parseRes = lerResposta;
 
         try {
             if (modal.tipo === 'novo_predio') {
@@ -83,6 +81,8 @@ export default function AdminPanel({ session, acesso }) {
             }
 
             if (modal.tipo === 'editar_usuario') {
+                const problemaSenha = modal.dados.senha ? validarSenha(modal.dados.senha) : null;
+                if (problemaSenha) throw new Error(problemaSenha);
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/usuarios`, {
                     method: 'PUT', headers,
                     body: JSON.stringify({
@@ -326,8 +326,9 @@ export default function AdminPanel({ session, acesso }) {
                                     </div>
 
                                     <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>Nova Senha (deixe vazio para manter atual)</label>
-                                        <input type="password" value={modal.dados?.senha || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, senha: e.target.value } })} style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }} placeholder="••••••••" />
+                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>Nova Senha (deixe vazio para manter atual · mínimo {SENHA_MIN} caracteres)</label>
+                                        {/* new-password: sem isso o navegador pode autopreencher a senha salva do PRÓPRIO admin e trocar a do usuário editado por ela */}
+                                        <input type="password" autoComplete="new-password" value={modal.dados?.senha || ''} onChange={e => setModal({ ...modal, dados: { ...modal.dados, senha: e.target.value } })} style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }} placeholder="••••••••" />
                                     </div>
 
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

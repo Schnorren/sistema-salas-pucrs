@@ -1,0 +1,32 @@
+# Verificação automática: push na main = deploy de produção na Vercel, então
+# lint + testes + build rodam a cada push e em todo pull request. Não usa
+# segredo nenhum: os testes de API (tests/api) usam um Supabase falso e o
+# build não precisa das variáveis VITE_ (só são lidas no navegador).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

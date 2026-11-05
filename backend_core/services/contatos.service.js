@@ -160,7 +160,7 @@ class ContatosService {
             atualizado_por: user.id,
         });
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.criar',
             entidade: 'contatos',
@@ -177,6 +177,15 @@ class ContatosService {
 
         if (campos.pai_id === id) throw new ErroPublico('Um contato não pode ser pai de si mesmo.');
 
+        // A árvore é escola → unidade, local → serviço. Trocar o tipo de quem
+        // já tem filhos deixaria unidades penduradas num "local" (ou o
+        // contrário). A tela nunca troca o tipo; a API também não deixa.
+        const atual = await contatosRepository.buscarPorId(id);
+        if (!atual) throw new ErroPublico('Contato não encontrado.', 404);
+        if (atual.tipo !== campos.tipo) {
+            throw new ErroPublico('O tipo de um contato não pode ser alterado. Crie um contato novo do tipo desejado.');
+        }
+
         const atualizado = await contatosRepository.atualizar(id, {
             ...campos,
             atualizado_em: new Date().toISOString(),
@@ -184,7 +193,7 @@ class ContatosService {
         });
         if (!atualizado) throw new ErroPublico('Contato não encontrado.', 404);
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.atualizar',
             entidade: 'contatos',
@@ -202,7 +211,7 @@ class ContatosService {
 
         // Exclusão leva junto unidades/serviços filhos e os cursos (ON DELETE
         // CASCADE) — o log de auditoria é o único rastro que sobra.
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.excluir',
             entidade: 'contatos',
@@ -227,7 +236,7 @@ class ContatosService {
             throw err;
         }
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.curso_adicionar',
             entidade: 'contato_cursos',
@@ -243,7 +252,7 @@ class ContatosService {
         const removido = await contatosRepository.deletarCurso(cursoId);
         if (!removido) throw new ErroPublico('Curso não encontrado.', 404);
 
-        registrarAuditoria({
+        await registrarAuditoria({
             user,
             acao: 'contatos.curso_remover',
             entidade: 'contato_cursos',

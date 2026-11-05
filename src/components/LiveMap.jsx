@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
 import { slotsDoDia, blocosDaSala, blocoNoPeriodo, trocaNoPeriodo } from '../utils/aulasDoDia';
-import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getDiaAtual, getCurrentPeriod, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_OPTIONS, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
+import { useMomentoAtual, useDiaQueAcompanhaHoje } from '../hooks/useMomentoAtual';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -16,35 +17,19 @@ export default function LiveMap({ acesso }) {
   // Trocas de sala da semana (mesmo hook da Linha do tempo e do badge)
   const trocas = useTrocasSala(predioAtual);
 
-  const [day, setDay] = useState(getDiaAtual());
+  // Dia/período de agora (Brasília); o dia escolhido volta para hoje a cada virada
+  const momento = useMomentoAtual();
+  const [day, setDay] = useDiaQueAcompanhaHoje(momento);
   const [per, setPer] = useState('auto');
-  const [, setTick] = useState(0);
 
   const [tt, setTt] = useState({ visible: false, x: 0, y: 0, sala: '', info: '' });
 
-  useEffect(() => {
-    const intervaloRelogio = setInterval(() => {
-      const agora = new Date();
-      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-
-      if (PERIOD_TIMES.includes(horaStr)) {
-        setTick(t => t + 1);
-        // Atualiza o dia automaticamente — cobre virada de meia-noite
-        setDay(prev => {
-          const hoje = getDiaAtual();
-          return prev !== hoje ? hoje : prev;
-        });
-      }
-    }, 60000);
-
-    return () => clearInterval(intervaloRelogio);
-  }, []);
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.salas) return null;
 
     const salasDb = rawGradeData.salas;
     const gradeBruta = rawGradeData.grade || [];
-    const activePer = per === 'auto' ? getCurrentPeriod() : per;
+    const activePer = per === 'auto' ? momento.periodo : per;
     const aulasNoMomento = gradeBruta.filter(d => {
       const mesmoDia = d.dia_semana?.toLowerCase().includes(day.toLowerCase());
       const codigoPeriodoBanco = extractPeriodCode(d.periodo);
@@ -98,7 +83,7 @@ export default function LiveMap({ acesso }) {
       andares: andares.filter(a => a.salas.length > 0)
     };
 
-  }, [rawGradeData, day, per, trocas]);
+  }, [rawGradeData, day, per, trocas, momento.periodo]);
   const handleMouseEnter = (e, sala) => {
     setTt({
       visible: true,

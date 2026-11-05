@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
 import { periodosAfetadosPelaTroca } from '../utils/aulasDoDia';
-import { PERIODS, PERIOD_TIMES, PERIOD_OPTIONS, getDiaAtual, getCurrentPeriod, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
+import { PERIODS, PERIOD_OPTIONS, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
+import { useMomentoAtual, useDiaQueAcompanhaHoje } from '../hooks/useMomentoAtual';
 
 const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const ALL_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -26,36 +27,20 @@ export default function NextClasses({ acesso }) {
     return { ...registro, afetados: periodosAfetadosPelaTroca(registro, aula.periodos).join('') };
   };
 
-  const [day, setDay] = useState(getDiaAtual());
+  // Dia/período de agora (Brasília); o dia escolhido volta para hoje a cada virada
+  const momento = useMomentoAtual();
+  const [day, setDay] = useDiaQueAcompanhaHoje(momento);
   const [per, setPer] = useState('auto');
 
   const [filtro, setFiltro] = useState('');
   const [ordem, setOrdem] = useState('sala');
   const [mostrarMaisTarde, setMostrarMaisTarde] = useState(false);
-  const [tick, setTick] = useState(0);
 
-  useEffect(() => {
-    const intervaloRelogio = setInterval(() => {
-      const agora = new Date();
-      const horaStr = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`;
-
-      if (PERIOD_TIMES.includes(horaStr)) {
-        setTick(t => t + 1);
-        // Atualiza o dia automaticamente — cobre virada de meia-noite
-        setDay(prev => {
-          const hoje = getDiaAtual();
-          return prev !== hoje ? hoje : prev;
-        });
-      }
-    }, 60000);
-
-    return () => clearInterval(intervaloRelogio);
-  }, []);
   const dataProcessed = useMemo(() => {
     if (!rawGradeData || !rawGradeData.grade) return null;
 
     const gradeBruta = rawGradeData.grade;
-    const activePer = per === 'auto' ? getCurrentPeriod() : per;
+    const activePer = per === 'auto' ? momento.periodo : per;
     const aulasDoDia = gradeBruta.filter(d => d.dia_semana?.toLowerCase().includes(day.toLowerCase()));
 
     const response = {
@@ -83,7 +68,7 @@ export default function NextClasses({ acesso }) {
     }
 
     return response;
-  }, [rawGradeData, day, per, tick]);
+  }, [rawGradeData, day, per, momento.periodo]);
   const filteredAndSortedData = useMemo(() => {
     if (!dataProcessed) return { emAndamento: [], proximas: [], restoDoDia: [], todasAsAulas: [] };
 

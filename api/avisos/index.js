@@ -22,6 +22,9 @@ async function handler(req, res) {
     const predioId = req.user.predio_id;
 
     try {
+        // Admin sem prédio escolhido: antes caía no repository como erro interno (500)
+        if (!predioId) return res.status(400).json({ error: 'Selecione um prédio no menu superior.' });
+
         // GET /api/avisos
         if (req.method === 'GET' && !id) {
             const dados = await avisosService.obterMuralOtimizado(predioId);
