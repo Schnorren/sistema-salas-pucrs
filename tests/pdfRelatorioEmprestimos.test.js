@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { montarRelatorio } from '../src/utils/relatorioEmprestimos.js';
-import { gerarPdfRelatorio, textoPdf, escalaEixo, MAX_LINHAS_TABELA_PDF } from '../src/utils/pdfRelatorioEmprestimos.js';
+import { gerarPdfRelatorio, textoPdf, escalaEixo } from '../src/utils/pdfRelatorioEmprestimos.js';
 
 const PONTO = 'p1';
 const dadosBase = (n) => ({
@@ -31,15 +31,19 @@ test('PDF: cabeçalho com prédio, ponto, período e data de geração; rodapé 
   assert.ok(!txt.includes('(ALUNO)') && !txt.includes('MATRÍCULA') && !txt.includes('(Alunos)'));
 });
 
-test('PDF: tabela longa pagina, repete o cabeçalho e avisa o corte; arquivo pequeno', () => {
-  const n = MAX_LINHAS_TABELA_PDF + 200;
-  const pdf = gerarPdfRelatorio(montarRelatorio(dadosBase(n), periodo), meta, { compress: false });
-  const txt = conteudo(pdf);
-  assert.ok(pdf.getNumberOfPages() > 10);
-  assert.ok(txt.includes('Registro de retiradas \\(continuação\\)') || txt.includes('Registro de retiradas (continuação)'));
-  assert.ok(txt.includes('Mostrando 1.000 de 1.200. A lista completa está na planilha'));
-  const comprimido = gerarPdfRelatorio(montarRelatorio(dadosBase(n), periodo), meta);
-  assert.ok(comprimido.output('arraybuffer').byteLength < 400 * 1024);
+test('PDF: só o resumo, sem a lista de retiradas — o tamanho não cresce com o período', () => {
+  const pequeno = gerarPdfRelatorio(montarRelatorio(dadosBase(41), periodo), meta, { compress: false });
+  const grande = gerarPdfRelatorio(montarRelatorio(dadosBase(1200), periodo), meta, { compress: false });
+  for (const pdf of [pequeno, grande]) {
+    const txt = conteudo(pdf);
+    assert.ok(!txt.includes('Registro de retiradas'), 'lista de retiradas fica fora do PDF (decisão do usuário)');
+    assert.ok(!txt.includes('da mais recente para a mais antiga'));
+    assert.ok(!txt.includes('DEVOLUÇÃO') && !txt.includes('(DURA'), 'sem o cabeçalho da tabela');
+    assert.ok(txt.includes('Itens mais retirados'), 'os gráficos continuam');
+  }
+  assert.equal(grande.getNumberOfPages(), pequeno.getNumberOfPages());
+  assert.ok(grande.getNumberOfPages() <= 3);
+  assert.ok(gerarPdfRelatorio(montarRelatorio(dadosBase(1200), periodo), meta).output('arraybuffer').byteLength < 100 * 1024);
 });
 
 test('PDF: período sem retiradas não quebra', () => {
