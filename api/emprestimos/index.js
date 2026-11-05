@@ -77,15 +77,20 @@ async function handler(req, res) {
             if (req.method === 'GET' && c2 === 'ocorrencias') return res.status(200).json(await gestao.listarOcorrencias(user));
             if (req.method === 'GET' && c2 === 'bloqueios') return res.status(200).json(await gestao.listarBloqueios(user));
 
+            // [método, ação da auditoria, entidade, campos que vão para o log]
+            // — só os campos que o cadastro usa: o body inteiro deixava o
+            // cliente gravar qualquer chave (e qualquer tamanho) na auditoria
             const salvar = {
-                pontos: ['salvarPonto', 'emprestimo.ponto.salvar', 'emprestimo_pontos'],
-                categorias: ['salvarCategoria', 'emprestimo.categoria.salvar', 'emprestimo_categorias'],
-                itens: ['salvarItem', 'emprestimo.item.salvar', 'emprestimo_itens'],
+                pontos: ['salvarPonto', 'emprestimo.ponto.salvar', 'emprestimo_pontos', ['nome', 'limite', 'ativo']],
+                categorias: ['salvarCategoria', 'emprestimo.categoria.salvar', 'emprestimo_categorias', ['nome', 'pontoId', 'ativo']],
+                itens: ['salvarItem', 'emprestimo.item.salvar', 'emprestimo_itens', ['nome', 'codigo', 'categoriaId', 'ativo', 'observacoes']],
             }[c2];
             if (salvar && ((req.method === 'POST' && !c3) || (req.method === 'PUT' && c3))) {
-                const [metodo, acao, entidade] = salvar;
+                const [metodo, acao, entidade, campos] = salvar;
                 const salvo = await gestao[metodo](user, c3 || null, body);
-                await auditar(acao, entidade, salvo?.id, { novo: !c3, ...body });
+                const detalhes = Object.fromEntries(campos.filter(c => body[c] !== undefined)
+                    .map(c => [c, typeof body[c] === 'string' ? body[c].slice(0, 200) : body[c]]));
+                await auditar(acao, entidade, salvo?.id, { novo: !c3, ...detalhes });
                 return res.status(c3 ? 200 : 201).json(salvo);
             }
 
