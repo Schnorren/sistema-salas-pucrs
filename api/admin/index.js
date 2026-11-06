@@ -118,6 +118,19 @@ async function handler(req, res) {
                 await registrarAuditoria({ user: req.user, acao: 'admin.predio.excluir', entidade: 'predios', entidadeId: id });
                 return res.status(200).json({ success: true });
             }
+            // Exclui a conta de vez (não dá para desfazer; o histórico fica)
+            if (endpoint === 'usuarios') {
+                const id = req.body?.id;
+                if (!id || !UUID_REGEX.test(String(id))) return res.status(400).json({ error: 'ID do usuário inválido.' });
+                const excluido = await service.excluirUsuario(id, req.user);
+                invalidarAcessoEmCache(id);
+                await registrarAuditoria({
+                    user: req.user, acao: 'admin.usuario.excluir', entidade: 'usuarios_acessos',
+                    entidadeId: id, predioId: excluido.predioId,
+                    detalhes: { email: excluido.email, permissoes: excluido.permissoes },
+                });
+                return res.status(200).json({ success: true });
+            }
             if (endpoint === 'perfis') {
                 const id = req.body?.id;
                 if (!id || !UUID_REGEX.test(String(id))) return res.status(400).json({ error: 'ID inválido.' });

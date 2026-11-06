@@ -1,10 +1,11 @@
 // Painel Admin e Contatos, com Supabase falso (sem rede).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { supabase, fakeFrom } from './supabaseFalso.js';
+import { supabase, fakeFrom, chamar } from './supabaseFalso.js';
 
 const { default: adminService } = await import('../../backend_core/services/admin.service.js');
 const { default: contatosService } = await import('../../backend_core/services/contatos.service.js');
+const { default: adminHandler } = await import('../../api/admin/index.js');
 
 const PREDIO = '11111111-2222-4333-8444-555555555555';
 
@@ -35,6 +36,86 @@ test('admin não tira de si a permissão de administrador; senha curta é recusa
   await assert.rejects(adminService.atualizarUsuarioCompleto('admin-1', { permissoes: ['grade'] }, { id: 'admin-1' }), /própria permissão de administrador/);
   await assert.rejects(adminService.atualizarUsuarioCompleto('outro', { permissoes: [], senha: '1234567' }, { id: 'admin-1' }), /pelo menos 8/);
   assert.equal((await adminService.atualizarUsuarioCompleto('outro', { permissoes: ['grade'], senha: 'senha-boa-123' }, { id: 'admin-1' })).success, true);
+});
+
+// Auth falso para excluir conta: registra quem foi apagado
+function prepararExclusao({ existe = true, acesso = { predio_id: PREDIO, permissoes: ['grade'] }, erroDelete = null } = {}) {
+  const c = { deletados: [], escritas: [] };
+  supabase.auth.admin.getUserById = async (id) => (existe
+    ? { data: { user: { id, email: 'fulana@pucrs.br' } }, error: null }
+    : { data: { user: null }, error: Object.assign(new Error('User not found'), { status: 404, code: 'user_not_found' }) });
+  supabase.auth.admin.deleteUser = async (id) => {
+    if (erroDelete) return { data: null, error: erroDelete };
+    c.deletados.push(id);
+    return { data: {}, error: null };
+  };
+  supabase.from = fakeFrom((q) => {
+    if (q.acao !== 'select') c.escritas.push(q);
+    return { data: q.maybe ? acesso : [], error: null };
+  });
+  return c;
+}
+
+test('excluir conta: apaga no Auth e devolve e-mail, prédio e módulos para a auditoria', async () => {
+  const c = prepararExclusao();
+  const r = await adminService.excluirUsuario('alvo-1', { id: 'admin-1' });
+  assert.deepEqual(c.deletados, ['alvo-1']);
+  assert.deepEqual(r, { email: 'fulana@pucrs.br', predioId: PREDIO, permissoes: ['grade'] });
+  // o resto (acessos, pontos) cai em cascata no banco: o service não apaga tabela nenhuma
+  assert.deepEqual(c.escritas, []);
+});
+
+test('excluir conta: ninguém exclui a si mesmo; conta que não existe dá 404', async (t) => {
+  let c = prepararExclusao();
+  await assert.rejects(adminService.excluirUsuario('admin-1', { id: 'admin-1' }), (e) => e.status === 400 && /própria conta/.test(e.message));
+  assert.deepEqual(c.deletados, []);
+
+  c = prepararExclusao({ existe: false });
+  await assert.rejects(adminService.excluirUsuario('sumiu', { id: 'admin-1' }), (e) => e.status === 404);
+  assert.deepEqual(c.deletados, []);
+
+  // conta sem linha em usuarios_acessos (órfã) também pode ser excluída
+  c = prepararExclusao({ acesso: null });
+  assert.deepEqual(await adminService.excluirUsuario('orfa', { id: 'admin-1' }), { email: 'fulana@pucrs.br', predioId: null, permissoes: [] });
+
+  // erro do Auth não vaza a mensagem do banco
+  t.mock.method(console, 'error', () => {});
+  prepararExclusao({ erroDelete: Object.assign(new Error('Database error deleting user'), { status: 500 }) });
+  await assert.rejects(adminService.excluirUsuario('alvo-2', { id: 'admin-1' }), (e) => !(e.status >= 400 && e.status < 500) && !/Database/.test(e.message));
+});
+
+test('DELETE /api/admin/usuarios: só admin; id inválido é recusado; exclui e registra na auditoria', async () => {
+  const c = prepararExclusao();
+  const acessos = {
+    'admin-1': { user_id: 'admin-1', predio_id: null, permissoes: ['admin'] },
+    'gestor-1': { user_id: 'gestor-1', predio_id: PREDIO, permissoes: ['equipe'] },
+  };
+  const USUARIOS = { 'tok-admin-x': { id: 'admin-1', email: 'admin@pucrs.br' }, 'tok-gestor-x': { id: 'gestor-1', email: 'gestor@pucrs.br' } };
+  supabase.auth.getUser = async (token) => (USUARIOS[token]
+    ? { data: { user: USUARIOS[token] }, error: null }
+    : { data: { user: null }, error: Object.assign(new Error('invalid JWT'), { status: 401 }) });
+  supabase.from = fakeFrom((q) => {
+    if (q.acao !== 'select') { c.escritas.push(q); return { error: null }; }
+    if (q.tabela === 'usuarios_acessos') {
+      // withAuth lê o acesso de quem chama; o service, o de quem será excluído
+      return { data: acessos[q.filtros.user_id] || { predio_id: PREDIO, permissoes: ['grade'] }, error: null };
+    }
+    return { data: [], error: null };
+  });
+  const ALVO = '33333333-3333-4333-8333-333333333333';
+  const del = (token, body) => chamar(adminHandler, { metodo: 'DELETE', url: '/api/admin/usuarios', headers: { authorization: `Bearer ${token}` }, body });
+
+  assert.equal((await del('tok-gestor-x', { id: ALVO })).status, 403);
+  assert.equal((await del('tok-admin-x', { id: 'nao-e-uuid' })).status, 400);
+  assert.deepEqual(c.deletados, []);
+
+  const r = await del('tok-admin-x', { id: ALVO });
+  assert.equal(r.status, 200);
+  assert.deepEqual(c.deletados, [ALVO]);
+  const auditoria = c.escritas.find(q => q.tabela === 'auditoria_log');
+  assert.equal(auditoria.payload.acao, 'admin.usuario.excluir');
+  assert.equal(auditoria.payload.entidade_id, ALVO);
+  assert.deepEqual(auditoria.payload.detalhes, { email: 'fulana@pucrs.br', permissoes: ['grade'] });
 });
 
 test('relatório da rede: grava só pontos que existem, mexendo só no que mudou; sem o módulo, limpa', async () => {

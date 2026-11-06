@@ -377,6 +377,9 @@ body.dark-mode .h5{background:#3c1000;color:#d85018;}
 .exp-btn.green:hover{background:#165830;}
 .exp-btn.purple{background:var(--purple);}
 .exp-btn.purple:hover{background:#3a2070;}
+.exp-btn.red{background:var(--red);}
+.exp-btn.red:hover{background:#7a1c1c;}
+.exp-btn:disabled{cursor:not-allowed;}
 
 .ht-leg{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);}
 .hls{width:18px;height:13px;border-radius:2px;}

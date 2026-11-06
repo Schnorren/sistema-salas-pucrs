@@ -48,6 +48,8 @@ const ORDEM = [
   'grade_substituir_rpc.sql',
   'indices_desempenho.sql',
   'auditoria_log.sql',
+  // Excluir conta pelo Painel Admin: avisos ficam, sem o autor
+  'avisos_autor_set_null.sql',
   // Remove as RPCs da v1. Só depois do deploy do código v2 — ver o cabeçalho do arquivo.
   'emprestimos_limpeza.sql',
 ];

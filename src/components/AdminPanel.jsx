@@ -95,7 +95,7 @@ function PontosDoBalcao({ predioId, pontos, selecionados, onMudar }) {
 }
 
 export default function AdminPanel({ session, acesso }) {
-    const { toast } = useUI();
+    const { toast, showConfirm } = useUI();
     const [aba, setAba] = useState('usuarios');
     const [perfis, setPerfis] = useState([]);
     const [predios, setPredios] = useState([]);
@@ -107,6 +107,7 @@ export default function AdminPanel({ session, acesso }) {
     const [busca, setBusca] = useState('');
     const [modal, setModal] = useState({ aberto: false, tipo: null, dados: null });
     const [formLoading, setFormLoading] = useState(false);
+    const [excluindoId, setExcluindoId] = useState(null);
 
     const token = session?.access_token;
     const meuId = session?.user?.id;
@@ -215,6 +216,34 @@ export default function AdminPanel({ session, acesso }) {
             toast.error(err.message || 'Erro ao salvar. Tente novamente.');
         } finally {
             setFormLoading(false);
+        }
+    };
+
+    // Exclui a conta de vez: a pessoa perde o acesso e não entra mais; o
+    // histórico (empréstimos, avisos, auditoria) fica. Sem desfazer.
+    const excluirUsuario = async (u) => {
+        const quem = u.nome ? `${u.nome} (${u.email})` : u.email;
+        const ok = await showConfirm(
+            `Excluir a conta de ${quem}? A pessoa perde o acesso na hora e não consegue mais entrar. `
+            + 'O histórico (empréstimos, avisos, auditoria) continua. Não dá para desfazer: para voltar, crie a conta de novo.',
+            'Excluir usuário'
+        );
+        if (!ok) return;
+
+        setExcluindoId(u.id);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/usuarios`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ id: u.id })
+            });
+            await lerResposta(res);
+            toast.success(`Conta de ${u.email} excluída.`);
+            carregarDados();
+        } catch (err) {
+            toast.error(err.message || 'Erro ao excluir. Tente novamente.');
+        } finally {
+            setExcluindoId(null);
         }
     };
 
@@ -345,12 +374,22 @@ export default function AdminPanel({ session, acesso }) {
                                                         {u.id === meuId ? (
                                                             <span style={{ color: 'var(--muted)', fontSize: '12px', fontWeight: 'bold' }}>Seu Perfil</span>
                                                         ) : (
-                                                            <button
-                                                                className="exp-btn"
-                                                                onClick={() => setModal({ aberto: true, tipo: 'editar_usuario', dados: { ...u, permissoes: u.permissoes || [], pontosRede: u.pontosRede || [] } })}
-                                                            >
-                                                                Editar Acesso
-                                                            </button>
+                                                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                                                <button
+                                                                    className="exp-btn"
+                                                                    onClick={() => setModal({ aberto: true, tipo: 'editar_usuario', dados: { ...u, permissoes: u.permissoes || [], pontosRede: u.pontosRede || [] } })}
+                                                                >
+                                                                    Editar Acesso
+                                                                </button>
+                                                                <button
+                                                                    className="exp-btn red"
+                                                                    disabled={excluindoId !== null}
+                                                                    onClick={() => excluirUsuario(u)}
+                                                                    style={{ opacity: excluindoId !== null && excluindoId !== u.id ? 0.5 : 1 }}
+                                                                >
+                                                                    {excluindoId === u.id ? 'Excluindo...' : 'Excluir'}
+                                                                </button>
+                                                            </div>
                                                         )}
                                                     </td>
                                                 </tr>
