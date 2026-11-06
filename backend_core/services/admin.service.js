@@ -267,6 +267,43 @@ class AdminService {
         return { success: true, pontosRede: pontosRedeFinais };
     }
 
+    // Exclui a conta de vez (Auth). O banco limpa o resto: acessos, pontos do
+    // balcão e pontos da rede caem em cascata; avisos que a pessoa criou ou
+    // concluiu ficam, sem o autor (avisos_autor_set_null.sql). Empréstimos e
+    // auditoria guardam o e-mail em texto, então o histórico continua.
+    // Ninguém exclui a si mesmo — como só admin exclui, sempre sobra um admin.
+    // Devolve o que a auditoria registra (lido antes de apagar).
+    async excluirUsuario(id, editor = null) {
+        if (editor?.id && editor.id === id) {
+            throw new ErroPublico('Você não pode excluir a sua própria conta.');
+        }
+
+        const naoExiste = (error) => error?.status === 404 || error?.code === 'user_not_found';
+
+        const { data: authData, error: authError } = await supabase.auth.admin.getUserById(id);
+        if (naoExiste(authError) || (!authError && !authData?.user)) {
+            throw new ErroPublico('Usuário não encontrado (talvez já tenha sido excluído).', 404);
+        }
+        if (authError) throw falha('Erro ao buscar o usuário (Auth)', authError);
+
+        const { data: acesso, error: accessError } = await supabase
+            .from('usuarios_acessos')
+            .select('predio_id, permissoes')
+            .eq('user_id', id)
+            .maybeSingle();
+        if (accessError) throw falha('Erro ao ler os acessos do usuário', accessError);
+
+        const { error } = await supabase.auth.admin.deleteUser(id);
+        if (naoExiste(error)) throw new ErroPublico('Usuário não encontrado (talvez já tenha sido excluído).', 404);
+        if (error) throw falha('Erro ao excluir a conta (Auth)', error);
+
+        return {
+            email: authData.user.email || '',
+            predioId: acesso?.predio_id || null,
+            permissoes: acesso?.permissoes || [],
+        };
+    }
+
     // Conta nova pelo Painel Admin, já com prédio, cargo, módulos e pontos.
     //   modo 'convite' (padrão): e-mail com link; a pessoa define a senha
     //     (mesmo fluxo da Gestão de Equipe, sujeito ao limite de e-mails).

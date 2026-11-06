@@ -76,7 +76,7 @@ function resumir(item, nomeModulo) {
         case 'equipe.convidar':
         case 'equipe.membro.atualizar': return [d.email, modulos && `módulos: ${modulos}`].filter(Boolean).join(' · ');
         case 'equipe.membro.remover': return d.email || '';
-        case 'admin.usuario.excluir': return [d.email, d.motivo].filter(Boolean).join(' · ');
+        case 'admin.usuario.excluir': return [d.email, modulos && `tinha: ${modulos}`, d.motivo].filter(Boolean).join(' · ');
         case 'admin.usuario.criar': return [
             d.email,
             d.modo === 'senha' ? 'senha definida pelo admin' : 'convite por e-mail',
