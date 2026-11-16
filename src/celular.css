@@ -283,6 +283,8 @@ select.cel-chip, .cel-chip {
 }
 .cel-mg-aula .troca-faixa { font-size: 9.5px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: rgba(0, 0, 0, .25); margin: 0 -6px; padding: 1px 6px; }
 
+.cel-mg-aula .chave-faixa { font-size: 9.5px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #b45309; color: #fff; margin: 0 -6px; padding: 1px 6px; }
+
 /* Agenda da sala */
 .cel-ag-cab { display: flex; align-items: center; gap: 4px; margin: 0 0 2px -6px; }
 .cel-ag-cab b { font: bold 22px var(--mono); color: var(--text); }

@@ -9,6 +9,7 @@ import {
   slotsDoDia, blocosDaSala, blocoNoPeriodo, periodosAfetadosPelaTroca, trocaNoPeriodo, trocasVigentes,
   desmontarChave, blocoDaChave, horarioDosPeriodos, dataCurta, dataPorExtenso, listarTrocas,
   salaCoincide, diaDaData, ordenarPeriodos, parsearNomeAula,
+  buscarAulasPorNome, avisoVale, chavesDaAula, vigenciaDoAviso,
 } from '../src/utils/aulasDoDia.js';
 
 const DIAS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -200,4 +201,49 @@ test('situacaoDaSala: aula do período, troca que vale nele e a próxima aula', 
   assert.equal(situacaoDaSala(grade, trocas, 'Quinta', '204', null).proxima.chave, 'Quinta-204-C');
   // Sala sem aula
   assert.deepEqual(situacaoDaSala(grade, trocas, 'Quinta', '999', 'C'), { blocos: [], atual: null, troca: null, proxima: null });
+});
+
+// ------------------------------------------------- autorização de chave x aula
+const GRADE_CHAVE = [
+  { dia_semana: 'Quarta-feira', periodo: 'A', sala: '201', nome_aula: '11111-01/1 - PREVENÇÃO DE RISCO' },
+  { dia_semana: 'Quarta-feira', periodo: 'B', sala: '201', nome_aula: '11111-01/1 - PREVENÇÃO DE RISCO' },
+  { dia_semana: 'Quinta-feira', periodo: 'C', sala: '305', nome_aula: '11111-01/1 - PREVENÇÃO DE RISCO' },
+  { dia_semana: 'Quarta-feira', periodo: 'D', sala: '202', nome_aula: '22222-01/1 - FOTOGRAFIA' },
+];
+
+test('buscarAulasPorNome: sem acento, uma linha por ocorrência, ordenada por dia', () => {
+  const r = buscarAulasPorNome(GRADE_CHAVE, 'prevencao');
+  assert.deepEqual(r.map(b => [b.chave, b.periodos.join('')]), [['Quarta-201-A', 'AB'], ['Quinta-305-C', 'C']]);
+  assert.equal(buscarAulasPorNome(GRADE_CHAVE, '22222').length, 1);
+  assert.deepEqual(buscarAulasPorNome(GRADE_CHAVE, ''), []);
+});
+
+const bloco = blocoDaChave(GRADE_CHAVE, 'Quarta-201-A');
+const base = { aula_chave: 'Quarta-201-A', data_prevista: '2026-11-18', recorrente: false, data_fim: '2026-11-18' };
+
+test('avisoVale: uma data, de-até e indeterminado', () => {
+  assert.equal(avisoVale(base, bloco, '2026-11-18'), true);
+  assert.equal(avisoVale(base, bloco, '2026-11-25'), false);
+  const ate = { ...base, recorrente: true, data_fim: '2026-12-02' };
+  assert.equal(avisoVale(ate, bloco, '2026-11-25'), true);
+  assert.equal(avisoVale(ate, bloco, '2026-12-09'), false);
+  assert.equal(avisoVale(ate, bloco, '2026-11-11'), false);
+  const indet = { ...base, recorrente: true, data_fim: null };
+  assert.equal(avisoVale(indet, bloco, '2027-03-03'), true);
+  assert.equal(avisoVale({ ...indet, aula_chave: 'Quinta-305-C' }, bloco, '2026-11-18'), false);
+});
+
+test('avisoVale: aviso antigo (sala em texto livre) casa por sala, data e períodos', () => {
+  const antigo = { sala_id: 'sala 201', data_prevista: '2026-11-18', periodo: 'AB' };
+  assert.equal(avisoVale(antigo, bloco, '2026-11-18'), true);
+  assert.equal(avisoVale({ ...antigo, periodo: 'EF' }, bloco, '2026-11-18'), false);
+  assert.equal(avisoVale(antigo, bloco, '2026-11-19'), false);
+  assert.equal(avisoVale({ ...antigo, sala_id: '2010' }, bloco, '2026-11-18'), false);
+  assert.equal(chavesDaAula([antigo, base], bloco, '2026-11-18').length, 2);
+});
+
+test('vigenciaDoAviso', () => {
+  assert.equal(vigenciaDoAviso(base), '18/11/2026');
+  assert.equal(vigenciaDoAviso({ ...base, recorrente: true, data_fim: null }), 'Toda quarta · desde 18/11 · por tempo indeterminado');
+  assert.equal(vigenciaDoAviso({ ...base, recorrente: true, data_fim: '2026-12-02' }), 'Toda quarta · desde 18/11 · até 02/12/2026');
 });

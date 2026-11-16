@@ -1,5 +1,5 @@
 import { useCelular } from '../hooks/useCelular';
-import { periodosAfetadosPelaTroca, horarioDosPeriodos, dataPorExtenso } from '../utils/aulasDoDia';
+import { periodosAfetadosPelaTroca, horarioDosPeriodos, dataPorExtenso, vigenciaDoAviso } from '../utils/aulasDoDia';
 import { OVERLAY, CARTAO, BOTAO, BOTAO_PRIMARIO, BOTAO_PERIGO } from '../utils/estilosModalTroca';
 
 // Detalhes de uma aula da Linha do tempo (clique na grade) — como numa
@@ -10,7 +10,7 @@ import { OVERLAY, CARTAO, BOTAO, BOTAO_PRIMARIO, BOTAO_PERIGO } from '../utils/e
 // aula = bloco de blocoDaChave() + { data, semana } da ocorrência exibida.
 // No celular abre como painel que sobe de baixo (classes modal-* em
 // src/celular.css) e sem "Reimprimir": o aviso sai pelo computador.
-export default function ModalAulaTroca({ aula, registro, canEditGrade, desfazendo, onFechar, onTrocar, onDesfazer, onImprimir }) {
+export default function ModalAulaTroca({ aula, registro, chaves = [], canEditGrade, desfazendo, onFechar, onTrocar, onDesfazer, onImprimir }) {
   const celular = useCelular(); // painel que sobe: tocar fora fecha (só no celular)
   const afetados = registro ? periodosAfetadosPelaTroca(registro, aula.periodos) : [];
   const parcial = registro && afetados.length < aula.periodos.length;
@@ -35,6 +35,18 @@ export default function ModalAulaTroca({ aula, registro, canEditGrade, desfazend
             {aula.tipo === 'Interno' ? ' · Interno' : ''}
           </div>
         </div>
+
+        {chaves.length > 0 && (
+          <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(180, 83, 9, 0.14)', border: '1px solid rgba(180, 83, 9, 0.5)', color: 'var(--text)', fontSize: '13px', lineHeight: 1.7 }}>
+            <div style={{ fontWeight: 'bold', color: '#d97706' }}>🔑 Chave autorizada</div>
+            {chaves.map(c => (
+              <div key={c.id}>
+                <b>{c.aluno_nome}</b> · <span style={{ color: 'var(--muted)' }}>{vigenciaDoAviso(c)}</span>
+                {c.descricao && <div style={{ color: 'var(--muted)' }}>{c.descricao}</div>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {registro && (
           <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: 'var(--text)', fontSize: '13px', lineHeight: 1.7 }}>

@@ -67,7 +67,7 @@ export function itensDaAgenda(slots) {
 // qual deles é o atual, o nome da disciplina e a troca de sala que vale nele.
 // `continua` = mesmo bloco de aula do segmento anterior (troca que cobre só
 // parte da aula divide o bloco em dois).
-export function blocosDaFaixa(slots, trocas) {
+export function blocosDaFaixa(slots, trocas, chaves) {
   let chaveAnterior = null;
   return segmentosDaLinha(slots, trocas).map((seg) => {
     const continua = !!seg.chave && seg.chave === chaveAnterior;
@@ -83,6 +83,7 @@ export function blocosDaFaixa(slots, trocas) {
       idxAgora: doBloco.findIndex((s) => s.isAgora),
       nome: primeiro.aulaParseada?.nomeAula || primeiro.nome || '',
       troca: seg.tipo === 'troca' ? trocas?.[seg.chave] || null : null,
+      chaves: chaves?.[seg.chave] || [],
     };
   });
 }

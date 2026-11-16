@@ -8,6 +8,7 @@ import { useUI } from '../contexts/UIContext';
 import { usePredio } from '../contexts/PredioContext';
 import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
 import { useCelular } from '../hooks/useCelular';
+import { vigenciaDoAviso } from '../utils/aulasDoDia';
 
 // "Hoje" no fuso da PUCRS como AAAA-MM-DD (compara direto com data_prevista)
 const hojeISO = () => {
@@ -71,7 +72,12 @@ export default function MuralAvisos({ session, acesso }) {
     // Autorização vencida = data prevista já passou e ninguém deu baixa. Não há
     // arquivamento automático (o prazo é decisão da coordenação): o mural
     // marca "Vencida" e oferece arquivar todas de uma vez.
-    const vencidas = autorizacoesChaves.filter(a => typeof a.data_prevista === 'string' && a.data_prevista < hojeISO());
+    // Fim da vigência: data_fim (null = indeterminado, nunca vence); aviso antigo usa data_prevista.
+    const fimDaVigencia = (a) => a.recorrente ? (a.data_fim || null) : a.data_prevista;
+    const vencidas = autorizacoesChaves.filter(a => {
+        const fim = fimDaVigencia(a);
+        return typeof fim === 'string' && fim < hojeISO();
+    });
     const handleArquivarVencidas = async () => {
         const confirmado = await showConfirm(`Mover ${vencidas.length} autorização(ões) vencida(s) para o histórico?`, 'Arquivar vencidas');
         if (!confirmado) return;
@@ -82,6 +88,17 @@ export default function MuralAvisos({ session, acesso }) {
         }
         if (falhas) toast.error(`${falhas} autorização(ões) não puderam ser arquivadas. Tente de novo.`);
         else toast.success('Autorizações vencidas movidas para o histórico.');
+    };
+
+    // Autorização que vale por vários dias: encerrar é decisão consciente (continua na grade até lá).
+    const handleEncerrarAutorizacao = async (aviso) => {
+        const confirmado = await showConfirm(`Encerrar a autorização de ${aviso.aluno_nome} para ${aviso.disciplina}? Ela deixa de aparecer na Linha do tempo.`, 'Encerrar autorização');
+        if (!confirmado) return;
+        try {
+            await concluirAviso(aviso.id, 'Autorização encerrada');
+        } catch (err) {
+            toast.error(err.message || 'Não foi possível encerrar a autorização.');
+        }
     };
 
     const handleConfirmarConclusaoGeral = async (obs) => {
@@ -178,13 +195,15 @@ export default function MuralAvisos({ session, acesso }) {
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
                                     <span style={pillStyle}>{aviso.sala_id}</span>
                                     <span style={pillStyle}>{aviso.disciplina}</span>
-                                    <span style={pillStyle}>{dataFormatada}</span>
+                                    <span style={pillStyle}>{aviso.recorrente ? vigenciaDoAviso(aviso) : dataFormatada}</span>
                                     {vencida && <span style={{ ...pillStyle, background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.35)' }} title="A data prevista já passou e a chave não foi retirada">Vencida</span>}
                                     <span style={{ ...pillStyle, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>Per. {aviso.periodo}</span>
                                 </div>
 
-                                <button onClick={() => handleConcluirChaveDireto(aviso.id)} disabled={isConcluindo} style={{ ...(celular ? { width: '100%', minHeight: '44px', fontSize: '14px' } : {}), padding: '8px 16px', background: 'transparent', color: isConcluindo ? '#475569' : '#60a5fa', border: `1px solid ${isConcluindo ? '#334155' : '#3b82f6'}`, borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
-                                    {isConcluindo ? 'Processando...' : '✓ Entregar chave'}
+                                {aviso.descricao && <p style={{ fontSize: '13px', color: '#94a3b8', margin: '-6px 0 14px', whiteSpace: 'pre-wrap' }}>{aviso.descricao}</p>}
+
+                                <button onClick={() => aviso.recorrente ? handleEncerrarAutorizacao(aviso) : handleConcluirChaveDireto(aviso.id)} disabled={isConcluindo} style={{ ...(celular ? { width: '100%', minHeight: '44px', fontSize: '14px' } : {}), padding: '8px 16px', background: 'transparent', color: isConcluindo ? '#475569' : '#60a5fa', border: `1px solid ${isConcluindo ? '#334155' : '#3b82f6'}`, borderRadius: '6px', cursor: isConcluindo ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                                    {isConcluindo ? 'Processando...' : (aviso.recorrente ? 'Encerrar autorização' : '✓ Entregar chave')}
                                 </button>
                             </div>
                         );

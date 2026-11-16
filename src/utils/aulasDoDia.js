@@ -10,7 +10,7 @@
 // chaves daqui batem com as do timeHelpers — ao mudar uma regra, mude a outra.
 //
 // Imports com extensão .js: este arquivo também roda no `node --test`.
-import { PERIODS, PERIOD_END_TIMES, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers.js';
+import { PERIODS, PERIOD_END_TIMES, extractPeriodCode, isInternalClass, separarCodigosPeriodo } from '../../backend_core/utils/timeHelpers.js';
 
 export const IDX_PERIODO = Object.fromEntries(PERIODS.map((p, i) => [p.code, i]));
 
@@ -202,3 +202,60 @@ export const listarTrocas = (trocas, gradeBruta, proximosDias) => {
       (IDX_PERIODO[a.afetados[0]] ?? 99) - (IDX_PERIODO[b.afetados[0]] ?? 99) ||
       a.sala.localeCompare(b.sala, undefined, { numeric: true }));
 };
+
+// ------------------------------------------------- autorização de chave x aula
+const DIAS_ORDEM = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+// Todas as aulas (blocos) da grade cujo nome, código de crédito ou sala contém
+// o termo (sem acento). Uma linha por ocorrência: sala + dia + períodos.
+// `dias` = nomes de dia usados na chave ("Segunda"…); a grade grava "Segunda-feira".
+export function buscarAulasPorNome(gradeBruta, termo, dias = DIAS_ORDEM) {
+  const alvo = normalizar(termo);
+  if (!alvo || !Array.isArray(gradeBruta)) return [];
+  const achadas = [];
+  for (const dia of dias) {
+    for (const [sala, slots] of slotsDoDia(gradeBruta, dia)) {
+      for (const b of blocosDaSala(slots, dia, sala)) {
+        if ([b.nomeAula, b.codCred, b.sala].some((t) => normalizar(t).includes(alvo))) achadas.push(b);
+      }
+    }
+  }
+  return achadas.sort((a, b) =>
+    a.nomeAula.localeCompare(b.nomeAula, 'pt-BR') ||
+    DIAS_ORDEM.indexOf(a.dia) - DIAS_ORDEM.indexOf(b.dia) ||
+    a.idxIni - b.idxIni ||
+    a.sala.localeCompare(b.sala, undefined, { numeric: true }));
+}
+
+// A autorização de chave `aviso` vale para o bloco `bloco` na data `dataISO`?
+// Com `aula_chave`: mesma aula e data dentro da vigência (não recorrente = só
+// data_prevista; recorrente = toda semana, data_fim vazio = sem fim). Sem
+// `aula_chave` (avisos antigos, sala/disciplina em texto livre): mesma sala,
+// data_prevista igual e períodos que se cruzam.
+export function avisoVale(aviso, bloco, dataISO) {
+  if (!aviso || !bloco || !ISO.test(String(dataISO || ''))) return false;
+  const inicio = String(aviso.data_prevista || '');
+  if (aviso.aula_chave) {
+    if (aviso.aula_chave !== bloco.chave || !ISO.test(inicio)) return false;
+    if (!aviso.recorrente) return dataISO === inicio;
+    return dataISO >= inicio && (!aviso.data_fim || dataISO <= aviso.data_fim);
+  }
+  if (inicio !== dataISO || !salaCoincide(aviso.sala_id, bloco.sala)) return false;
+  const codigos = separarCodigosPeriodo(aviso.periodo);
+  return !!codigos && codigos.some((c) => bloco.periodos.includes(c));
+}
+
+// Autorizações ATIVAS (lista `chaves` do mural) que valem para o bloco na data.
+export const chavesDaAula = (avisos, bloco, dataISO) =>
+  (avisos || []).filter((a) => avisoVale(a, bloco, dataISO));
+
+// "Toda terça · até 12/12" / "Toda terça · por tempo indeterminado" / "18/11"
+export function vigenciaDoAviso(aviso) {
+  const c = desmontarChave(aviso?.aula_chave);
+  if (!aviso?.aula_chave || !aviso.recorrente || !c) return aviso?.data_prevista ? dataBR(aviso.data_prevista) : '';
+  const dia = `Toda ${c.dia.toLowerCase()}`;
+  const desde = aviso.data_prevista ? ` · desde ${dataCurta(aviso.data_prevista)}` : '';
+  return `${dia}${desde} · ${aviso.data_fim ? `até ${dataBR(aviso.data_fim)}` : 'por tempo indeterminado'}`;
+}
+const dataBR = (iso) => String(iso).split('-').reverse().join('/');

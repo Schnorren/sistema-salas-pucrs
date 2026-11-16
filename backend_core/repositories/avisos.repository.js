@@ -43,8 +43,9 @@ class AvisosRepository {
     }
 
     async inserir(dados) {
-        if (!dados.predio_id) throw new Error('É obrigatório selecionar um prédio para criar um aviso.');
-        const { error } = await supabase.from('avisos').insert([dados]);
+        const linhas = Array.isArray(dados) ? dados : [dados];
+        if (linhas.some(l => !l.predio_id)) throw new Error('É obrigatório selecionar um prédio para criar um aviso.');
+        const { error } = await supabase.from('avisos').insert(linhas); // um insert só: entra tudo ou nada
         if (error) throw error;
     }
 
