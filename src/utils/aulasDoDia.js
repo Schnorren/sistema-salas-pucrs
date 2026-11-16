@@ -207,17 +207,43 @@ export const listarTrocas = (trocas, gradeBruta, proximosDias) => {
 const DIAS_ORDEM = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-// Todas as aulas (blocos) da grade cujo nome, código de crédito ou sala contém
-// o termo (sem acento). Uma linha por ocorrência: sala + dia + períodos.
+// Distância de edição (Levenshtein) entre duas palavras curtas.
+function distancia(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return d[a.length][b.length];
+}
+
+// Cada palavra do termo precisa aparecer no texto (sem acento, sem maiúscula,
+// em qualquer ordem); palavra de 4+ letras tolera 1 erro de digitação (8+ letras, 2) — compara
+// com o começo de cada palavra do texto, então "prevenssao" acha "prevenção" e
+// "prev" também acha.
+function textoCasa(textoNorm, tokens) {
+  const palavras = textoNorm.split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.every((t) =>
+    textoNorm.includes(t) ||
+    (t.length >= 4 && palavras.some((p) => {
+      const tolera = t.length >= 8 ? 2 : 1;
+      return distancia(t, p.slice(0, t.length)) <= tolera || distancia(t, p) <= tolera;
+    })));
+}
+
+// Todas as aulas (blocos) da grade cujo nome, código de crédito ou sala casam
+// com o termo (ver textoCasa). Uma linha por ocorrência: sala + dia + períodos.
 // `dias` = nomes de dia usados na chave ("Segunda"…); a grade grava "Segunda-feira".
 export function buscarAulasPorNome(gradeBruta, termo, dias = DIAS_ORDEM) {
-  const alvo = normalizar(termo);
-  if (!alvo || !Array.isArray(gradeBruta)) return [];
+  const tokens = normalizar(termo).split(/\s+/).filter(Boolean);
+  if (!tokens.length || !Array.isArray(gradeBruta)) return [];
   const achadas = [];
   for (const dia of dias) {
     for (const [sala, slots] of slotsDoDia(gradeBruta, dia)) {
       for (const b of blocosDaSala(slots, dia, sala)) {
-        if ([b.nomeAula, b.codCred, b.sala].some((t) => normalizar(t).includes(alvo))) achadas.push(b);
+        if (textoCasa(normalizar(`${b.nomeAula} ${b.codCred} ${b.sala}`), tokens)) achadas.push(b);
       }
     }
   }
