@@ -17,6 +17,23 @@ class AvisosRepository {
         return data || [];
     }
 
+    // Encerra as autorizações de chave cuja vigência já passou: uma data só
+    // (data_prevista < hoje) ou vigência com data_fim < hoje. Sem data_fim
+    // (indeterminada) nunca vence. Vai para o histórico, não é apagada.
+    async encerrarChavesVencidas(predio_id, hojeISO, dados) {
+        this._assertPredio(predio_id);
+        const { data, error } = await supabase
+            .from('avisos')
+            .update(dados)
+            .eq('predio_id', predio_id)
+            .eq('tipo', 'CHAVE')
+            .eq('status', 'ATIVO')
+            .or(`and(recorrente.eq.false,data_prevista.lt.${hojeISO}),and(recorrente.eq.true,data_fim.lt.${hojeISO})`)
+            .select('id');
+        if (error) throw error;
+        return (data || []).length;
+    }
+
     async buscarHistorico(predio_id, limite = 200) {
         this._assertPredio(predio_id);
         const { data, error } = await supabase
