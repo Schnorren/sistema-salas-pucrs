@@ -211,6 +211,15 @@ const GRADE_CHAVE = [
   { dia_semana: 'Quarta-feira', periodo: 'D', sala: '202', nome_aula: '22222-01/1 - FOTOGRAFIA' },
 ];
 
+test('buscarAulasPorNome: palavras fora de ordem, maiúsculas e erro de digitação', () => {
+  const chaves = (t) => buscarAulasPorNome(GRADE_CHAVE, t).map(b => b.chave);
+  assert.deepEqual(chaves('RISCO prevenção'), ['Quarta-201-A', 'Quinta-305-C']);
+  assert.deepEqual(chaves('prevenssao'), ['Quarta-201-A', 'Quinta-305-C']);
+  assert.deepEqual(chaves('fotografa'), ['Quarta-202-D']);
+  assert.deepEqual(chaves('prev'), ['Quarta-201-A', 'Quinta-305-C']);
+  assert.deepEqual(chaves('xyzabc'), []);
+});
+
 test('buscarAulasPorNome: sem acento, uma linha por ocorrência, ordenada por dia', () => {
   const r = buscarAulasPorNome(GRADE_CHAVE, 'prevencao');
   assert.deepEqual(r.map(b => [b.chave, b.periodos.join('')]), [['Quarta-201-A', 'AB'], ['Quinta-305-C', 'C']]);

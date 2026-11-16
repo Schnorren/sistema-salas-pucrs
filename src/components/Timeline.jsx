@@ -715,7 +715,7 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
                             </div>
                         )}
 
-                        {chavesDoSlot && slot.periodo === slot.periodos[0] && (
+                        {chavesDoSlot && (
                             <div className="tl-chave" title={`Chave autorizada: ${chavesDoSlot.map(c => c.aluno_nome).join(', ')}`}>
                                 🔑 {chavesDoSlot[0].aluno_nome}{chavesDoSlot.length > 1 ? ` +${chavesDoSlot.length - 1}` : ''}
                             </div>
