@@ -8,6 +8,7 @@ import { hojeSP } from '../../backend_core/utils/emprestimoRegras';
 // permissões, convidou pessoas, registrou empréstimos, editou contatos etc.
 
 const ACOES = {
+    'aviso.chave.criar': 'Autorização de chave criada',
     'emprestimo.retirar': 'Empréstimo registrado',
     'emprestimo.devolver': 'Devolução registrada',
     'emprestimo.transferir': 'Troca de titular do empréstimo',
@@ -59,6 +60,7 @@ function resumir(item, nomeModulo) {
     const d = item.detalhes || {};
     const modulos = Array.isArray(d.permissoes) ? d.permissoes.map(p => nomeModulo[p] || p).join(', ') : null;
     switch (item.acao) {
+        case 'aviso.chave.criar': return [d.pessoa, Array.isArray(d.aulas) && `${d.aulas.length} aula(s)`, d.vigencia].filter(Boolean).join(' · ');
         case 'emprestimo.retirar': return [d.matricula && `Matrícula ${d.matricula}`, d.balcao].filter(Boolean).join(' · ');
         case 'emprestimo.devolver': return [
             d.matricula && `Matrícula ${d.matricula}`,

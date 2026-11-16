@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useUI } from '../contexts/UIContext';
-import { PERIOD_OPTIONS } from '../../backend_core/utils/timeHelpers';
+import { getDataSaoPaulo } from '../../backend_core/utils/timeHelpers';
 import { useGrade } from '../hooks/useGrade';
-import { slotsDoDia, blocosDaSala, diaDaData, normalizar, ordenarPeriodos } from '../utils/aulasDoDia';
+import { buscarAulasPorNome, diaDaData } from '../utils/aulasDoDia';
 
 const inputStyle = {
     width: '100%', padding: '10px 14px',
@@ -21,27 +21,50 @@ export default function ModalNovoAviso({ onClose, onSave, isPending, predioId })
     const { toast } = useUI();
     const [tipo, setTipo] = useState('CHAVE');
     const [formData, setFormData] = useState({});
-    const periodosDisponiveis = PERIOD_OPTIONS.map(p => p.code);
-
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-    // Períodos como LISTA de códigos (antes era uma string quebrada letra a
-    // letra, o que partia o "E1" em "E" + "1" e acendia o "E" junto).
-    const periodos = formData.periodos || [];
-    const handlePeriodoToggle = (codigo) => {
-        const novos = periodos.includes(codigo) ? periodos.filter(p => p !== codigo) : [...periodos, codigo];
-        setFormData({ ...formData, periodos: ordenarPeriodos(novos) });
-    };
-
-    // Disciplina pela grade: com sala + data preenchidas, lista as aulas daquela
-    // sala no dia; um clique preenche disciplina e períodos (continua editável).
+    // Autorização de chave: começa pela AULA (busca na grade do prédio) e depois
+    // diz quem retira e até quando vale.
     const { dados: grade } = useGrade(predioId || '');
-    const salaDaGrade = (grade?.salas || []).find(sl => normalizar(sl.numero) === normalizar(formData.sala_id))?.numero || null;
-    const diaSemana = diaDaData(formData.data_prevista);
-    const aulasDaSala = salaDaGrade && diaSemana
-        ? blocosDaSala(slotsDoDia(grade?.grade, diaSemana).get(salaDaGrade), diaSemana, salaDaGrade)
-        : [];
-    const escolherAula = (b) => setFormData({ ...formData, disciplina: b.nomeAula, periodos: [...b.periodos] });
+    const [busca, setBusca] = useState('');
+    const [escolhidas, setEscolhidas] = useState({}); // chave -> bloco
+    const [vigencia, setVigencia] = useState('DATA');
+    const hoje = (() => { const d = getDataSaoPaulo(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+    const [dataInicio, setDataInicio] = useState('');
+    const [dataFim, setDataFim] = useState('');
+
+    const resultados = useMemo(() => buscarAulasPorNome(grade?.grade, busca).slice(0, 60), [grade, busca]);
+    const grupos = useMemo(() => {
+        const m = new Map();
+        for (const b of resultados) m.set(b.nomeAula, [...(m.get(b.nomeAula) || []), b]);
+        return [...m.entries()];
+    }, [resultados]);
+    const lista = Object.values(escolhidas);
+    const alternar = (b) => setEscolhidas(e => {
+        const n = { ...e };
+        if (n[b.chave]) delete n[b.chave]; else n[b.chave] = b;
+        return n;
+    });
+    const alternarGrupo = (blocos) => setEscolhidas(e => {
+        const n = { ...e };
+        const todas = blocos.every(b => n[b.chave]);
+        blocos.forEach(b => { if (todas) delete n[b.chave]; else n[b.chave] = b; });
+        return n;
+    });
+
+    const inicio = vigencia === 'DATA' ? dataInicio : (dataInicio || hoje);
+    const diasDasAulas = [...new Set(lista.map(b => b.dia))];
+    const diaDaDataEscolhida = diaDaData(inicio);
+    const diaConfere = vigencia !== 'DATA' || !inicio || diasDasAulas.every(d => d === diaDaDataEscolhida);
+
+    const resumo = lista.length && formData.aluno_nome?.trim() ? (() => {
+        const quando = diasDasAulas.map(d => d.toLowerCase()).join(' e ');
+        const salas = [...new Set(lista.map(b => b.sala))].join(', ');
+        const ate = vigencia === 'DATA' ? (inicio ? `em ${inicio.split('-').reverse().join('/')}` : '')
+            : vigencia === 'PERIODO' ? (dataFim ? `toda semana (${quando}) até ${dataFim.split('-').reverse().join('/')}` : '')
+            : `toda semana (${quando}), por tempo indeterminado`;
+        return ate ? `${formData.aluno_nome.trim()} poderá retirar a chave da sala ${salas} ${ate}.` : '';
+    })() : '';
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -50,17 +73,18 @@ export default function ModalNovoAviso({ onClose, onSave, isPending, predioId })
         // Envia só os campos do tipo ativo — alternar entre as abas não pode
         // vazar campos de CHAVE num aviso GERAL (e vice-versa).
         if (tipo === 'CHAVE') {
-            if (periodos.length === 0) {
-                toast.error("Selecione pelo menos um período.");
-                return;
-            }
+            if (lista.length === 0) { toast.error('Busque e marque pelo menos uma aula.'); return; }
+            if (!inicio) { toast.error('Informe a data.'); return; }
+            if (vigencia === 'PERIODO' && (!dataFim || dataFim < inicio)) { toast.error('Informe uma data final igual ou posterior à inicial.'); return; }
+            if (!diaConfere) { toast.error(`A data cai numa ${diaDaDataEscolhida?.toLowerCase()}, mas a aula escolhida é de ${diasDasAulas.join(' / ').toLowerCase()}.`); return; }
             onSave({
                 tipo,
                 aluno_nome: formData.aluno_nome,
-                sala_id: formData.sala_id,
-                disciplina: formData.disciplina,
-                data_prevista: formData.data_prevista,
-                periodo: periodos.join('')
+                aulas: lista.map(b => ({ chave: b.chave, nome_aula: b.nomeAula, periodos: b.periodos.join('') })),
+                vigencia,
+                data_inicio: inicio,
+                data_fim: vigencia === 'PERIODO' ? dataFim : undefined,
+                descricao: formData.obs
             });
             return;
         }
@@ -84,7 +108,7 @@ export default function ModalNovoAviso({ onClose, onSave, isPending, predioId })
         <div style={overlayStyle}>
             <div style={{
                 background: '#1e293b', borderRadius: '12px',
-                border: '1px solid #334155', width: '550px', maxWidth: '95%',
+                border: '1px solid #334155', width: '640px', maxWidth: '95%', maxHeight: '92vh', overflowY: 'auto',
                 boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
             }}>
                 <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -110,66 +134,64 @@ export default function ModalNovoAviso({ onClose, onSave, isPending, predioId })
                     <div style={{ padding: '24px' }}>
                         {tipo === 'CHAVE' && (
                             <>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                                    <div>
-                                        <label style={labelStyle}>Nome do Aluno</label>
-                                        <input name="aluno_nome" placeholder="Ex: João Silva" required onChange={handleChange} style={inputStyle} />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Sala</label>
-                                        <input name="sala_id" placeholder="Ex: 302, Lab 4" required onChange={handleChange} style={inputStyle} />
-                                    </div>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={labelStyle}>1. Qual aula?</label>
+                                    <input autoFocus value={busca} onChange={e => setBusca(e.target.value)} placeholder="Digite o nome da aula, o código ou a sala…" style={inputStyle} />
+                                    {busca.trim() && (
+                                        <div style={{ marginTop: '8px', maxHeight: '220px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '6px', background: '#0f172a' }}>
+                                            {grupos.length === 0 ? (
+                                                <p style={{ fontSize: '13px', color: '#64748b', margin: 0, padding: '10px 12px' }}>Nenhuma aula encontrada na grade deste prédio.</p>
+                                            ) : grupos.map(([nome, blocos]) => (
+                                                <div key={nome} style={{ borderBottom: '1px solid #1e293b' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '8px 12px 2px' }}>
+                                                        <b style={{ fontSize: '13px', color: '#f1f5f9' }}>{nome}</b>
+                                                        {blocos.length > 1 && <button type="button" onClick={() => alternarGrupo(blocos)} style={{ background: 'none', border: 'none', color: '#60a5fa', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>marcar todas ({blocos.length})</button>}
+                                                    </div>
+                                                    {blocos.map(b => (
+                                                        <label key={b.chave} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 12px', fontSize: '13px', color: '#cbd5e1', cursor: 'pointer' }}>
+                                                            <input type="checkbox" checked={!!escolhidas[b.chave]} onChange={() => alternar(b)} />
+                                                            <span>Sala <b>{b.sala}</b> · {b.dia} · <b>{b.periodos.join('')}</b> <span style={{ color: '#64748b' }}>({b.inicio}–{b.fim})</span></span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {lista.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                                            {lista.map(b => (
+                                                <span key={b.chave} style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '6px', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.4)', color: '#bfdbfe', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                                    {b.nomeAula} · {b.sala} · {b.dia} · {b.periodos.join('')}
+                                                    <button type="button" aria-label="Remover aula" onClick={() => alternar(b)} style={{ background: 'none', border: 'none', color: '#93c5fd', cursor: 'pointer', padding: 0 }}>✕</button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-                                    <div>
-                                        <label style={labelStyle}>Disciplina / Motivo</label>
-                                        <input name="disciplina" placeholder="Ex: Cálculo I" required value={formData.disciplina || ''} onChange={handleChange} style={inputStyle} />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Data Prevista</label>
-                                        <input type="date" name="data_prevista" required onChange={handleChange} style={{ ...inputStyle, colorScheme: 'dark' }} />
-                                    </div>
+
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={labelStyle}>2. Quem vai retirar a chave?</label>
+                                    <input name="aluno_nome" placeholder="Ex: Julia Machado (professora substituta)" required onChange={handleChange} style={inputStyle} />
+                                    <input name="obs" placeholder="Observação (opcional) — Ex: assume no lugar da Profa. X, licença maternidade" maxLength={500} onChange={handleChange} style={{ ...inputStyle, marginTop: '8px' }} />
                                 </div>
-                                {salaDaGrade && diaSemana && (
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <label style={labelStyle}>Aulas da sala {salaDaGrade} em {formData.data_prevista.split('-').reverse().slice(0, 2).join('/')} ({diaSemana.toLowerCase()}) — clique para preencher</label>
-                                        {aulasDaSala.length === 0 ? (
-                                            <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>Nenhuma aula na grade para essa sala nesse dia.</p>
-                                        ) : aulasDaSala.map(b => {
-                                            const sel = formData.disciplina === b.nomeAula && b.periodos.join('') === periodos.join('');
-                                            return (
-                                                <button key={b.chave} type="button" onClick={() => escolherAula(b)} style={{
-                                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', width: '100%',
-                                                    padding: '8px 12px', marginBottom: '6px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left',
-                                                    border: sel ? '1px solid #3b82f6' : '1px solid #334155',
-                                                    background: sel ? 'rgba(59,130,246,0.15)' : '#0f172a', color: '#f1f5f9', fontSize: '13px'
-                                                }}>
-                                                    <b>{b.nomeAula}</b>
-                                                    <span style={{ color: '#94a3b8', fontSize: '12px', whiteSpace: 'nowrap' }}>{b.periodos.join('')} · {b.inicio}–{b.fim}</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+
                                 <div>
-                                    <label style={labelStyle}>Períodos Autorizados (Clique para selecionar)</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                                        {periodosDisponiveis.map(letra => {
-                                            const sel = periodos.includes(letra);
-                                            return (
-                                                <button key={letra} type="button" onClick={() => handlePeriodoToggle(letra)} style={{
-                                                    width: '38px', height: '38px', borderRadius: '6px', cursor: 'pointer',
-                                                    fontSize: '14px', fontWeight: 'bold', transition: 'all 0.1s',
-                                                    border: sel ? '1px solid #3b82f6' : '1px solid #334155',
-                                                    background: sel ? '#3b82f6' : '#0f172a',
-                                                    color: sel ? '#fff' : '#cbd5e1'
-                                                }}>{letra}</button>
-                                            );
-                                        })}
+                                    <label style={labelStyle}>3. Até quando vale?</label>
+                                    {[['DATA', 'Só em uma data'], ['PERIODO', 'Toda semana, de uma data até outra'], ['INDETERMINADO', 'Por tempo indeterminado (até eu encerrar)']].map(([v, rotulo]) => (
+                                        <label key={v} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#e2e8f0', padding: '3px 0', cursor: 'pointer' }}>
+                                            <input type="radio" name="vigencia" checked={vigencia === v} onChange={() => setVigencia(v)} /> {rotulo}
+                                        </label>
+                                    ))}
+                                    <div style={{ display: 'flex', gap: '12px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{vigencia === 'DATA' ? 'Data' : 'A partir de'}</span>
+                                        <input type="date" value={inicio} min={vigencia === 'DATA' ? undefined : hoje} onChange={e => setDataInicio(e.target.value)} required style={{ ...inputStyle, width: 'auto', colorScheme: 'dark' }} />
+                                        {vigencia === 'PERIODO' && (<>
+                                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>até</span>
+                                            <input type="date" value={dataFim} min={inicio || undefined} onChange={e => setDataFim(e.target.value)} required style={{ ...inputStyle, width: 'auto', colorScheme: 'dark' }} />
+                                        </>)}
                                     </div>
-                                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '12px' }}>
-                                        Períodos Salvos: <span style={{ color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>{periodos.join('') || 'Nenhum'}</span>
-                                    </p>
+                                    {!diaConfere && <p style={{ fontSize: '12px', color: '#f87171', margin: '8px 0 0' }}>Essa data cai numa {diaDaDataEscolhida?.toLowerCase()}, mas a aula é de {diasDasAulas.join(' / ').toLowerCase()}.</p>}
+                                    {resumo && <p style={{ fontSize: '13px', color: '#86efac', margin: '12px 0 0' }}>🔑 {resumo}</p>}
                                 </div>
                             </>
                         )}

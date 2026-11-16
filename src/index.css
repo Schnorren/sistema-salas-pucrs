@@ -279,6 +279,8 @@ select:focus{border-color:var(--navy);}
   cursor:default;min-width:0;transition:filter .1s;
 }
 .tl-cell:hover{filter:brightness(.93);}
+/* Autorização de chave na célula (1º período da aula) */
+.tl-chave{position:absolute;left:0;right:0;bottom:0;z-index:2;background:#b45309;color:#fff;font-size:9px;font-weight:bold;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .tl-cell.empty{background:var(--bg2);}
 .tl-cell.reg{background:var(--blue-b);color:var(--blue);border:1px solid rgba(26,78,150,.1);}
 .tl-cell.int{background:var(--purple-b);color:var(--purple);border:1px solid rgba(78,51,138,.1);}

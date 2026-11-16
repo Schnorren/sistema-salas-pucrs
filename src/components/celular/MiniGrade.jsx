@@ -36,10 +36,10 @@ export function Faixa({ slots, trocas }) {
 // Faixa da mini-grade: cada aula é um bloco com as letras dos períodos no alto
 // (divisória fina entre eles), o nome da disciplina e, se houver, a troca de
 // sala. Tocar na aula abre os detalhes dela (como clicar na grade do computador).
-function FaixaComNomes({ slots, trocas, onAbrirAula }) {
+function FaixaComNomes({ slots, trocas, chaves, onAbrirAula }) {
     return (
         <div className="cel-mg-faixa">
-            {blocosDaFaixa(slots, trocas).map(b => {
+            {blocosDaFaixa(slots, trocas, chaves).map(b => {
                 const coluna = { gridColumn: `${b.ini + 1} / span ${b.fim - b.ini + 1}` };
                 if (b.livre) {
                     return (
@@ -55,12 +55,13 @@ function FaixaComNomes({ slots, trocas, onAbrirAula }) {
                         className={`cel-mg-aula ${b.tipo}${b.continua ? ' cont' : ''}${b.idxAgora >= 0 ? ' agora' : ''}${turno(b.ini)}`}
                         style={coluna}
                         onClick={(e) => { e.stopPropagation(); onAbrirAula(b.chave); }}
-                        aria-label={`${b.nome}, períodos ${b.periodos.join(' ')}${b.troca ? `, trocada para o prédio ${b.troca.predio_destino}, sala ${b.troca.sala_destino}` : ''}`}
+                        aria-label={`${b.nome}, períodos ${b.periodos.join(' ')}${b.troca ? `, trocada para o prédio ${b.troca.predio_destino}, sala ${b.troca.sala_destino}` : ''}${b.chaves.length ? `, chave autorizada para ${b.chaves.map(c => c.aluno_nome).join(', ')}` : ''}`}
                     >
                         <span className="pers" style={{ gridTemplateColumns: `repeat(${b.periodos.length}, var(--col))` }}>
                             {b.periodos.map((p, i) => <span key={p} className={i === b.idxAgora ? 'agora' : undefined}>{p}</span>)}
                         </span>
                         {b.troca && <span className="troca-faixa">🔁 P.{b.troca.predio_destino} · {b.troca.sala_destino}</span>}
+                        {b.chaves.length > 0 && !b.continua && <span className="chave-faixa">🔑 {b.chaves[0].aluno_nome}{b.chaves.length > 1 ? ` +${b.chaves.length - 1}` : ''}</span>}
                         <span className="nome">{b.nome}</span>
                     </button>
                 );
@@ -75,7 +76,7 @@ function FaixaComNomes({ slots, trocas, onAbrirAula }) {
 // livre) abre a agenda do dia da sala.
 //   linhas   = dataProcessed.timeline da Timeline (já filtrada)
 //   periodos = dataProcessed.periodosCabecalho
-export default function MiniGrade({ linhas, periodos, trocas, onAbrirSala, onAbrirAula }) {
+export default function MiniGrade({ linhas, periodos, trocas, chaves, onAbrirSala, onAbrirAula }) {
     const idxAgora = periodos.findIndex(p => p.isAgora);
     const rolagem = useRef(null);
 
@@ -109,7 +110,7 @@ export default function MiniGrade({ linhas, periodos, trocas, onAbrirSala, onAbr
                         <button type="button" className={`cel-mg-sala${linha.temAulaAgora ? ' agora' : ''}`} onClick={(e) => { e.stopPropagation(); onAbrirSala(linha.sala); }} aria-label={`Sala ${linha.sala}: ver o dia`}>
                             {linha.sala}
                         </button>
-                        <FaixaComNomes slots={linha.slots} trocas={trocas} onAbrirAula={onAbrirAula} />
+                        <FaixaComNomes slots={linha.slots} trocas={trocas} chaves={chaves} onAbrirAula={onAbrirAula} />
                     </div>
                 ))}
             </div>

@@ -3,7 +3,8 @@ import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { PERIODS, PERIOD_END_TIMES, getDiaAtual, getCurrentPeriod, getProximaOcorrencia, getProximosSeteDias, extractPeriodCode, isInternalClass } from '../../backend_core/utils/timeHelpers';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { buscarAvisos } from '../hooks/useAvisos';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCelular } from '../hooks/useCelular';
 import MiniGrade from './celular/MiniGrade';
@@ -12,7 +13,7 @@ import Icone from './celular/Icone';
 import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
 import { useTrocasSala } from '../hooks/useTrocasSala';
-import { parsearNomeAula, periodosAfetadosPelaTroca, blocoDaChave, listarTrocas, horarioDosPeriodos, dataCurta, dataPorExtenso } from '../utils/aulasDoDia';
+import { parsearNomeAula, periodosAfetadosPelaTroca, blocoDaChave, listarTrocas, chavesDaAula, horarioDosPeriodos, dataCurta, dataPorExtenso } from '../utils/aulasDoDia';
 import { imprimirCartazTroca } from '../utils/cartazTroca';
 import ModalAulaTroca from './ModalAulaTroca';
 import ModalTrocaSala from './ModalTrocaSala';
@@ -74,7 +75,7 @@ const camposDaTroca = (aula, form) => {
 //   ?sala=<número>           — no celular, abre a agenda da sala
 // No celular (useCelular) a grade vira a mini-grade (16 períodos sem texto) e
 // tocar numa sala abre a agenda dela; os modais de troca são os mesmos.
-export default function Timeline({ acesso, canEditGrade = false, initialDay, initialFiltro, abrirTrocas }) {
+export default function Timeline({ session, acesso, canEditGrade = false, initialDay, initialFiltro, abrirTrocas }) {
   const celular = useCelular();
   const location = useLocation();
   const navigate = useNavigate();
@@ -113,6 +114,17 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
 
   // Busca + Realtime vivem no hook (compartilhado com o badge do Dashboard)
   const trocasAtivas = useTrocasSala(predioAtual);
+
+  // Autorizações de chave ativas (mesma key e mesma queryFn do Mural e do badge
+  // do Dashboard). A API exige o módulo 'avisos' e o aviso traz nome de pessoa:
+  // sem a permissão não busca nem mostra.
+  const podeVerChaves = !!acesso?.permissoes?.includes('avisos') || !!acesso?.permissoes?.includes('admin');
+  const userId = session?.user?.id;
+  const { data: avisosAtivos } = useQuery({
+    queryKey: ['avisos', predioAtual, userId],
+    queryFn: () => buscarAvisos(session?.access_token, predioAtual),
+    enabled: podeVerChaves && !!predioAtual && !!userId
+  });
 
   // ?aula= (painel da sala da Planta no celular): abre a aula assim que a grade
   // carrega e tira o parâmetro da URL (voltar não reabre).
@@ -344,6 +356,23 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
     );
   }, [dataProcessed, filtro]);
 
+  // Autorizações de chave por aula (aulaUniqueKey → avisos) na DATA do dia exibido
+  // (próxima ocorrência dele). Uma passada por render do dia, não por célula.
+  const chavesPorAula = useMemo(() => {
+    const mapa = {};
+    const lista = avisosAtivos?.chaves;
+    if (!podeVerChaves || !lista?.length || !dataProcessed?.timeline) return mapa;
+    const dataISO = getProximaOcorrencia(day).data;
+    for (const linha of dataProcessed.timeline) {
+      for (const slot of linha.slots) {
+        if (!slot.ocupado || mapa[slot.aulaUniqueKey]) continue;
+        const achadas = chavesDaAula(lista, { chave: slot.aulaUniqueKey, sala: linha.sala, periodos: slot.periodos }, dataISO);
+        if (achadas.length) mapa[slot.aulaUniqueKey] = achadas;
+      }
+    }
+    return mapa;
+  }, [avisosAtivos, podeVerChaves, dataProcessed, day]);
+
   // Trocas de hoje até 6 dias à frente, em ordem — a mesma seleção do badge da
   // aba (o hook só devolve trocas vigentes e troca de chave a cada dia).
   const itensTrocas = useMemo(
@@ -448,6 +477,7 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
         <ModalAulaTroca
           aula={aulaAberta}
           registro={registroAberto}
+          chaves={chavesPorAula[aulaAberta.chave] || []}
           canEditGrade={canEditGrade}
           desfazendo={removerTrocaMutation.isPending}
           onFechar={() => setAulaAberta(null)}
@@ -538,7 +568,7 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
             {filteredTimeline.length === 0 ? (
               <div className="empty-st">Nenhuma sala ou aula encontrada para "{filtro}".</div>
             ) : (
-              <MiniGrade linhas={filteredTimeline} periodos={dataProcessed.periodosCabecalho} trocas={trocasAtivas} onAbrirSala={abrirSala} onAbrirAula={abrirAula} />
+              <MiniGrade linhas={filteredTimeline} periodos={dataProcessed.periodosCabecalho} trocas={trocasAtivas} chaves={chavesPorAula} onAbrirSala={abrirSala} onAbrirAula={abrirAula} />
             )}
           </>
         )}
@@ -650,12 +680,13 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
                         ? registroTroca
                         : null;
                     const isSequenceAgora = !!slot.isSequenceAgora;
+                    const chavesDoSlot = slot.ocupado ? chavesPorAula[slot.aulaUniqueKey] : null;
 
                     const isSearchMatch = termoNormalizado && slot.ocupado && slot.nomeNorm.includes(termoNormalizado);
                     const isRoomMatch = termoNormalizado && linha.salaNorm.includes(termoNormalizado);
 
                     const tooltip = slot.ocupado
-                        ? `${slot.nome}\nPeríodos: ${slot.periodosStr}\nHorário: ${slot.horarioStr}\n\n${canEditGrade ? 'Clique para ver a aula ou trocar de sala' : 'Clique para ver a aula'}`
+                        ? `${slot.nome}\nPeríodos: ${slot.periodosStr}\nHorário: ${slot.horarioStr}${chavesDoSlot ? `\n🔑 Chave autorizada: ${chavesDoSlot.map(c => c.aluno_nome).join(', ')}` : ''}\n\n${canEditGrade ? 'Clique para ver a aula ou trocar de sala' : 'Clique para ver a aula'}`
                         : `Livre (${slot.horario})`;
 
                     return (
@@ -681,6 +712,12 @@ export default function Timeline({ acesso, canEditGrade = false, initialDay, ini
                         {temTroca && (
                             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, background: 'var(--red)', color: '#fff', fontSize: '8px', fontWeight: 'bold', textAlign: 'center', padding: '2px 0', zIndex: 2 }}>
                                 🔁 P.{temTroca.predio_destino} - SL.{temTroca.sala_destino}
+                            </div>
+                        )}
+
+                        {chavesDoSlot && slot.periodo === slot.periodos[0] && (
+                            <div className="tl-chave" title={`Chave autorizada: ${chavesDoSlot.map(c => c.aluno_nome).join(', ')}`}>
+                                🔑 {chavesDoSlot[0].aluno_nome}{chavesDoSlot.length > 1 ? ` +${chavesDoSlot.length - 1}` : ''}
                             </div>
                         )}
 

@@ -50,6 +50,8 @@ const ORDEM = [
   'auditoria_log.sql',
   // Excluir conta pelo Painel Admin: avisos ficam, sem o autor
   'avisos_autor_set_null.sql',
+  // Autorização de chave vinculada à aula (vigência e recorrência)
+  'avisos_vinculo_aula.sql',
   // Remove as RPCs da v1. Só depois do deploy do código v2 — ver o cabeçalho do arquivo.
   'emprestimos_limpeza.sql',
 ];
