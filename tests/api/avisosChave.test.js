@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import './supabaseFalso.js'; // define as variáveis de ambiente do client antes do backend
 
-const { default: avisos } = await import('../../backend_core/services/avisos.service.js');
+const { default: avisos, chaveExpirada } = await import('../../backend_core/services/avisos.service.js');
 
 const user = { id: 'u1' };
 const aula = (chave, periodos = 'AB') => ({ chave, periodos, nome_aula: 'PREVENÇÃO DE RISCO' });
@@ -45,4 +45,14 @@ test('formato antigo (sala/disciplina livres) continua aceito', () => {
     { tipo: 'CHAVE', aluno_nome: 'X', sala_id: '201', disciplina: 'Y', data_prevista: '2026-11-18', periodo: 'BA' }, user, 'p15');
   assert.equal(l.periodo, 'AB');
   assert.equal(l.aula_chave, undefined);
+});
+
+test('chaveExpirada: uma data, vigência com fim e indeterminada', () => {
+  const hoje = '2026-11-18';
+  assert.equal(chaveExpirada({ tipo: 'CHAVE', recorrente: false, data_prevista: '2026-11-17' }, hoje), true);
+  assert.equal(chaveExpirada({ tipo: 'CHAVE', recorrente: false, data_prevista: hoje }, hoje), false); // vale o dia todo
+  assert.equal(chaveExpirada({ tipo: 'CHAVE', recorrente: true, data_prevista: '2026-10-01', data_fim: '2026-11-17' }, hoje), true);
+  assert.equal(chaveExpirada({ tipo: 'CHAVE', recorrente: true, data_prevista: '2026-10-01', data_fim: hoje }, hoje), false);
+  assert.equal(chaveExpirada({ tipo: 'CHAVE', recorrente: true, data_prevista: '2026-10-01', data_fim: null }, hoje), false);
+  assert.equal(chaveExpirada({ tipo: 'GERAL', data_prevista: '2020-01-01' }, hoje), false);
 });

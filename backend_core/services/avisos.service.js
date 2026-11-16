@@ -2,6 +2,7 @@ import avisosRepository from '../repositories/avisos.repository.js';
 import { ErroPublico } from '../utils/http.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 import { separarCodigosPeriodo } from '../utils/timeHelpers.js';
+import { hojeSP } from '../utils/emprestimoRegras.js';
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const DIAS_CHAVE = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -39,13 +40,38 @@ function assertUuid(id) {
     if (!UUID_REGEX.test(id || '')) throw new ErroPublico('Aviso não encontrado.', 404);
 }
 
+// Autorização de chave vencida: uma data só (ou aviso antigo) com data_prevista
+// no passado, ou vigência com data_fim no passado. Indeterminada nunca vence.
+// Espelha o filtro de encerrarChavesVencidas() do repository.
+export function chaveExpirada(aviso, hojeISO) {
+    if (aviso?.tipo !== 'CHAVE') return false;
+    const fim = aviso.recorrente ? aviso.data_fim : aviso.data_prevista;
+    return typeof fim === 'string' && fim < hojeISO;
+}
+
 class AvisosService {
     _peso(prioridade) {
         const pesos = { ALTA: 1, NORMAL: 2, BAIXA: 3 };
         return pesos[String(prioridade || 'NORMAL').toUpperCase()] || 2;
     }
 
+    // Faxina preguiçosa: toda leitura do mural/badge encerra antes as chaves
+    // vencidas do prédio (sem cron). Falha aqui nunca derruba a listagem.
+    async encerrarChavesVencidas(predio_id) {
+        try {
+            await avisosRepository.encerrarChavesVencidas(predio_id, hojeSP(), {
+                status: 'CONCLUIDO',
+                concluido_por: null,
+                concluido_em: new Date().toISOString(),
+                obs_conclusao: 'Encerrada automaticamente: a vigência terminou'
+            });
+        } catch (err) {
+            console.error('[avisos] falha ao encerrar chaves vencidas:', err?.message || err);
+        }
+    }
+
     async obterMuralOtimizado(predio_id) {
+        await this.encerrarChavesVencidas(predio_id);
         const avisos = await avisosRepository.buscarAtivos(predio_id);
 
         const chaves = avisos
