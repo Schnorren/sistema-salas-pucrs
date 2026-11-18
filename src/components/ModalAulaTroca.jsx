@@ -1,5 +1,5 @@
 import { useCelular } from '../hooks/useCelular';
-import { periodosAfetadosPelaTroca, horarioDosPeriodos, dataPorExtenso, vigenciaDoAviso } from '../utils/aulasDoDia';
+import { horarioDosPeriodos, dataPorExtenso, vigenciaDoAviso } from '../utils/aulasDoDia';
 import { OVERLAY, CARTAO, BOTAO, BOTAO_PRIMARIO, BOTAO_PERIGO } from '../utils/estilosModalTroca';
 
 // Detalhes de uma aula da Linha do tempo (clique na grade) — como numa
@@ -10,10 +10,9 @@ import { OVERLAY, CARTAO, BOTAO, BOTAO_PRIMARIO, BOTAO_PERIGO } from '../utils/e
 // aula = bloco de blocoDaChave() + { data, semana } da ocorrência exibida.
 // No celular abre como painel que sobe de baixo (classes modal-* em
 // src/celular.css) e sem "Reimprimir": o aviso sai pelo computador.
-export default function ModalAulaTroca({ aula, registro, chaves = [], canEditGrade, desfazendo, onFechar, onTrocar, onDesfazer, onImprimir }) {
+export default function ModalAulaTroca({ aula, registros = [], temLivres, chaves = [], canEditGrade, desfazendo, onFechar, onTrocar, onDesfazer, onImprimir }) {
   const celular = useCelular(); // painel que sobe: tocar fora fecha (só no celular)
-  const afetados = registro ? periodosAfetadosPelaTroca(registro, aula.periodos) : [];
-  const parcial = registro && afetados.length < aula.periodos.length;
+  const temTroca = registros.length > 0;
 
   return (
     <div className="modal-folha" style={OVERLAY} role="dialog" aria-modal="true" aria-labelledby="titulo-aula-troca" onClick={celular ? onFechar : undefined}>
@@ -48,26 +47,40 @@ export default function ModalAulaTroca({ aula, registro, chaves = [], canEditGra
           </div>
         )}
 
-        {registro && (
-          <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: 'var(--text)', fontSize: '13px', lineHeight: 1.7 }}>
-            <div style={{ color: 'var(--red)', fontWeight: 'bold' }}>
-              🔁 Trocada para o prédio {registro.predio_destino} · sala {registro.sala_destino}
+        {registros.map(({ chave, registro, afetados }) => {
+          const parcial = afetados.length < aula.periodos.length;
+          return (
+            <div key={chave} style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: 'var(--text)', fontSize: '13px', lineHeight: 1.7 }}>
+              <div style={{ color: 'var(--red)', fontWeight: 'bold' }}>
+                🔁 Trocada para o prédio {registro.predio_destino} · sala {registro.sala_destino}
+              </div>
+              <div>
+                Períodos <b style={{ fontFamily: 'var(--mono)' }}>{afetados.join(' ')}</b> · {horarioDosPeriodos(afetados)}
+                {parcial && registros.length === 1 ? ` (os demais continuam na sala ${aula.sala})` : ''}
+              </div>
+              {registro.motivo && <div style={{ color: 'var(--muted)' }}>Motivo: {registro.motivo}</div>}
+              <div className="modal-acoes" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px', flexWrap: 'wrap' }}>
+                <button type="button" className="so-computador" onClick={() => onImprimir({ chave, registro })} style={BOTAO}>🖨️ Reimprimir</button>
+                {canEditGrade && (
+                  <>
+                    <button type="button" onClick={() => onTrocar(chave)} style={BOTAO}>Editar</button>
+                    <button type="button" onClick={() => onDesfazer({ chave, registro })} disabled={desfazendo} style={BOTAO_PERIGO}>
+                      {desfazendo ? 'Desfazendo...' : 'Desfazer'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <div>
-              Períodos <b style={{ fontFamily: 'var(--mono)' }}>{afetados.join(' ')}</b> · {horarioDosPeriodos(afetados)}
-              {parcial ? ` (os demais continuam na sala ${aula.sala})` : ''}
-            </div>
-            {registro.motivo && <div style={{ color: 'var(--muted)' }}>Motivo: {registro.motivo}</div>}
-          </div>
-        )}
+          );
+        })}
 
-        {!canEditGrade && !registro && (
+        {!canEditGrade && !temTroca && (
           <div style={{ marginTop: '14px', fontSize: '12px', color: 'var(--muted)' }}>
             Registrar troca de sala exige a permissão de edição da grade.
           </div>
         )}
 
-        {registro && (
+        {temTroca && (
           <div className="so-celular" style={{ marginTop: '12px', fontSize: '12px', color: 'var(--muted)' }}>
             O aviso impresso sai pelo computador: Linha do tempo → Trocas → Reimprimir.
           </div>
@@ -75,17 +88,9 @@ export default function ModalAulaTroca({ aula, registro, chaves = [], canEditGra
 
         <div className="modal-acoes" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '22px', flexWrap: 'wrap' }}>
           <button type="button" onClick={onFechar} style={BOTAO}>Fechar</button>
-          {registro && canEditGrade && (
-            <button type="button" onClick={onDesfazer} disabled={desfazendo} style={BOTAO_PERIGO}>
-              {desfazendo ? 'Desfazendo...' : 'Desfazer troca'}
-            </button>
-          )}
-          {registro && (
-            <button type="button" className="so-computador" onClick={onImprimir} style={BOTAO}>🖨️ Reimprimir</button>
-          )}
-          {canEditGrade && (
-            <button type="button" autoFocus onClick={onTrocar} style={BOTAO_PRIMARIO}>
-              {registro ? 'Editar troca' : '🔁 Trocar de sala'}
+          {canEditGrade && temLivres && (
+            <button type="button" autoFocus onClick={() => onTrocar(null)} style={BOTAO_PRIMARIO}>
+              {temTroca ? '🔁 Trocar os outros períodos' : '🔁 Trocar de sala'}
             </button>
           )}
         </div>

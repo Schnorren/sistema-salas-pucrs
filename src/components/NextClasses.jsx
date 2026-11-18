@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { usePredio } from '../contexts/PredioContext';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
-import { periodosAfetadosPelaTroca } from '../utils/aulasDoDia';
+import { registrosDoBloco } from '../utils/aulasDoDia';
 import { PERIODS, PERIOD_OPTIONS, groupConsecutiveClasses } from '../../backend_core/utils/timeHelpers';
 import { useMomentoAtual, useDiaQueAcompanhaHoje } from '../hooks/useMomentoAtual';
 import { useCelular } from '../hooks/useCelular';
@@ -28,9 +28,8 @@ export default function NextClasses({ acesso }) {
   // incluso) — a chave do bloco é "<dia>-<sala>-<período inicial>"
   const trocas = useTrocasSala(predioAtual);
   const trocaDaAula = (aula) => {
-    const registro = trocas[`${day}-${aula.sala}-${aula.periodos[0]}`];
-    if (!registro) return null;
-    return { ...registro, afetados: periodosAfetadosPelaTroca(registro, aula.periodos).join('') };
+    const achado = registrosDoBloco(trocas, `${day}-${aula.sala}-${aula.periodos[0]}`, aula.periodos)[0];
+    return achado ? { ...achado.registro, afetados: achado.afetados.join('') } : null;
   };
 
   // Dia/período de agora (Brasília); o dia escolhido volta para hoje a cada virada

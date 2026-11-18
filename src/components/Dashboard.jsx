@@ -77,7 +77,7 @@ import { buscarAvisos } from '../hooks/useAvisos';
 import { useGrade } from '../hooks/useGrade';
 import { useTrocasSala } from '../hooks/useTrocasSala';
 import { computarChavesDeBlocos, getDiaAtual, getCurrentPeriod, getDataSaoPaulo, PERIODS } from '../../backend_core/utils/timeHelpers';
-import { situacaoDaSala, salaCoincide, normalizar, IDX_PERIODO } from '../utils/aulasDoDia';
+import { situacaoDaSala, salaCoincide, normalizar, IDX_PERIODO, chaveNaGrade } from '../utils/aulasDoDia';
 import { useCelular } from '../hooks/useCelular';
 import { useTema } from '../hooks/useTema';
 import TopoCelular from './celular/TopoCelular';
@@ -232,7 +232,7 @@ export default function Dashboard({ session }) {
   const totalTrocasAtivas = useMemo(() => {
     const chaves = Object.keys(trocasAtivas);
     if (!chavesGrade) return chaves.length; // grade ainda carregando — usa o total bruto
-    return chaves.filter(c => chavesGrade.has(c)).length;
+    return chaves.filter(c => chaveNaGrade(chavesGrade, c)).length;
   }, [trocasAtivas, chavesGrade]);
 
   // Notificação de aviso urgente em qualquer aba

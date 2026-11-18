@@ -121,11 +121,42 @@ export const trocasVigentes = (registros, proximosDias) => {
   return vigentes;
 };
 
+// Uma aula (bloco LMNP) pode ter VÁRIAS trocas, uma por grupo de períodos
+// (LM para uma sala, NP para outra). Cada registro usa como chave a do bloco
+// ("<dia>-<sala>-<período inicial>") ou a de qualquer outro período do mesmo
+// bloco ("<dia>-<sala>-N"): o bloco é dono de todas essas chaves.
+export const chavesDoBloco = (chave, periodos) => {
+  const c = desmontarChave(chave);
+  if (!c) return [chave];
+  return (periodos || []).map((p) => `${c.dia}-${c.sala}-${p}`);
+};
+
+// Registros de troca do bloco: [{ chave, registro, afetados }], na ordem dos períodos.
+export const registrosDoBloco = (trocas, chave, periodos) =>
+  chavesDoBloco(chave, periodos)
+    .filter((k) => trocas?.[k])
+    .map((k) => ({ chave: k, registro: trocas[k], afetados: periodosAfetadosPelaTroca(trocas[k], periodos) }));
+
+// Troca do bloco que afeta o período `code` (ou null).
+export const registroNoPeriodo = (trocas, chave, periodos, code) =>
+  registrosDoBloco(trocas, chave, periodos).find((r) => r.afetados.includes(code))?.registro || null;
+
 // Troca que afeta o bloco no período `code` (ou null).
-export const trocaNoPeriodo = (trocas, bloco, code) => {
-  const registro = bloco ? trocas?.[bloco.chave] : null;
-  if (!registro) return null;
-  return periodosAfetadosPelaTroca(registro, bloco.periodos).includes(code) ? registro : null;
+export const trocaNoPeriodo = (trocas, bloco, code) =>
+  bloco ? registroNoPeriodo(trocas, bloco.chave, bloco.periodos, code) : null;
+
+// A chave de uma troca existe na grade? `chavesGrade` = computarChavesDeBlocos()
+// (só inícios de bloco): chave de período no meio do bloco vale se o bloco
+// começa antes, na mesma sala e dia.
+export const chaveNaGrade = (chavesGrade, chave) => {
+  if (chavesGrade.has(chave)) return true;
+  const c = desmontarChave(chave);
+  const idx = c ? IDX_PERIODO[c.periodo] : undefined;
+  if (idx === undefined) return false;
+  for (let i = idx - 1; i >= 0; i--) {
+    if (chavesGrade.has(`${c.dia}-${c.sala}-${PERIODS[i].code}`)) return true;
+  }
+  return false;
 };
 
 // A sala de uma autorização de chave é texto livre ("302", "Lab 4", "sala
@@ -162,7 +193,7 @@ export const blocoDaChave = (gradeBruta, chave) => {
   const c = desmontarChave(chave);
   if (!c) return null;
   const blocos = blocosDaSala(slotsDoDia(gradeBruta, c.dia).get(c.sala), c.dia, c.sala);
-  return blocos.find((b) => b.chave === chave) || null;
+  return blocos.find((b) => b.chave === chave) || blocos.find((b) => chavesDoBloco(b.chave, b.periodos).includes(chave)) || null;
 };
 
 // "19:15 às 20:45" de uma lista de períodos (do primeiro ao fim do último).
