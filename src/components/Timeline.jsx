@@ -13,7 +13,7 @@ import Icone from './celular/Icone';
 import { supabase } from '../supabase';
 import { useUI } from '../contexts/UIContext';
 import { useTrocasSala } from '../hooks/useTrocasSala';
-import { parsearNomeAula, periodosAfetadosPelaTroca, blocoDaChave, listarTrocas, chavesDaAula, horarioDosPeriodos, dataCurta, dataPorExtenso } from '../utils/aulasDoDia';
+import { parsearNomeAula, periodosAfetadosPelaTroca, registrosDoBloco, registroNoPeriodo, chavesDoBloco, blocoDaChave, listarTrocas, chavesDaAula, horarioDosPeriodos, dataCurta, dataPorExtenso } from '../utils/aulasDoDia';
 import { imprimirCartazTroca } from '../utils/cartazTroca';
 import ModalAulaTroca from './ModalAulaTroca';
 import ModalTrocaSala from './ModalTrocaSala';
@@ -99,7 +99,7 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
   const ultimoPeriodoRef = useRef(getCurrentPeriod()); // último período visto pelo relógio
 
   const [aulaAberta, setAulaAberta] = useState(null);    // bloco da grade + { data, semana }
-  const [formAberto, setFormAberto] = useState(false);   // formulário por cima do painel da aula
+  const [formAberto, setFormAberto] = useState(false);   // false | { chave }: formulário por cima do painel; chave = troca sendo editada (null = nova)
   const [listaAberta, setListaAberta] = useState(false);
   const algumModalAberto = !!aulaAberta || listaAberta;
 
@@ -134,7 +134,7 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
     if (bloco) {
       const { data, semana } = getProximaOcorrencia(bloco.dia);
       setAulaAberta({ ...bloco, data, semana }); // eslint-disable-line react-hooks/set-state-in-effect
-      setFormAberto(trocarDaUrl && canEditGrade);
+      setFormAberto(trocarDaUrl && canEditGrade ? { chave: null } : false);
     }
     setSearchParams(p => { const n = new URLSearchParams(p); n.delete('aula'); n.delete('trocar'); return n; }, { replace: true });
   }, [aulaDaUrl, trocarDaUrl, rawGradeData, canEditGrade, setSearchParams]);
@@ -150,10 +150,10 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
   };
 
   const salvarTrocaMutation = useMutation({
-    mutationFn: async ({ aula, campos }) => {
+    mutationFn: async ({ aula, chave, campos }) => {
         const { error } = await supabase.from('trocas_sala').upsert({
             predio_id: predioAtual,
-            aula_unique_key: aula.chave,
+            aula_unique_key: chave,
             // Semana da DATA da aula (fixada ao abrir o painel), não a de hoje:
             // numa quinta, a troca de "Segunda" é da segunda que vem.
             semana: aula.semana,
@@ -388,7 +388,7 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
     if (!bloco) return;
     const { data, semana } = getProximaOcorrencia(bloco.dia);
     setAulaAberta({ ...bloco, data, semana });
-    setFormAberto(editar && canEditGrade);
+    setFormAberto(editar && canEditGrade ? { chave: null } : false);
   };
 
   // Clicar MOSTRA a aula (para todos); trocar de sala é um botão no painel.
@@ -421,12 +421,17 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
   const salvar = async (form, { imprimir: imprimirDepois }) => {
     const aula = aulaAberta;
     if (!aula || !canEditGrade) return;
-    const registro = trocasAtivas[aula.chave];
+    const registro = formAberto?.chave ? trocasAtivas[formAberto.chave] : null;
     const campos = camposDaTroca(aula, form);
+    // Troca nova: chave de um período do bloco que nenhuma troca usa ainda
+    // (LM já gravou "…-L"; NP grava "…-N") — assim as trocas não se sobrescrevem.
+    const chave = formAberto?.chave
+      || chavesDoBloco(aula.chave, aula.periodos).find(k => !trocasAtivas[k])
+      || aula.chave;
     const mudou = !registro || Object.keys(campos).some(k => limpar(registro[k]) !== limpar(campos[k]));
     if (mudou) {
       try {
-        await salvarTrocaMutation.mutateAsync({ aula, campos });
+        await salvarTrocaMutation.mutateAsync({ aula, chave, campos });
       } catch {
         return; // onError da mutation já mostrou o motivo; o formulário continua aberto
       }
@@ -460,11 +465,17 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
     if (!item.bloco) return;
     setListaAberta(false);
     setAulaAberta(aulaDoItem(item));
-    setFormAberto(true);
+    setFormAberto({ chave: item.chave });
   };
 
   const ultimoDia = getProximosSeteDias()[6];
-  const registroAberto = aulaAberta ? trocasAtivas[aulaAberta.chave] || null : null;
+  const registrosAula = aulaAberta ? registrosDoBloco(trocasAtivas, aulaAberta.chave, aulaAberta.periodos) : [];
+  const registroAberto = formAberto?.chave ? trocasAtivas[formAberto.chave] || null : null;
+  // Períodos que o formulário pode marcar: os livres (sem troca de outro registro)
+  // mais os da troca que está sendo editada.
+  const periodosOcupados = new Set(registrosAula.filter(r => r.chave !== formAberto?.chave).flatMap(r => r.afetados));
+  const periodosLivres = aulaAberta ? aulaAberta.periodos.filter(p => !periodosOcupados.has(p)) : [];
+  const periodosSemTroca = aulaAberta ? aulaAberta.periodos.filter(p => !registrosAula.some(r => r.afetados.includes(p))) : [];
 
   if (!predioAtual) return <div className="empty-st">Selecione um prédio no menu superior.</div>;
   if (loading || (!rawGradeData && !error)) return <div className="empty-st">Carregando matriz de horários...</div>;
@@ -476,21 +487,22 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
       {aulaAberta && !formAberto && (
         <ModalAulaTroca
           aula={aulaAberta}
-          registro={registroAberto}
+          registros={registrosAula}
+          temLivres={periodosSemTroca.length > 0}
           chaves={chavesPorAula[aulaAberta.chave] || []}
           canEditGrade={canEditGrade}
           desfazendo={removerTrocaMutation.isPending}
           onFechar={() => setAulaAberta(null)}
-          onTrocar={() => setFormAberto(true)}
-          onDesfazer={() => desfazer(aulaAberta.chave, registroAberto?.semana || aulaAberta.semana)}
-          onImprimir={() => registroAberto && imprimir(aulaAberta, registroAberto)}
+          onTrocar={(chave = null) => setFormAberto({ chave })}
+          onDesfazer={(item) => desfazer(item.chave, item.registro.semana)}
+          onImprimir={(item) => imprimir(aulaAberta, item.registro)}
         />
       )}
 
       {aulaAberta && formAberto && canEditGrade && (
         <ModalTrocaSala
-          key={aulaAberta.chave}
-          aula={aulaAberta}
+          key={`${aulaAberta.chave}|${formAberto.chave}`}
+          aula={{ ...aulaAberta, periodos: periodosLivres }}
           registro={registroAberto}
           salvando={salvarTrocaMutation.isPending}
           onCancelar={() => setFormAberto(false)}
@@ -675,10 +687,7 @@ export default function Timeline({ session, acesso, canEditGrade = false, initia
                     // O registro vale pro bloco inteiro, mas a troca pode cobrir só uma
                     // parte dos períodos (ex: LM de um bloco LMNP) — só marca em vermelho
                     // os períodos realmente afetados.
-                    const registroTroca = slot.ocupado ? trocasAtivas[slot.aulaUniqueKey] : null;
-                    const temTroca = registroTroca && periodosAfetadosPelaTroca(registroTroca, slot.periodos).includes(slot.periodo)
-                        ? registroTroca
-                        : null;
+                    const temTroca = slot.ocupado ? registroNoPeriodo(trocasAtivas, slot.aulaUniqueKey, slot.periodos, slot.periodo) : null;
                     const isSequenceAgora = !!slot.isSequenceAgora;
                     const chavesDoSlot = slot.ocupado ? chavesPorAula[slot.aulaUniqueKey] : null;
 

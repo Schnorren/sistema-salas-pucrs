@@ -6,7 +6,7 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { PERIODS, computarChavesDeBlocos, getProximosSeteDias } from '../backend_core/utils/timeHelpers.js';
 import {
-  slotsDoDia, blocosDaSala, blocoNoPeriodo, periodosAfetadosPelaTroca, trocaNoPeriodo, trocasVigentes,
+  slotsDoDia, blocosDaSala, blocoNoPeriodo, periodosAfetadosPelaTroca, trocaNoPeriodo, registrosDoBloco, registroNoPeriodo, chaveNaGrade, trocasVigentes,
   desmontarChave, blocoDaChave, horarioDosPeriodos, dataCurta, dataPorExtenso, listarTrocas,
   salaCoincide, diaDaData, ordenarPeriodos, parsearNomeAula,
   buscarAulasPorNome, avisoVale, chavesDaAula, vigenciaDoAviso,
@@ -144,7 +144,9 @@ test('lista de trocas: aula da grade, períodos afetados e ordem por data/perío
     { dia_semana: 'Quinta', periodo: 'J', nome_aula: 'FÍSICA', sala: '101' },
   ];
   assert.equal(blocoDaChave(grade, 'Segunda-205-L').nomeAula, 'BRANDED CONTENT');
-  assert.equal(blocoDaChave(grade, 'Segunda-205-M'), null); // M não inicia bloco
+  // Período no meio do bloco também aponta para ele (2ª troca do mesmo bloco: chave do N)
+  assert.equal(blocoDaChave(grade, 'Segunda-205-N').chave, 'Segunda-205-L');
+  assert.equal(blocoDaChave(grade, 'Segunda-205-Z'), null);
 
   // Quinta 05/11: Quinta = hoje (0), Segunda = 09/11 (4)
   const proximosDias = [
@@ -255,4 +257,19 @@ test('vigenciaDoAviso', () => {
   assert.equal(vigenciaDoAviso(base), '18/11/2026');
   assert.equal(vigenciaDoAviso({ ...base, recorrente: true, data_fim: null }), 'Toda quarta · desde 18/11 · por tempo indeterminado');
   assert.equal(vigenciaDoAviso({ ...base, recorrente: true, data_fim: '2026-12-02' }), 'Toda quarta · desde 18/11 · até 02/12/2026');
+});
+
+test('duas trocas na mesma aula: LM e NP não se sobrescrevem', () => {
+  const periodos = ['L', 'M', 'N', 'P'];
+  const trocas = {
+    'Segunda-205-L': { periodos_str: 'L,M', sala_destino: '410' },
+    'Segunda-205-N': { periodos_str: 'N,P', sala_destino: '512' },
+  };
+  assert.deepEqual(registrosDoBloco(trocas, 'Segunda-205-L', periodos).map(r => r.chave), ['Segunda-205-L', 'Segunda-205-N']);
+  assert.equal(registroNoPeriodo(trocas, 'Segunda-205-L', periodos, 'M').sala_destino, '410');
+  assert.equal(registroNoPeriodo(trocas, 'Segunda-205-L', periodos, 'P').sala_destino, '512');
+  assert.equal(registroNoPeriodo({ 'Segunda-205-L': trocas['Segunda-205-L'] }, 'Segunda-205-L', periodos, 'N'), null);
+  const chavesGrade = new Set(['Segunda-205-L']);
+  assert.equal(chaveNaGrade(chavesGrade, 'Segunda-205-N'), true);
+  assert.equal(chaveNaGrade(chavesGrade, 'Terça-205-N'), false);
 });

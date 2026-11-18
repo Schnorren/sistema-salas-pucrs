@@ -6,12 +6,10 @@
 // blocos continua sendo uma só: a da Timeline / aulasDoDia.
 //
 // Imports com extensão .js: este arquivo também roda no `node --test`.
-import { periodosAfetadosPelaTroca } from './aulasDoDia.js';
+import { registroNoPeriodo } from './aulasDoDia.js';
 
 const trocaDoSlot = (slot, trocas) => {
-  const registro = slot.ocupado ? trocas?.[slot.aulaUniqueKey] : null;
-  if (!registro) return null;
-  return periodosAfetadosPelaTroca(registro, slot.periodos || [slot.periodo]).includes(slot.periodo) ? registro : null;
+  return slot.ocupado ? registroNoPeriodo(trocas, slot.aulaUniqueKey, slot.periodos || [slot.periodo], slot.periodo) : null;
 };
 
 // Segmentos da faixa de 16 períodos de uma sala. Cada aula vira um segmento
@@ -20,15 +18,20 @@ const trocaDoSlot = (slot, trocas) => {
 // tipo: 'livre' | 'regular' | 'interno' | 'troca'
 export function segmentosDaLinha(slots, trocas) {
   const segmentos = [];
+  const regDe = new Map(); // segmento -> registro de troca (fora do objeto: o formato do segmento é público)
   (slots || []).forEach((slot, i) => {
-    const tipo = !slot.ocupado ? 'livre' : trocaDoSlot(slot, trocas) ? 'troca' : (slot.tipo === 'Interno' ? 'interno' : 'regular');
+    const reg = trocaDoSlot(slot, trocas);
+    const tipo = !slot.ocupado ? 'livre' : reg ? 'troca' : (slot.tipo === 'Interno' ? 'interno' : 'regular');
     const ultimo = segmentos[segmentos.length - 1];
-    if (slot.ocupado && ultimo && ultimo.chave === slot.aulaUniqueKey && ultimo.tipo === tipo) {
+    // Trocas diferentes na mesma aula (LM numa sala, NP em outra) ficam em segmentos separados.
+    if (slot.ocupado && ultimo && ultimo.chave === slot.aulaUniqueKey && ultimo.tipo === tipo && regDe.get(ultimo) === reg) {
       ultimo.fim = i;
       ultimo.agora = ultimo.agora || !!slot.isAgora;
       return;
     }
-    segmentos.push({ ini: i, fim: i, tipo, chave: slot.ocupado ? slot.aulaUniqueKey : null, agora: !!slot.isAgora });
+    const novo = { ini: i, fim: i, tipo, chave: slot.ocupado ? slot.aulaUniqueKey : null, agora: !!slot.isAgora };
+    regDe.set(novo, reg);
+    segmentos.push(novo);
   });
   return segmentos;
 }
@@ -82,7 +85,7 @@ export function blocosDaFaixa(slots, trocas, chaves) {
       periodos: doBloco.map((s) => s.periodo),
       idxAgora: doBloco.findIndex((s) => s.isAgora),
       nome: primeiro.aulaParseada?.nomeAula || primeiro.nome || '',
-      troca: seg.tipo === 'troca' ? trocas?.[seg.chave] || null : null,
+      troca: seg.tipo === 'troca' ? trocaDoSlot(primeiro, trocas) : null,
       chaves: chaves?.[seg.chave] || [],
     };
   });

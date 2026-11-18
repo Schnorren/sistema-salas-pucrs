@@ -1,6 +1,6 @@
 import { PERIODS, PERIOD_END_TIMES } from '../../../backend_core/utils/timeHelpers';
 import { itensDaAgenda } from '../../utils/miniGrade';
-import { periodosAfetadosPelaTroca } from '../../utils/aulasDoDia';
+import { registrosDoBloco } from '../../utils/aulasDoDia';
 import { Faixa } from './MiniGrade';
 import Icone from './Icone';
 
@@ -36,8 +36,9 @@ export default function AgendaSala({ linha, rotuloDia, trocas, onVoltar, onAbrir
                     );
                 }
                 const agora = linha.slots.slice(item.ini, item.fim + 1).some(s => s.isAgora);
-                const registro = trocas?.[item.chave];
-                const afetados = registro ? periodosAfetadosPelaTroca(registro, item.periodos) : [];
+                const achado = registrosDoBloco(trocas, item.chave, item.periodos)[0];
+                const registro = achado?.registro;
+                const afetados = achado?.afetados || [];
                 const classe = registro ? 'trocada' : agora ? 'agora' : item.tipo === 'Interno' ? 'interno' : '';
                 return (
                     <div key={item.chave} className={`cel-ag ${classe}`}>
